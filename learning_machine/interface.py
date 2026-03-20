@@ -46,6 +46,7 @@ def main() -> None:
         "<div class='hero-copy'>Macro pulse, crowd positioning, economic event timing, and paper-safe broker sync in one obsidian dashboard.</div>",
         unsafe_allow_html=True,
     )
+    st.markdown(_render_broker_status_badge(), unsafe_allow_html=True)
 
     selected_bundle = st.segmented_control(
         "Bundle View",
@@ -70,6 +71,8 @@ def main() -> None:
         daily_loss_limit_pct = st.slider("Daily max loss %", min_value=1.0, max_value=10.0, value=3.0, step=0.5)
         cooldown_minutes = st.select_slider("Cooldown after protection", options=[15, 30, 60, 120, 240], value=60)
         auto_harvest = st.toggle("🛡️ Auto-Harvest Profits", value=False)
+        if trade_mode == "Live":
+            st.error("Live mode is advanced. Start with Paper until fills and audit logs behave exactly as expected.")
         if st.button("Link Broker", use_container_width=True):
             st.session_state.broker_credentials = (
                 BrokerCredentials(
@@ -85,7 +88,10 @@ def main() -> None:
                 if api_key and secret_key
                 else None
             )
+            if st.session_state.broker_credentials is not None:
+                st.success(f"Broker linked in {trade_mode.upper()} mode.")
         st.caption("Keys live only in this browser session and disappear when the tab closes.")
+        st.caption("Recommended startup: Paper mode, $200 account size, $50 max position, $50 sync notional.")
 
         config = DataConfig()
         start_date = st.date_input("Research start", value=date.fromisoformat(config.start))
@@ -236,6 +242,22 @@ def _render_portfolio_panel() -> None:
         ]
         with st.expander("Open Positions", expanded=False):
             st.dataframe(pd.DataFrame(position_rows), use_container_width=True)
+
+
+def _render_broker_status_badge() -> str:
+    credentials = st.session_state.broker_credentials
+    if credentials is None:
+        return """
+        <div class="status-badge disconnected">
+            Broker Status: Not Connected | Safe Mode: Signals only
+        </div>
+        """
+    mode = "Paper" if credentials.paper else "Live"
+    return f"""
+    <div class="status-badge connected">
+        Broker Status: Connected | Mode: {mode} | Max Position: ${credentials.max_position_notional:,.0f}
+    </div>
+    """
 
 
 def _append_audit_log(entry: dict[str, object]) -> None:
@@ -401,7 +423,7 @@ def _render_signal_cards(signal_map: dict[str, ExecutionSignal]) -> None:
 def _render_copy_trade_controls(signal_map: dict[str, ExecutionSignal], notifier: DiscordNotifier, app_url: str) -> None:
     st.markdown("### Broker Sync")
     if st.session_state.broker_credentials is None:
-        st.info("Link an Alpaca paper account in the Vault to enable broker sync.")
+        st.info("Step 1: Link an Alpaca paper account in Broker Link. Step 2: Refresh the pulse. Step 3: Confirm and sync.")
         return
 
     credentials = st.session_state.broker_credentials
@@ -423,6 +445,9 @@ def _render_copy_trade_controls(signal_map: dict[str, ExecutionSignal], notifier
     confirm_sync = st.checkbox(
         f"Confirm all {credentials.paper and 'paper' or 'live'} orders before submission",
         key="confirm_sync_orders",
+    )
+    st.caption(
+        "Execution flow: review signal -> confirm order submission -> sync -> verify the audit log and Discord alert."
     )
     if st.button("SYNC WITH GURU", use_container_width=True):
         if not confirm_sync:
@@ -607,6 +632,23 @@ def _inject_styles() -> None:
                 padding: 1rem 1.1rem;
                 margin-bottom: 1rem;
                 box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+            }
+            .status-badge {
+                display: inline-block;
+                padding: 0.55rem 0.85rem;
+                border-radius: 999px;
+                border: 1px solid #273140;
+                margin-bottom: 1rem;
+                font-size: 0.92rem;
+                font-weight: 600;
+            }
+            .status-badge.connected {
+                background: rgba(25, 195, 125, 0.12);
+                color: #B8FFD9;
+            }
+            .status-badge.disconnected {
+                background: rgba(255, 90, 95, 0.12);
+                color: #FFD4D6;
             }
             .hero-flex { display: flex; gap: 1rem; align-items: center; }
             .hero-mode { color: var(--text); font-size: 1.65rem; font-weight: 700; margin-bottom: 0.35rem; }

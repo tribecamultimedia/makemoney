@@ -190,7 +190,12 @@ def main() -> None:
     pulse_col, sentiment_col = st.columns([1, 1])
     pulse_col.markdown(_render_sovereign_score_card(sovereign_score), unsafe_allow_html=True)
     sentiment_score = _mock_retail_sentiment(selected_bundle)
-    sentiment_col.plotly_chart(_build_sentiment_gauge(sentiment_score), use_container_width=True, config={"displayModeBar": False})
+    sentiment_col.plotly_chart(
+        _build_sentiment_gauge(sentiment_score),
+        use_container_width=True,
+        config={"displayModeBar": False},
+        key="hero_sentiment_gauge",
+    )
     hype_copy = _hype_meter_copy(sentiment_score, pulse)
     st.markdown(
         f"""
@@ -340,7 +345,12 @@ def _render_trade_view(
     st.markdown("### Trading Setup")
     left, right = st.columns([1, 1])
     left.markdown(_render_sovereign_score_card(sovereign_score), unsafe_allow_html=True)
-    right.plotly_chart(_build_sentiment_gauge(sentiment_score), use_container_width=True, config={"displayModeBar": False})
+    right.plotly_chart(
+        _build_sentiment_gauge(sentiment_score),
+        use_container_width=True,
+        config={"displayModeBar": False},
+        key="trade_sentiment_gauge",
+    )
     _glass_card(
         st,
         "Best short-term read",

@@ -1,9 +1,11 @@
 certifi
+cryptography
 fredapi
 gymnasium
 numpy
 pandas
 plotly
+PyJWT
 requests
 stable-baselines3
 streamlit

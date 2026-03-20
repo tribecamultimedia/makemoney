@@ -14,9 +14,12 @@ from .trade_manager import TradeManager
 
 
 DEFAULT_TICKERS = ("SPY", "QQQ")
+CRYPTO_TICKERS = ("BTC-USD", "ETH-USD", "SOL-USD")
 
 
-def is_market_hours(now: datetime) -> bool:
+def is_market_hours(now: datetime, provider: str) -> bool:
+    if provider == "coinbase":
+        return True
     if now.weekday() > 4:
         return False
     minutes = now.hour * 60 + now.minute
@@ -24,6 +27,23 @@ def is_market_hours(now: datetime) -> bool:
 
 
 def build_credentials_from_env() -> BrokerCredentials:
+    provider = os.getenv("BROKER_PROVIDER", "alpaca").lower()
+    if provider == "coinbase":
+        api_key = os.getenv("COINBASE_API_KEY", "")
+        secret_key = os.getenv("COINBASE_API_SECRET", "")
+        if not api_key or not secret_key:
+            raise RuntimeError("COINBASE_API_KEY and COINBASE_API_SECRET are required.")
+        return BrokerCredentials(
+            api_key=api_key,
+            secret_key=secret_key,
+            provider="coinbase",
+            paper=os.getenv("COINBASE_MODE", "live").lower() == "sandbox",
+            account_size=float(os.getenv("ACCOUNT_SIZE", "200")),
+            max_position_notional=float(os.getenv("MAX_POSITION_NOTIONAL", "50")),
+            daily_loss_limit_pct=float(os.getenv("DAILY_LOSS_LIMIT_PCT", "0.03")),
+            cooldown_minutes=int(os.getenv("COOLDOWN_MINUTES", "60")),
+            auto_harvest=os.getenv("AUTO_HARVEST", "false").lower() == "true",
+        )
     api_key = os.getenv("ALPACA_API_KEY", "")
     secret_key = os.getenv("ALPACA_SECRET_KEY", "")
     if not api_key or not secret_key:
@@ -31,6 +51,7 @@ def build_credentials_from_env() -> BrokerCredentials:
     return BrokerCredentials(
         api_key=api_key,
         secret_key=secret_key,
+        provider="alpaca",
         paper=(os.getenv("ALPACA_MODE", "paper").lower() != "live"),
         account_size=float(os.getenv("ACCOUNT_SIZE", "200")),
         max_position_notional=float(os.getenv("MAX_POSITION_NOTIONAL", "50")),
@@ -39,13 +60,23 @@ def build_credentials_from_env() -> BrokerCredentials:
         auto_harvest=os.getenv("AUTO_HARVEST", "false").lower() == "true",
     )
 
+
+def resolve_execution_tickers(provider: str) -> tuple[str, ...]:
+    raw = os.getenv("EXECUTION_TICKERS", "").strip()
+    if raw:
+        return tuple(part.strip().upper() for part in raw.split(",") if part.strip())
+    if provider == "coinbase":
+        return CRYPTO_TICKERS
+    return DEFAULT_TICKERS
+
+
 def main() -> None:
     now = datetime.now(UTC)
-    if not is_market_hours(now):
+    credentials = build_credentials_from_env()
+    if not is_market_hours(now, credentials.provider):
         print(json.dumps({"executed": False, "reason": "outside_market_hours"}))
         return
-
-    credentials = build_credentials_from_env()
+    tickers = resolve_execution_tickers(credentials.provider)
     manager = TradeManager(credentials)
     notifier = DiscordNotifier(
         webhook_url=os.getenv("DISCORD_WEBHOOK_URL"),
@@ -76,7 +107,7 @@ def main() -> None:
     protect_override = sovereign_agent.should_kill_trade(signal_state.hourly_drawdown)
     results: list[dict[str, object]] = []
     decisions = {}
-    for symbol in DEFAULT_TICKERS:
+    for symbol in tickers:
         sovereign_score = pipeline.generate_sovereign_score(symbol)
         decisions[symbol] = decision_engine.decide(
             ticker=symbol,
@@ -88,8 +119,8 @@ def main() -> None:
             credit=credit,
             base_notional=credentials.max_position_notional,
         )
-    allocation = allocator.allocate(decisions=decisions, total_notional=credentials.max_position_notional * len(DEFAULT_TICKERS))
-    for symbol in DEFAULT_TICKERS:
+    allocation = allocator.allocate(decisions=decisions, total_notional=credentials.max_position_notional * len(tickers))
+    for symbol in tickers:
         decision = decisions[symbol]
         signal = ExecutionSignal(
             symbol=symbol,

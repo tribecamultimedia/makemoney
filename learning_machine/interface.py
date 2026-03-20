@@ -37,6 +37,7 @@ BUNDLES = {
     "Core Assets": ("SPY", "QQQ"),
     "Defensive": ("GLD", "TLT"),
     "Speculative": ("BITO", "NVDA"),
+    "Crypto": ("BTC-USD", "ETH-USD", "SOL-USD"),
 }
 
 
@@ -122,22 +123,33 @@ def main() -> None:
 
     with st.sidebar:
         st.markdown("### Connect Broker")
-        api_key = st.text_input("Alpaca API Key", type="password")
-        secret_key = st.text_input("Alpaca Secret Key", type="password")
-        trade_mode = st.radio("Mode", options=["Paper", "Live"], horizontal=True)
+        broker_provider = st.selectbox("Broker", options=["Alpaca", "Coinbase"], index=0)
+        provider_key = broker_provider.lower()
+        if provider_key == "coinbase":
+            api_key = st.text_input("Coinbase API Key Name", type="password")
+            secret_key = st.text_area("Coinbase API Secret", height=140, placeholder="Paste the full Coinbase secret, including BEGIN/END lines.")
+            trade_mode = st.radio("Mode", options=["Live", "Sandbox"], horizontal=True)
+            st.caption("Coinbase uses Advanced Trade API keys. Preserve newlines in the secret key.")
+        else:
+            api_key = st.text_input("Alpaca API Key", type="password")
+            secret_key = st.text_input("Alpaca Secret Key", type="password")
+            trade_mode = st.radio("Mode", options=["Paper", "Live"], horizontal=True)
         account_size = st.number_input("Account size", min_value=50.0, max_value=100000.0, value=200.0, step=50.0)
         max_position_notional = st.number_input("Max trade size", min_value=10.0, max_value=10000.0, value=50.0, step=10.0)
         daily_loss_limit_pct = st.slider("Daily stop-loss %", min_value=1.0, max_value=10.0, value=3.0, step=0.5)
         cooldown_minutes = st.select_slider("Pause after protect", options=[15, 30, 60, 120, 240], value=60)
         auto_harvest = st.toggle("Auto-take partial profits", value=False)
-        if trade_mode == "Live":
+        if provider_key == "coinbase":
+            st.warning("Coinbase mode uses your real crypto account unless you deliberately use Coinbase sandbox credentials.")
+        elif trade_mode == "Live":
             st.error("Live mode is advanced. Start with Paper until fills and audit logs behave exactly as expected.")
         if st.button("Link Broker", use_container_width=True):
             st.session_state.broker_credentials = (
                 BrokerCredentials(
                     api_key=api_key,
                     secret_key=secret_key,
-                    paper=trade_mode == "Paper",
+                    provider=provider_key,
+                    paper=trade_mode in {"Paper", "Sandbox"},
                     account_size=float(account_size),
                     max_position_notional=float(max_position_notional),
                     daily_loss_limit_pct=float(daily_loss_limit_pct / 100.0),
@@ -148,9 +160,9 @@ def main() -> None:
                 else None
             )
             if st.session_state.broker_credentials is not None:
-                st.success(f"Broker linked in {trade_mode.upper()} mode.")
+                st.success(f"{broker_provider} linked in {trade_mode.upper()} mode.")
         st.caption("Keys live only in this browser session and disappear when the tab closes.")
-        st.caption("Recommended startup: Paper mode, $200 account size, $50 max position, $50 sync notional.")
+        st.caption("Recommended startup: small size, strict stop-loss, and one broker only until the audit log looks clean.")
 
         config = DataConfig()
         start_date = st.date_input("History start", value=date.fromisoformat(config.start))
@@ -715,7 +727,7 @@ def generate_signal_map(
 
 
 def _render_portfolio_panel() -> None:
-    st.markdown("### Your Paper Account")
+    st.markdown("### Your Broker Account")
     credentials = st.session_state.broker_credentials
     if credentials is None:
         st.info("Link a broker to view live or paper portfolio metrics.")
@@ -982,10 +994,14 @@ def _render_broker_status_badge() -> str:
             Broker Status: Not Connected | Safe Mode: Signals only
         </div>
         """
-    mode = "Paper" if credentials.paper else "Live"
+    provider = credentials.provider.title()
+    if credentials.provider == "coinbase":
+        mode = "Sandbox" if credentials.paper else "Live"
+    else:
+        mode = "Paper" if credentials.paper else "Live"
     return f"""
     <div class="status-badge connected">
-        Broker Status: Connected | Mode: {mode} | Max Position: ${credentials.max_position_notional:,.0f}
+        Broker Status: Connected | Broker: {provider} | Mode: {mode} | Max Position: ${credentials.max_position_notional:,.0f}
     </div>
     """
 
@@ -1257,7 +1273,7 @@ def _render_signal_cards(signal_map: dict[str, ExecutionSignal]) -> None:
 def _render_copy_trade_controls(signal_map: dict[str, ExecutionSignal], notifier: DiscordNotifier, app_url: str) -> None:
     st.markdown("### Broker Sync")
     if st.session_state.broker_credentials is None:
-        st.info("Step 1: Link an Alpaca paper account in Broker Link. Step 2: Refresh the pulse. Step 3: Confirm and sync.")
+        st.info("Step 1: Link Alpaca or Coinbase in Broker Link. Step 2: Refresh the pulse. Step 3: Confirm and sync.")
         return
 
     credentials = st.session_state.broker_credentials
@@ -1279,7 +1295,7 @@ def _render_copy_trade_controls(signal_map: dict[str, ExecutionSignal], notifier
         st.error("Daily loss limit reached. New BUY orders are blocked for the rest of the session.")
     with st.form("sync_with_guru_form", clear_on_submit=False):
         confirm_sync = st.checkbox(
-            f"Confirm all {credentials.paper and 'paper' or 'live'} orders before submission",
+            f"Confirm all {((credentials.provider == 'coinbase' and credentials.paper) and 'sandbox') or (credentials.paper and 'paper') or 'live'} orders before submission",
             key="confirm_sync_orders",
         )
         st.caption(

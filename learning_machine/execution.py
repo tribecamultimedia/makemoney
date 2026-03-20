@@ -7,6 +7,7 @@ from dataclasses import dataclass
 class BrokerCredentials:
     api_key: str
     secret_key: str
+    provider: str = "alpaca"
     paper: bool = True
     account_size: float = 200.0
     max_position_notional: float = 50.0

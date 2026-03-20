@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "certifi>=2024.8.30",
+  "coinbase-advanced-py>=1.8.2",
   "cryptography>=42.0.5",
   "fredapi>=0.5.2",
   "gymnasium>=0.29.1",

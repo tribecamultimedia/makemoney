@@ -129,7 +129,7 @@ def main() -> None:
             api_key = st.text_input("Coinbase API Key Name", type="password")
             secret_key = st.text_area("Coinbase API Secret", height=140, placeholder="Paste the full Coinbase secret, including BEGIN/END lines.")
             trade_mode = st.radio("Mode", options=["Live", "Sandbox"], horizontal=True)
-            st.caption("Coinbase uses Advanced Trade API keys. Preserve newlines in the secret key.")
+            st.caption("Coinbase uses Advanced Trade API keys. Preserve newlines in the secret key. The current SDK path is tuned for Live first.")
         else:
             api_key = st.text_input("Alpaca API Key", type="password")
             secret_key = st.text_input("Alpaca Secret Key", type="password")
@@ -140,7 +140,10 @@ def main() -> None:
         cooldown_minutes = st.select_slider("Pause after protect", options=[15, 30, 60, 120, 240], value=60)
         auto_harvest = st.toggle("Auto-take partial profits", value=False)
         if provider_key == "coinbase":
-            st.warning("Coinbase mode uses your real crypto account unless you deliberately use Coinbase sandbox credentials.")
+            if trade_mode == "Sandbox":
+                st.warning("Coinbase sandbox is not fully wired in the official SDK path yet. Use Live for now if you want the dashboard to connect.")
+            else:
+                st.warning("Coinbase mode uses your real crypto account. Keep sizing small and treat this as a controlled test.")
         elif trade_mode == "Live":
             st.error("Live mode is advanced. Start with Paper until fills and audit logs behave exactly as expected.")
         if st.button("Link Broker", use_container_width=True):

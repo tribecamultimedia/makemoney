@@ -1,4 +1,5 @@
 certifi
+coinbase-advanced-py
 cryptography
 fredapi
 gymnasium

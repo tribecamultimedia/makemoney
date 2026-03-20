@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -10,11 +9,9 @@ import requests
 from .execution import BrokerCredentials, ExecutionSignal
 
 try:
-    import jwt
-    from cryptography.hazmat.primitives import serialization
+    from coinbase.rest import RESTClient
 except Exception:  # pragma: no cover - optional until Coinbase support is installed
-    jwt = None
-    serialization = None
+    RESTClient = None
 
 
 @dataclass(slots=True)
@@ -330,8 +327,7 @@ class TradeManager:
         return rows
 
     def _coinbase_list_accounts(self) -> list[dict[str, Any]]:
-        response = self._coinbase_request("GET", "/api/v3/brokerage/accounts?limit=250")
-        payload = response.json()
+        payload = self._coinbase_request("GET", "/api/v3/brokerage/accounts", params={"limit": 250})
         return list(payload.get("accounts", []))
 
     @staticmethod
@@ -381,8 +377,7 @@ class TradeManager:
             return 0.0
 
     def _coinbase_best_bid_ask(self, symbol: str) -> dict[str, Any]:
-        response = self._coinbase_request("GET", f"/api/v3/brokerage/best_bid_ask?product_ids={symbol}")
-        payload = response.json()
+        payload = self._coinbase_request("GET", "/api/v3/brokerage/best_bid_ask", params={"product_ids": symbol})
         if "pricebooks" in payload and payload["pricebooks"]:
             book = payload["pricebooks"][0]
             bids = book.get("bids", [])
@@ -414,8 +409,7 @@ class TradeManager:
             "side": side,
             "order_configuration": configuration,
         }
-        response = self._coinbase_request("POST", "/api/v3/brokerage/orders", json=payload)
-        data = response.json()
+        data = self._coinbase_request("POST", "/api/v3/brokerage/orders", json=payload)
         success = bool(data.get("success", True))
         failure_reason = data.get("error_response", {}).get("message") or data.get("failure_reason")
         return {
@@ -424,39 +418,45 @@ class TradeManager:
             "reason": failure_reason or ("Coinbase order accepted." if success else "Coinbase rejected the order."),
         }
 
-    def _coinbase_request(self, method: str, path: str, *, json: dict[str, object] | None = None) -> requests.Response:
+    def _coinbase_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, object] | None = None,
+        json: dict[str, object] | None = None,
+    ) -> dict[str, Any]:
+        client = self._coinbase_client()
+        if method == "GET":
+            response = client.get(path, params=params or {})
+        elif method == "POST":
+            response = client.post(path, data=json or {})
+        else:
+            raise RuntimeError(f"Unsupported Coinbase method: {method}")
+        return self._coinbase_to_dict(response)
+
+    @staticmethod
+    def _coinbase_to_dict(response: Any) -> dict[str, Any]:
+        if hasattr(response, "to_dict"):
+            return dict(response.to_dict())
+        if isinstance(response, dict):
+            return response
+        if hasattr(response, "__dict__"):
+            return dict(response.__dict__)
+        raise RuntimeError("Coinbase SDK returned an unsupported response type.")
+
+    def _coinbase_client(self):
         self._ensure_coinbase_support()
-        token = self._coinbase_jwt(method=method, path=path)
-        response = requests.request(
-            method=method,
-            url=f"{self.trading_base_url}{path}",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            },
-            json=json,
+        if self.credentials.paper:
+            raise RuntimeError("Coinbase sandbox mode is not wired yet in the official SDK path. Use Live for now.")
+        return RESTClient(
+            api_key=self.credentials.api_key,
+            api_secret=self.credentials.secret_key.replace("\\n", "\n").strip(),
             timeout=15,
         )
-        response.raise_for_status()
-        return response
-
-    def _coinbase_jwt(self, *, method: str, path: str) -> str:
-        self._ensure_coinbase_support()
-        now = datetime.now(UTC)
-        secret = self.credentials.secret_key.replace("\\n", "\n").strip()
-        private_key = serialization.load_pem_private_key(secret.encode("utf-8"), password=None)
-        payload = {
-            "sub": self.credentials.api_key,
-            "iss": "cdp",
-            "nbf": int(now.timestamp()),
-            "exp": int((now + timedelta(minutes=2)).timestamp()),
-            "uri": f"{method.upper()} {self.trading_base_url.replace('https://', '')}{path}",
-        }
-        headers = {"kid": self.credentials.api_key, "nonce": uuid4().hex}
-        return str(jwt.encode(payload, private_key, algorithm="ES256", headers=headers))
 
     def _ensure_coinbase_support(self) -> None:
-        if jwt is None or serialization is None:
+        if RESTClient is None:
             raise RuntimeError(
-                "Coinbase support requires PyJWT and cryptography. Run `uv sync` after pulling the latest code."
+                "Coinbase support requires coinbase-advanced-py. Redeploy Streamlit or run `uv sync` locally."
             )

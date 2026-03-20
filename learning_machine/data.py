@@ -3,6 +3,7 @@ from __future__ import annotations
 import ssl
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import yfinance as yf
@@ -16,6 +17,27 @@ try:
     import streamlit as st
 except ImportError:  # pragma: no cover - streamlit is optional outside the UI
     st = None
+
+
+def get_economic_calendar() -> list[dict[str, object]]:
+    now = datetime.now(timezone.utc)
+    return [
+        {
+            "event": "FOMC Rate Decision",
+            "timestamp": (now + timedelta(hours=18)).isoformat(),
+            "importance": "High",
+        },
+        {
+            "event": "CPI Release",
+            "timestamp": (now + timedelta(days=2, hours=2)).isoformat(),
+            "importance": "High",
+        },
+        {
+            "event": "Non-Farm Payrolls",
+            "timestamp": (now + timedelta(days=5)).isoformat(),
+            "importance": "High",
+        },
+    ]
 
 
 @dataclass(slots=True)
@@ -162,6 +184,10 @@ class DataPipeline:
             "triggered": worst_hour <= -0.03,
             "hourly_drawdown": worst_hour,
         }
+
+    @staticmethod
+    def get_economic_calendar() -> list[dict[str, object]]:
+        return get_economic_calendar()
 
     @staticmethod
     def _normalize_yfinance_columns(df: pd.DataFrame) -> pd.DataFrame:

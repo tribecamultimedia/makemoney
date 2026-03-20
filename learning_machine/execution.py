@@ -8,6 +8,9 @@ class BrokerCredentials:
     api_key: str
     secret_key: str
     paper: bool = True
+    auto_harvest: bool = False
+    harvest_trigger_pct: float = 0.03
+    harvest_take_pct: float = 0.25
 
 
 @dataclass(slots=True)

@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-from datetime import date
-from time import time
+from datetime import date, datetime, timezone
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 try:
-    from .data import DataConfig, DataPipeline
+    from .data import DataConfig, DataPipeline, get_economic_calendar
     from .execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker
     from .notifications import DiscordNotifier
     from .signal_worker import latest_state_payload
     from .trade_manager import TradeManager
 except ImportError:
-    from learning_machine.data import DataConfig, DataPipeline
+    from learning_machine.data import DataConfig, DataPipeline, get_economic_calendar
     from learning_machine.execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker
     from learning_machine.notifications import DiscordNotifier
     from learning_machine.signal_worker import latest_state_payload
@@ -21,17 +21,16 @@ except ImportError:
 
 
 APP_NAME = "Sovereign AI"
-DEFAULT_TICKERS = ("SPY", "QQQ")
 DEFAULT_APP_URL = "https://makemoneywithtommy.streamlit.app"
+BUNDLES = {
+    "Core Assets": ("SPY", "QQQ"),
+    "Defensive": ("GLD", "TLT"),
+    "Speculative": ("BITO", "NVDA"),
+}
 
 
 def main() -> None:
-    st.set_page_config(
-        page_title=APP_NAME,
-        page_icon="◉",
-        layout="wide",
-        initial_sidebar_state="expanded",
-    )
+    st.set_page_config(page_title=APP_NAME, page_icon="◉", layout="wide", initial_sidebar_state="expanded")
     _inject_styles()
     secrets = _require_secrets()
     if secrets is None:
@@ -42,9 +41,22 @@ def main() -> None:
     _init_broker_state()
 
     st.markdown("<div class='hero-kicker'>SOVEREIGN AI</div>", unsafe_allow_html=True)
-    st.markdown("<div class='hero-title'>Institutional Macro Intelligence For Retail Capital</div>", unsafe_allow_html=True)
+    st.markdown("<div class='hero-title'>The Institutional Control Layer For Retail Capital</div>", unsafe_allow_html=True)
     st.markdown(
-        "<div class='hero-copy'>A BlackRock-style operating view for SPY and QQQ: macro pulse, execution sync, and defensive automation.</div>",
+        "<div class='hero-copy'>Macro pulse, crowd positioning, economic event timing, and paper-safe broker sync in one obsidian dashboard.</div>",
+        unsafe_allow_html=True,
+    )
+
+    selected_bundle = st.segmented_control(
+        "Bundle View",
+        options=list(BUNDLES.keys()),
+        default="Core Assets",
+        selection_mode="single",
+    )
+    selected_bundle = str(selected_bundle or "Core Assets")
+    selected_tickers = BUNDLES[selected_bundle]
+    st.markdown(
+        f"<div class='bundle-card'>Active Bundle: {selected_bundle} | Assets: {', '.join(selected_tickers)}</div>",
         unsafe_allow_html=True,
     )
 
@@ -52,32 +64,31 @@ def main() -> None:
         st.markdown("### Broker Link")
         api_key = st.text_input("Alpaca API Key", type="password")
         secret_key = st.text_input("Alpaca Secret Key", type="password")
+        auto_harvest = st.toggle("🛡️ Auto-Harvest Profits", value=False)
         if st.button("Link Broker", use_container_width=True):
             st.session_state.broker_credentials = (
-                BrokerCredentials(api_key=api_key, secret_key=secret_key, paper=True)
+                BrokerCredentials(
+                    api_key=api_key,
+                    secret_key=secret_key,
+                    paper=True,
+                    auto_harvest=auto_harvest,
+                )
                 if api_key and secret_key
                 else None
             )
         st.caption("Keys live only in this browser session and disappear when the tab closes.")
 
-        st.markdown("### Strategy Scope")
-        selected_tickers = tuple(
-            st.multiselect("Core positions", options=list(DEFAULT_TICKERS), default=list(DEFAULT_TICKERS))
-        )
         config = DataConfig()
         start_date = st.date_input("Research start", value=date.fromisoformat(config.start))
         end_date = st.date_input("Research end", value=date.fromisoformat(config.end))
-        practice_cash = st.select_slider(
-            "Simulated capital",
-            options=[1000.0, 5000.0, 10000.0, 25000.0, 100000.0],
-            value=10000.0,
+        notional = st.select_slider(
+            "Sync notional",
+            options=[50.0, 250.0, 1000.0, 5000.0, 10000.0],
+            value=1000.0,
             format_func=lambda value: f"${value:,.0f}",
         )
         run_button = st.button("Refresh Sovereign Pulse", type="primary", use_container_width=True)
 
-    if not selected_tickers:
-        st.warning("Select at least one core position.")
-        return
     if start_date > end_date:
         st.error("Research start must be before research end.")
         return
@@ -86,7 +97,6 @@ def main() -> None:
         fred_api_key=fred_api_key,
         config=DataConfig(start=start_date.isoformat(), end=end_date.isoformat(), tickers=selected_tickers),
     )
-
     regime_snapshot = load_regime_snapshot(
         fred_api_key=fred_api_key,
         start_date=start_date.isoformat(),
@@ -102,11 +112,13 @@ def main() -> None:
     st.session_state.hourly_drawdown = float(stress_snapshot["hourly_drawdown"])
     pulse = _build_pulse(regime_snapshot, stress_snapshot)
 
-    hero_col, vault_col = st.columns([1.4, 1.0])
-    with hero_col:
-        st.markdown(_render_donut_card(pulse), unsafe_allow_html=True)
-    with vault_col:
-        _render_vault(st.session_state.broker_credentials, selected_tickers)
+    pulse_col, sentiment_col = st.columns([1, 1])
+    pulse_col.markdown(_render_donut_card(pulse), unsafe_allow_html=True)
+    sentiment_score = _mock_retail_sentiment(selected_bundle)
+    sentiment_col.plotly_chart(_build_sentiment_gauge(sentiment_score), use_container_width=True, config={"displayModeBar": False})
+
+    if pulse["mode"] == "capital_preservation" and sentiment_score >= 70:
+        st.warning("⚠️ Market Hype is high, but the Guru is protecting capital. Don't follow the crowd.")
 
     latest_signal = latest_state_payload()
     if latest_signal is not None:
@@ -121,27 +133,11 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
-    insight_cols = st.columns(3)
-    _glass_card(
-        insight_cols[0],
-        "Macro-Regime Narrator",
-        regime_snapshot["narrative"],
-        f"Yield curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f} | Inflation YoY: {float(regime_snapshot['inflation_yoy']):.2f}%",
-    )
-    _glass_card(
-        insight_cols[1],
-        "Global Circuit Breaker",
-        "All accounts switch to PROTECT if the market drops 3% in an hour."
-        if bool(stress_snapshot["triggered"])
-        else "Hourly stress is contained. No emergency protective override is active.",
-        f"Worst 1h SPY move: {float(stress_snapshot['hourly_drawdown']) * 100:.2f}%",
-    )
-    _glass_card(
-        insight_cols[2],
-        "Smart Rebalancing",
-        _rebalance_message(pipeline),
-        "Harvest gains from relative winners before concentration risk builds.",
-    )
+    calendar = get_economic_calendar()
+    event_cols = st.columns([1, 1, 1])
+    _glass_card(event_cols[0], "Macro-Regime Narrator", regime_snapshot["narrative"], f"Yield curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f}")
+    _glass_card(event_cols[1], "Macro-Watchdog", _calendar_body(calendar), _calendar_footer(calendar))
+    _glass_card(event_cols[2], "Smart Harvest", _rebalance_message(pipeline), "Lock gains from relative winners instead of letting concentration drift.")
 
     with st.expander("Execution Intelligence", expanded=False):
         st.markdown(
@@ -149,198 +145,93 @@ def main() -> None:
             - `Capital Preservation Mode`: cash-first defense.
             - `Tactical Accumulation`: scale in slowly.
             - `Risk-On Expansion`: maintain full core positions.
+            - `Auto-Harvest`: trims 25% of a position after a 3% gain, if enabled in Broker Link.
             """
         )
 
     if run_button:
-        with st.spinner("Sovereign AI is recalculating the macro stack..."):
-            signal_map = generate_signal_map(selected_tickers, pulse, practice_cash)
-            _render_signal_cards(signal_map)
-            _render_copy_trade_controls(signal_map, notifier, app_url)
-            _render_test_signal(notifier, app_url)
-            if stress_snapshot["triggered"]:
-                notifier.send_regime_change(
-                    tickers=selected_tickers,
-                    label="Capital Preservation Mode",
-                    message="Global circuit breaker engaged after a 3% hourly market drop.",
-                    reason="Sovereign AI is toggling all linked accounts to PROTECT until stress cools.",
-                )
+        signals = generate_signal_map(selected_tickers, pulse, notional)
+        _render_signal_cards(signals)
+        _render_copy_trade_controls(signals, notifier, app_url)
+        _render_test_signal(notifier)
+        if stress_snapshot["triggered"]:
+            notifier.send_regime_change(
+                tickers=selected_tickers,
+                label="Capital Preservation Mode",
+                message="Global circuit breaker engaged after a 3% hourly market drop.",
+                reason="Sovereign AI is toggling linked accounts to PROTECT until stress normalizes.",
+            )
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def load_regime_snapshot(
-    *,
-    fred_api_key: str,
-    start_date: str,
-    end_date: str,
-    tickers: tuple[str, ...],
-) -> dict[str, float | str]:
-    pipeline = DataPipeline(
-        fred_api_key=fred_api_key,
-        config=DataConfig(start=start_date, end=end_date, tickers=tickers),
-    )
+def load_regime_snapshot(*, fred_api_key: str, start_date: str, end_date: str, tickers: tuple[str, ...]) -> dict[str, float | str]:
+    pipeline = DataPipeline(fred_api_key=fred_api_key, config=DataConfig(start=start_date, end=end_date, tickers=tickers))
     return pipeline.regime_snapshot()
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def load_market_stress(
-    *,
-    fred_api_key: str,
-    start_date: str,
-    end_date: str,
-    tickers: tuple[str, ...],
-) -> dict[str, float | bool]:
-    pipeline = DataPipeline(
-        fred_api_key=fred_api_key,
-        config=DataConfig(start=start_date, end=end_date, tickers=tickers),
-    )
+def load_market_stress(*, fred_api_key: str, start_date: str, end_date: str, tickers: tuple[str, ...]) -> dict[str, float | bool]:
+    pipeline = DataPipeline(fred_api_key=fred_api_key, config=DataConfig(start=start_date, end=end_date, tickers=tickers))
     return pipeline.market_stress_signal()
 
 
-def generate_signal_map(
-    tickers: tuple[str, ...],
-    pulse: dict[str, object],
-    capital: float,
-) -> dict[str, ExecutionSignal]:
-    action = "BUY"
-    confidence = float(pulse["score"]) / 100.0
-    if pulse["mode"] == "capital_preservation":
-        action = "PROTECT"
-        confidence = 0.95
-
-    per_ticker = capital / max(len(tickers), 1)
-    signals: dict[str, ExecutionSignal] = {}
-    for ticker in tickers:
-        signals[ticker] = ExecutionSignal(
+def generate_signal_map(tickers: tuple[str, ...], pulse: dict[str, object], notional: float) -> dict[str, ExecutionSignal]:
+    action = "BUY" if pulse["mode"] != "capital_preservation" else "PROTECT"
+    confidence = 0.95 if action == "PROTECT" else float(pulse["score"]) / 100.0
+    per_ticker = notional / max(len(tickers), 1)
+    return {
+        ticker: ExecutionSignal(
             symbol=ticker,
             action=action,
             confidence=confidence,
             reason=str(pulse["narrative"]),
             target_notional=per_ticker,
         )
-    return signals
-
-
-def _render_signal_cards(signal_map: dict[str, ExecutionSignal]) -> None:
-    cols = st.columns(len(signal_map))
-    for col, signal in zip(cols, signal_map.values()):
-        action_class = "buy" if signal.action == "BUY" else "protect"
-        col.markdown(
-            f"""
-            <div class="signal-card">
-                <div class="card-label">{signal.symbol}</div>
-                <div class="signal-action {action_class}">{signal.action}</div>
-                <div class="card-copy">{signal.reason}</div>
-                <div class="card-meta">Confidence: {signal.confidence * 100:.0f}% | Target notional: ${signal.target_notional:,.0f}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-
-def _render_copy_trade_controls(signal_map: dict[str, ExecutionSignal], notifier: DiscordNotifier, app_url: str) -> None:
-    st.markdown("### Broker Sync")
-    if st.session_state.broker_credentials is None:
-        st.info("Link an Alpaca paper account in the Vault to enable copy-trading.")
-        return
-
-    manager = TradeManager(st.session_state.broker_credentials)
-    protect_override = bool(st.session_state.global_circuit_breaker.should_protect(float(st.session_state.hourly_drawdown)))
-    if protect_override:
-        st.error("Global Circuit Breaker is active. Sync is locked to PROTECT mode.")
-
-    if st.button("SYNC WITH GURU", use_container_width=True):
-        for signal in signal_map.values():
-            live_signal = signal
-            if protect_override:
-                live_signal = ExecutionSignal(
-                    symbol=signal.symbol,
-                    action="PROTECT",
-                    confidence=1.0,
-                    reason="Global circuit breaker forced a defensive posture after a 3% hourly drop.",
-                    target_notional=signal.target_notional,
-                )
-            try:
-                result = manager.sync_with_signal(live_signal)
-                if result["submitted"]:
-                    notifier.send_signal(
-                        asset_name=live_signal.symbol,
-                        action=live_signal.action,
-                        reason=live_signal.reason,
-                        price=0.0,
-                        timestamp=pd.Timestamp.utcnow(),
-                    )
-                    st.success(f"{live_signal.symbol}: order submitted.")
-                else:
-                    st.warning(f"{live_signal.symbol}: {result['reason']}")
-            except Exception as exc:
-                st.error(f"{live_signal.symbol}: {exc}")
-        st.markdown(f"[Open live app]({app_url})")
-
-
-def _render_test_signal(notifier: DiscordNotifier, app_url: str) -> None:
-    st.markdown("### Discord Testing")
-    if st.button("Send Test Discord Signal", use_container_width=True):
-        success = notifier.send_signal(
-            asset_name="SOVEREIGN TEST",
-            action="BUY",
-            reason="This is a manual test signal from the dashboard to confirm Discord delivery.",
-            price=0.0,
-            timestamp=pd.Timestamp.utcnow(),
-        )
-        if success:
-            st.success(f"Test signal sent. Review Discord or open the app at {app_url}.")
-        else:
-            st.error("Test signal failed. Check the Discord webhook secret.")
+        for ticker in tickers
+    }
 
 
 def _build_pulse(regime_snapshot: dict[str, float | str], stress_snapshot: dict[str, float | bool]) -> dict[str, object]:
     mode = "risk_on_expansion"
     score = 84
     label = "Risk-On Expansion"
-    narrative = str(regime_snapshot["narrative"])
     if bool(stress_snapshot["triggered"]) or str(regime_snapshot["state"]) == "capital_preservation":
         mode = "capital_preservation"
         score = 18
         label = "Capital Preservation Mode"
     elif str(regime_snapshot["state"]) == "tactical_accumulation":
         mode = "tactical_accumulation"
-        score = 54
+        score = 52
         label = "Tactical Accumulation"
     return {
         "mode": mode,
         "score": score,
         "label": label,
-        "narrative": narrative,
+        "narrative": str(regime_snapshot["narrative"]),
         "message": _pulse_message(mode),
     }
 
 
 def _pulse_message(mode: str) -> str:
     if mode == "capital_preservation":
-        return "Cash is king while macro stress and market structure stay fragile."
+        return "Cash is king while macro stress remains elevated."
     if mode == "tactical_accumulation":
-        return "Scale in slowly while the market builds a stronger foundation."
-    return "Core positions can stay fully engaged while macro conditions remain supportive."
+        return "Scale into risk while the market forms a stronger base."
+    return "Macro conditions support full core positioning."
 
 
 def _render_donut_card(pulse: dict[str, object]) -> str:
     score = int(pulse["score"])
     circumference = 2 * 3.1416 * 52
     dash = circumference * (score / 100)
-    color = "#19C37D"
-    if pulse["mode"] == "capital_preservation":
-        color = "#FF5A5F"
-    elif pulse["mode"] == "tactical_accumulation":
-        color = "#F4B942"
+    color = "#19C37D" if pulse["mode"] == "risk_on_expansion" else "#F4B942" if pulse["mode"] == "tactical_accumulation" else "#FF5A5F"
     return f"""
     <div class="hero-card">
-        <div class="card-label">Pulse</div>
+        <div class="card-label">The Pulse</div>
         <div class="hero-flex">
             <svg viewBox="0 0 140 140" class="donut">
                 <circle cx="70" cy="70" r="52" class="donut-track"></circle>
-                <circle cx="70" cy="70" r="52" class="donut-ring" stroke="{color}"
-                    stroke-dasharray="{dash} {circumference - dash}" transform="rotate(-90 70 70)"></circle>
+                <circle cx="70" cy="70" r="52" class="donut-ring" stroke="{color}" stroke-dasharray="{dash} {circumference - dash}" transform="rotate(-90 70 70)"></circle>
                 <text x="70" y="66" text-anchor="middle" class="donut-score">{score}%</text>
                 <text x="70" y="84" text-anchor="middle" class="donut-caption">Pulse</text>
             </svg>
@@ -351,6 +242,53 @@ def _render_donut_card(pulse: dict[str, object]) -> str:
         </div>
     </div>
     """
+
+
+def _build_sentiment_gauge(score: int) -> go.Figure:
+    fig = go.Figure(
+        go.Indicator(
+            mode="gauge+number",
+            value=score,
+            title={"text": "Crowd vs. Code", "font": {"color": "#E9EEF5", "size": 20}},
+            number={"suffix": "/100", "font": {"color": "#E9EEF5"}},
+            gauge={
+                "axis": {"range": [0, 100], "tickcolor": "#4B5563"},
+                "bar": {"color": "#00F5FF"},
+                "bgcolor": "#151A21",
+                "steps": [
+                    {"range": [0, 33], "color": "#2A3140"},
+                    {"range": [33, 66], "color": "#1D3A44"},
+                    {"range": [66, 100], "color": "#143E3B"},
+                ],
+            },
+        )
+    )
+    fig.update_layout(template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", margin=dict(l=10, r=10, t=50, b=10), height=250)
+    return fig
+
+
+def _mock_retail_sentiment(bundle: str) -> int:
+    return {
+        "Core Assets": 58,
+        "Defensive": 34,
+        "Speculative": 84,
+    }.get(bundle, 50)
+
+
+def _calendar_body(events: list[dict[str, object]]) -> str:
+    lines = []
+    for event in events[:3]:
+        ts = datetime.fromisoformat(str(event["timestamp"]))
+        lines.append(f"{event['event']} | {ts.strftime('%b %d %H:%M UTC')}")
+    return "<br>".join(lines)
+
+
+def _calendar_footer(events: list[dict[str, object]]) -> str:
+    next_event = datetime.fromisoformat(str(events[0]["timestamp"]))
+    hours_left = int((next_event - datetime.now(timezone.utc)).total_seconds() // 3600)
+    if hours_left <= 24:
+        return f"Volatility Warning: next event in {max(hours_left, 0)} hours."
+    return f"Next event in {hours_left} hours."
 
 
 def _glass_card(container, title: str, body: str, footer: str) -> None:
@@ -368,23 +306,87 @@ def _glass_card(container, title: str, body: str, footer: str) -> None:
 
 def _rebalance_message(pipeline: DataPipeline) -> str:
     datasets = pipeline.build_dataset()
+    if "SPY" not in datasets or "QQQ" not in datasets:
+        return "Bundle mix does not include both SPY and QQQ, so no relative harvest is needed."
     spy = datasets["SPY"]["close"].pct_change(20).iloc[-1]
     qqq = datasets["QQQ"]["close"].pct_change(20).iloc[-1]
     if float(spy - qqq) >= 0.05:
-        return "SPY has outperformed QQQ by more than 5%. Sovereign AI recommends a profit harvest into lagging growth exposure."
+        return "SPY has outperformed QQQ by 5%+. Consider harvesting some gains into growth."
     if float(qqq - spy) >= 0.05:
-        return "QQQ has materially outpaced SPY. Sovereign AI suggests trimming technology gains back toward core balance."
-    return "Relative performance remains balanced. No tactical harvest is required."
+        return "QQQ has outperformed SPY by 5%+. Consider taking some technology profits."
+    return "Relative performance is balanced. No smart harvest trigger yet."
+
+
+def _render_signal_cards(signal_map: dict[str, ExecutionSignal]) -> None:
+    cols = st.columns(len(signal_map))
+    for col, signal in zip(cols, signal_map.values()):
+        action_class = "buy" if signal.action == "BUY" else "protect"
+        col.markdown(
+            f"""
+            <div class="signal-card">
+                <div class="card-label">{signal.symbol}</div>
+                <div class="signal-action {action_class}">{signal.action}</div>
+                <div class="card-copy">{signal.reason}</div>
+                <div class="card-meta">Confidence: {signal.confidence * 100:.0f}% | Target: ${signal.target_notional:,.0f}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+def _render_copy_trade_controls(signal_map: dict[str, ExecutionSignal], notifier: DiscordNotifier, app_url: str) -> None:
+    st.markdown("### Broker Sync")
+    if st.session_state.broker_credentials is None:
+        st.info("Link an Alpaca paper account in the Vault to enable broker sync.")
+        return
+
+    manager = TradeManager(st.session_state.broker_credentials)
+    protect_override = bool(st.session_state.global_circuit_breaker.should_protect(float(st.session_state.hourly_drawdown)))
+    if st.button("SYNC WITH GURU", use_container_width=True):
+        for signal in signal_map.values():
+            live_signal = signal
+            if protect_override:
+                live_signal = ExecutionSignal(
+                    symbol=signal.symbol,
+                    action="PROTECT",
+                    confidence=1.0,
+                    reason="Global circuit breaker forced a defensive posture after a 3% hourly drop.",
+                    target_notional=signal.target_notional,
+                )
+            try:
+                result = manager.sync_with_signal(live_signal)
+                if result["submitted"]:
+                    notifier.send_signal(asset_name=live_signal.symbol, action=live_signal.action, reason=live_signal.reason, price=0.0, timestamp=pd.Timestamp.utcnow())
+                    st.success(f"{live_signal.symbol}: sync submitted.")
+                else:
+                    st.warning(f"{live_signal.symbol}: {result['reason']}")
+            except Exception as exc:
+                st.error(f"{live_signal.symbol}: {exc}")
+        st.markdown(f"[Open live app]({app_url})")
+
+
+def _render_test_signal(notifier: DiscordNotifier) -> None:
+    st.markdown("### Discord Testing")
+    if st.button("Send Test Discord Signal", use_container_width=True):
+        ok = notifier.send_signal(
+            asset_name="SOVEREIGN TEST",
+            action="BUY",
+            reason="Manual connectivity test from the Sovereign AI dashboard.",
+            price=0.0,
+            timestamp=pd.Timestamp.utcnow(),
+        )
+        st.success("Test signal sent.") if ok else st.error("Discord test failed.")
 
 
 def _render_vault(credentials: BrokerCredentials | None, tickers: tuple[str, ...]) -> None:
     status = "Linked to Alpaca paper trading." if credentials else "No broker connected."
+    harvest = "Auto-Harvest On" if credentials and credentials.auto_harvest else "Auto-Harvest Off"
     st.markdown(
         f"""
         <div class="glass-card">
             <div class="card-label">The Vault</div>
             <div class="card-copy">{status}</div>
-            <div class="card-meta">Fractional execution is enabled for {", ".join(tickers)}. Credentials live only in session memory.</div>
+            <div class="card-meta">{harvest} | Fractional execution enabled for {", ".join(tickers)}.</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -425,133 +427,45 @@ def _inject_styles() -> None:
         <style>
             :root {
                 --bg: #0B0D10;
-                --panel: rgba(21, 26, 33, 0.72);
+                --panel: rgba(21, 26, 33, 0.84);
                 --border: rgba(0, 245, 255, 0.18);
                 --text: #E9EEF5;
-                --muted: #8EA2B8;
+                --muted: #92A3B8;
                 --cyan: #00F5FF;
                 --red: #FF5A5F;
                 --yellow: #F4B942;
                 --green: #19C37D;
             }
-            .stApp {
-                background: linear-gradient(180deg, #0B0D10 0%, #10141A 100%);
-                color: var(--text);
-            }
-            [data-testid="stHeader"] {
-                background: rgba(11, 13, 16, 0.92);
-                border-bottom: 1px solid #273140;
-            }
-            [data-testid="stToolbar"] {
-                background: transparent;
-            }
-            [data-testid="stDecoration"] {
-                background: none;
-            }
-            [data-testid="stStatusWidget"] {
-                background: transparent;
-                color: var(--text);
-            }
-            [data-testid="stAppViewContainer"] {
-                background: linear-gradient(180deg, #0B0D10 0%, #10141A 100%);
-            }
-            .block-container {
-                max-width: 1180px;
-                padding-top: 1.2rem;
-                padding-bottom: 4rem;
-            }
-            .hero-kicker {
-                color: var(--cyan);
-                letter-spacing: 0.2rem;
-                font-size: 0.82rem;
-                margin-bottom: 0.5rem;
-            }
-            .hero-title {
-                color: var(--text);
-                font-size: 2.8rem;
-                font-weight: 700;
-                line-height: 1.05;
-                margin-bottom: 0.6rem;
-                font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-            }
-            .hero-copy, .card-copy, .card-meta, .hero-message {
-                color: var(--muted);
-                font-size: 1rem;
-                line-height: 1.5;
-            }
-            .hero-card, .glass-card, .signal-card {
-                background: var(--panel);
-                backdrop-filter: blur(16px);
+            .stApp { background: linear-gradient(180deg, #0B0D10 0%, #10141A 100%); color: var(--text); }
+            [data-testid="stHeader"] { background: rgba(11, 13, 16, 0.92); border-bottom: 1px solid #273140; }
+            [data-testid="stToolbar"], [data-testid="stDecoration"] { background: transparent; }
+            [data-testid="stAppViewContainer"] { background: linear-gradient(180deg, #0B0D10 0%, #10141A 100%); }
+            .block-container { max-width: 1180px; padding-top: 1.2rem; padding-bottom: 4rem; }
+            .hero-kicker, .card-label { color: var(--cyan); text-transform: uppercase; letter-spacing: 0.12rem; font-size: 0.82rem; margin-bottom: 0.4rem; }
+            .hero-title { color: var(--text); font-size: 2.6rem; font-weight: 700; line-height: 1.05; margin-bottom: 0.5rem; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+            .hero-copy, .card-copy, .card-meta, .hero-message { color: var(--muted); font-size: 1rem; line-height: 1.5; }
+            .hero-card, .glass-card, .signal-card, .bundle-card {
+                background: #151A21;
+                backdrop-filter: blur(12px);
                 border: 1px solid #273140;
-                border-radius: 24px;
-                padding: 1.1rem 1.2rem;
-                box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+                border-radius: 22px;
+                padding: 1rem 1.1rem;
                 margin-bottom: 1rem;
+                box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
             }
-            .hero-flex {
-                display: flex;
-                gap: 1rem;
-                align-items: center;
-            }
-            .card-label {
-                color: var(--cyan);
-                text-transform: uppercase;
-                letter-spacing: 0.12rem;
-                font-size: 0.82rem;
-                margin-bottom: 0.4rem;
-            }
-            .hero-mode {
-                color: var(--text);
-                font-size: 1.65rem;
-                font-weight: 700;
-                margin-bottom: 0.35rem;
-            }
-            .donut {
-                width: 180px;
-                height: 180px;
-                flex-shrink: 0;
-            }
-            .donut-track {
-                fill: none;
-                stroke: rgba(255,255,255,0.08);
-                stroke-width: 12;
-            }
-            .donut-ring {
-                fill: none;
-                stroke-width: 12;
-                stroke-linecap: round;
-            }
-            .donut-score {
-                fill: var(--text);
-                font-size: 22px;
-                font-weight: 700;
-            }
-            .donut-caption {
-                fill: var(--muted);
-                font-size: 11px;
-            }
-            .signal-action {
-                font-size: 1.45rem;
-                font-weight: 700;
-                margin-bottom: 0.4rem;
-            }
+            .hero-flex { display: flex; gap: 1rem; align-items: center; }
+            .hero-mode { color: var(--text); font-size: 1.65rem; font-weight: 700; margin-bottom: 0.35rem; }
+            .donut { width: 180px; height: 180px; flex-shrink: 0; }
+            .donut-track { fill: none; stroke: rgba(255,255,255,0.08); stroke-width: 12; }
+            .donut-ring { fill: none; stroke-width: 12; stroke-linecap: round; }
+            .donut-score { fill: var(--text); font-size: 22px; font-weight: 700; }
+            .donut-caption { fill: var(--muted); font-size: 11px; }
+            .signal-action { font-size: 1.45rem; font-weight: 700; margin-bottom: 0.4rem; }
             .signal-action.buy { color: var(--green); }
-            .signal-action.protect { color: var(--red); }
-            .stButton > button {
-                min-height: 48px;
-                background: #13232B;
-                color: var(--text);
-                border: 1px solid rgba(0, 245, 255, 0.35);
-                border-radius: 14px;
-                font-weight: 700;
-            }
-            [data-testid="stSidebar"] {
-                background: #10141A;
-            }
-            @media (max-width: 768px) {
-                .hero-flex { flex-direction: column; align-items: flex-start; }
-                .hero-title { font-size: 2rem; }
-            }
+            .signal-action.protect { color: #FF6A3D; }
+            .stButton > button { min-height: 48px; background: #13232B; color: var(--text); border: 1px solid rgba(0, 245, 255, 0.35); border-radius: 14px; font-weight: 700; }
+            [data-testid="stSidebar"] { background: #10141A; }
+            @media (max-width: 768px) { .hero-flex { flex-direction: column; align-items: flex-start; } .hero-title { font-size: 2rem; } }
         </style>
         """,
         unsafe_allow_html=True,

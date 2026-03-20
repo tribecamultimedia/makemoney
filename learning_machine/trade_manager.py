@@ -87,8 +87,41 @@ class TradeManager:
             timeout=10,
         )
         response.raise_for_status()
+        order = response.json()
+        if self.credentials.auto_harvest:
+            self.submit_auto_harvest(symbol=signal.symbol)
         return {
             "submitted": True,
             "spread_bps": spread_bps,
-            "order": response.json(),
+            "order": order,
         }
+
+    def submit_auto_harvest(self, symbol: str) -> dict[str, object]:
+        position_response = requests.get(
+            f"{self.trading_base_url}/v2/positions/{symbol}",
+            headers=self.headers,
+            timeout=10,
+        )
+        position_response.raise_for_status()
+        position = position_response.json()
+        unrealized_pct = float(position.get("unrealized_plpc", 0.0))
+        qty = float(position.get("qty", 0.0))
+        if unrealized_pct < self.credentials.harvest_trigger_pct or qty <= 0:
+            return {"submitted": False, "reason": "Harvest trigger not reached."}
+
+        harvest_qty = round(qty * self.credentials.harvest_take_pct, 6)
+        payload = {
+            "symbol": symbol,
+            "side": "sell",
+            "type": "market",
+            "time_in_force": "day",
+            "qty": str(harvest_qty),
+        }
+        response = requests.post(
+            f"{self.trading_base_url}/v2/orders",
+            headers={**self.headers, "Content-Type": "application/json"},
+            json=payload,
+            timeout=10,
+        )
+        response.raise_for_status()
+        return {"submitted": True, "order": response.json()}

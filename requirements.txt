@@ -1,0 +1,12 @@
+certifi
+fredapi
+gymnasium
+numpy
+pandas
+plotly
+requests
+stable-baselines3
+streamlit
+ta
+torch
+yfinance

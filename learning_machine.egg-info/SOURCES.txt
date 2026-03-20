@@ -1,0 +1,17 @@
+README.md
+pyproject.toml
+learning_machine/__init__.py
+learning_machine/backtest.py
+learning_machine/data.py
+learning_machine/env.py
+learning_machine/features.py
+learning_machine/interface.py
+learning_machine/main.py
+learning_machine/notifications.py
+learning_machine/risk.py
+learning_machine/sentiment.py
+learning_machine.egg-info/PKG-INFO
+learning_machine.egg-info/SOURCES.txt
+learning_machine.egg-info/dependency_links.txt
+learning_machine.egg-info/requires.txt
+learning_machine.egg-info/top_level.txt

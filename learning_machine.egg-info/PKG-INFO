@@ -1,0 +1,56 @@
+Metadata-Version: 2.4
+Name: learning-machine
+Version: 0.1.0
+Summary: Modular PPO trading research stack for SPY and QQQ.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: certifi>=2024.8.30
+Requires-Dist: fredapi>=0.5.2
+Requires-Dist: gymnasium>=0.29.1
+Requires-Dist: numpy>=1.26.4
+Requires-Dist: pandas>=2.2.2
+Requires-Dist: plotly>=6.0.0
+Requires-Dist: requests>=2.32.3
+Requires-Dist: scikit-learn>=1.5.1
+Requires-Dist: stable-baselines3>=2.3.2
+Requires-Dist: streamlit>=1.44.0
+Requires-Dist: ta>=0.11.0
+Requires-Dist: torch>=2.3.1
+Requires-Dist: yfinance>=0.2.54
+Provides-Extra: dev
+Requires-Dist: pytest>=8.3.2; extra == "dev"
+Requires-Dist: ruff>=0.6.2; extra == "dev"
+
+# Learning Machine
+
+Modular reinforcement-learning research stack for trading `SPY` and `QQQ` with:
+
+- `yfinance` OHLCV ingestion
+- FRED macro data joins
+- Custom `FeatureFactory`
+- PPO-compatible `gymnasium` environment
+- Session-level drawdown circuit breaker
+- Slippage-aware backtest loop
+
+## Architecture
+
+1. `learning_machine.data.DataPipeline`
+   - Pulls OHLCV from Yahoo Finance.
+   - Pulls macro series from FRED and forward-fills them to market dates.
+2. `learning_machine.features.FeatureFactory`
+   - Computes fractional differentiation, volatility-scaled RSI, Bollinger width, realized vol, and return features.
+3. `learning_machine.sentiment.SimulatedNewsFeed`
+   - Seeds a synthetic daily sentiment signal from a current macro/news snapshot.
+4. `learning_machine.risk.CircuitBreaker`
+   - Stops trading for the session if drawdown breaches 5%.
+5. `learning_machine.env.TradingEnvironment`
+   - Discrete-action PPO environment with portfolio accounting and risk hooks.
+6. `learning_machine.backtest.run_backtest`
+   - Replays the environment policy with 10 bps slippage.
+
+## Quick start
+
+```bash
+uv sync
+uv run python -m learning_machine.main
+```

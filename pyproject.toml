@@ -1,0 +1,35 @@
+[project]
+name = "learning-machine"
+version = "0.1.0"
+description = "Modular PPO trading research stack for SPY and QQQ."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "certifi>=2024.8.30",
+  "fredapi>=0.5.2",
+  "gymnasium>=0.29.1",
+  "numpy>=1.26.4",
+  "pandas>=2.2.2",
+  "plotly>=6.0.0",
+  "requests>=2.32.3",
+  "scikit-learn>=1.5.1",
+  "stable-baselines3>=2.3.2",
+  "streamlit>=1.44.0",
+  "ta>=0.11.0",
+  "torch>=2.3.1",
+  "yfinance>=0.2.54",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.2",
+  "ruff>=0.6.2",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"

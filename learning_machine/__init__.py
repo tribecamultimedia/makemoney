@@ -6,6 +6,7 @@ from .execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker
 from .env import TradingEnvironment
 from .features import FeatureFactory
 from .risk import CircuitBreaker
+from .signal_worker import build_signal_state
 from .sentiment import SimulatedNewsFeed, SentimentSnapshot
 from .trade_manager import TradeManager
 
@@ -18,6 +19,7 @@ __all__ = [
     "GlobalCircuitBreaker",
     "SentimentSnapshot",
     "SimulatedNewsFeed",
+    "build_signal_state",
     "TradeManager",
     "TradingEnvironment",
     "run_backtest",

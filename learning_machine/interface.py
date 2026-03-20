@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -64,13 +64,22 @@ def main() -> None:
         st.markdown("### Broker Link")
         api_key = st.text_input("Alpaca API Key", type="password")
         secret_key = st.text_input("Alpaca Secret Key", type="password")
+        trade_mode = st.radio("Execution Mode", options=["Paper", "Live"], horizontal=True)
+        account_size = st.number_input("Account size", min_value=50.0, max_value=100000.0, value=200.0, step=50.0)
+        max_position_notional = st.number_input("Max position per trade", min_value=10.0, max_value=10000.0, value=50.0, step=10.0)
+        daily_loss_limit_pct = st.slider("Daily max loss %", min_value=1.0, max_value=10.0, value=3.0, step=0.5)
+        cooldown_minutes = st.select_slider("Cooldown after protection", options=[15, 30, 60, 120, 240], value=60)
         auto_harvest = st.toggle("🛡️ Auto-Harvest Profits", value=False)
         if st.button("Link Broker", use_container_width=True):
             st.session_state.broker_credentials = (
                 BrokerCredentials(
                     api_key=api_key,
                     secret_key=secret_key,
-                    paper=True,
+                    paper=trade_mode == "Paper",
+                    account_size=float(account_size),
+                    max_position_notional=float(max_position_notional),
+                    daily_loss_limit_pct=float(daily_loss_limit_pct / 100.0),
+                    cooldown_minutes=int(cooldown_minutes),
                     auto_harvest=auto_harvest,
                 )
                 if api_key and secret_key
@@ -84,7 +93,7 @@ def main() -> None:
         notional = st.select_slider(
             "Sync notional",
             options=[50.0, 250.0, 1000.0, 5000.0, 10000.0],
-            value=1000.0,
+            value=50.0,
             format_func=lambda value: f"${value:,.0f}",
         )
         run_button = st.button("Refresh Sovereign Pulse", type="primary", use_container_width=True)
@@ -133,6 +142,8 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
+    _render_portfolio_panel()
+
     calendar = get_economic_calendar()
     event_cols = st.columns([1, 1, 1])
     _glass_card(event_cols[0], "Macro-Regime Narrator", regime_snapshot["narrative"], f"Yield curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f}")
@@ -154,6 +165,7 @@ def main() -> None:
         _render_signal_cards(signals)
         _render_copy_trade_controls(signals, notifier, app_url)
         _render_test_signal(notifier)
+        _render_audit_log()
         if stress_snapshot["triggered"]:
             notifier.send_regime_change(
                 tickers=selected_tickers,
@@ -189,6 +201,58 @@ def generate_signal_map(tickers: tuple[str, ...], pulse: dict[str, object], noti
         )
         for ticker in tickers
     }
+
+
+def _render_portfolio_panel() -> None:
+    st.markdown("### Portfolio Command")
+    credentials = st.session_state.broker_credentials
+    if credentials is None:
+        st.info("Link a broker to view live or paper portfolio metrics.")
+        return
+
+    manager = TradeManager(credentials)
+    try:
+        snapshot = manager.portfolio_snapshot()
+    except Exception as exc:
+        st.warning(f"Portfolio snapshot unavailable: {exc}")
+        return
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Equity", f"${snapshot['equity']:,.2f}")
+    col2.metric("Cash", f"${snapshot['cash']:,.2f}")
+    col3.metric("Buying Power", f"${snapshot['buying_power']:,.2f}")
+    col4.metric("Daily PnL", f"{snapshot['daily_pnl_pct'] * 100:.2f}%")
+
+    positions = snapshot["positions"]
+    if positions:
+        position_rows = [
+            {
+                "symbol": row.get("symbol"),
+                "qty": row.get("qty"),
+                "market_value": row.get("market_value"),
+                "unrealized_plpc": row.get("unrealized_plpc"),
+            }
+            for row in positions
+        ]
+        with st.expander("Open Positions", expanded=False):
+            st.dataframe(pd.DataFrame(position_rows), use_container_width=True)
+
+
+def _append_audit_log(entry: dict[str, object]) -> None:
+    st.session_state.trade_audit_log.insert(0, entry)
+    st.session_state.trade_audit_log = st.session_state.trade_audit_log[:100]
+
+
+def _cooldown_active() -> tuple[bool, str]:
+    until = st.session_state.trade_cooldown_until
+    if until is None:
+        return False, ""
+    remaining = until - datetime.now(timezone.utc)
+    if remaining.total_seconds() <= 0:
+        st.session_state.trade_cooldown_until = None
+        return False, ""
+    minutes = int(remaining.total_seconds() // 60)
+    return True, f"Cooldown active for {minutes} more minutes."
 
 
 def _build_pulse(regime_snapshot: dict[str, float | str], stress_snapshot: dict[str, float | bool]) -> dict[str, object]:
@@ -340,9 +404,30 @@ def _render_copy_trade_controls(signal_map: dict[str, ExecutionSignal], notifier
         st.info("Link an Alpaca paper account in the Vault to enable broker sync.")
         return
 
-    manager = TradeManager(st.session_state.broker_credentials)
+    credentials = st.session_state.broker_credentials
+    manager = TradeManager(credentials)
     protect_override = bool(st.session_state.global_circuit_breaker.should_protect(float(st.session_state.hourly_drawdown)))
+    cooldown_on, cooldown_message = _cooldown_active()
+    if cooldown_on:
+        st.warning(cooldown_message)
+
+    try:
+        snapshot = manager.portfolio_snapshot()
+        daily_loss_hit = float(snapshot["daily_pnl_pct"]) <= -credentials.daily_loss_limit_pct
+    except Exception:
+        snapshot = None
+        daily_loss_hit = False
+
+    if daily_loss_hit:
+        st.error("Daily loss limit reached. New BUY orders are blocked for the rest of the session.")
+    confirm_sync = st.checkbox(
+        f"Confirm all {credentials.paper and 'paper' or 'live'} orders before submission",
+        key="confirm_sync_orders",
+    )
     if st.button("SYNC WITH GURU", use_container_width=True):
+        if not confirm_sync:
+            st.warning("You must confirm order submission before syncing.")
+            return
         for signal in signal_map.values():
             live_signal = signal
             if protect_override:
@@ -353,14 +438,71 @@ def _render_copy_trade_controls(signal_map: dict[str, ExecutionSignal], notifier
                     reason="Global circuit breaker forced a defensive posture after a 3% hourly drop.",
                     target_notional=signal.target_notional,
                 )
+            elif daily_loss_hit and signal.action == "BUY":
+                _append_audit_log(
+                    {
+                        "timestamp": pd.Timestamp.utcnow().isoformat(),
+                        "symbol": signal.symbol,
+                        "mode": "BLOCKED",
+                        "action": "BUY",
+                        "reason": "Daily loss limit reached.",
+                    }
+                )
+                st.warning(f"{signal.symbol}: blocked by daily loss limit.")
+                continue
+            elif cooldown_on and signal.action == "BUY":
+                _append_audit_log(
+                    {
+                        "timestamp": pd.Timestamp.utcnow().isoformat(),
+                        "symbol": signal.symbol,
+                        "mode": "BLOCKED",
+                        "action": "BUY",
+                        "reason": cooldown_message,
+                    }
+                )
+                st.warning(f"{signal.symbol}: {cooldown_message}")
+                continue
             try:
                 result = manager.sync_with_signal(live_signal)
                 if result["submitted"]:
                     notifier.send_signal(asset_name=live_signal.symbol, action=live_signal.action, reason=live_signal.reason, price=0.0, timestamp=pd.Timestamp.utcnow())
+                    _append_audit_log(
+                        {
+                            "timestamp": pd.Timestamp.utcnow().isoformat(),
+                            "symbol": live_signal.symbol,
+                            "mode": credentials.paper and "PAPER" or "LIVE",
+                            "action": live_signal.action,
+                            "reason": live_signal.reason,
+                            "status": "submitted",
+                            "notional": result.get("notional", live_signal.target_notional),
+                        }
+                    )
                     st.success(f"{live_signal.symbol}: sync submitted.")
+                    if live_signal.action == "PROTECT":
+                        st.session_state.trade_cooldown_until = datetime.now(timezone.utc) + timedelta(minutes=credentials.cooldown_minutes)
                 else:
+                    _append_audit_log(
+                        {
+                            "timestamp": pd.Timestamp.utcnow().isoformat(),
+                            "symbol": live_signal.symbol,
+                            "mode": credentials.paper and "PAPER" or "LIVE",
+                            "action": live_signal.action,
+                            "reason": result["reason"],
+                            "status": "rejected",
+                        }
+                    )
                     st.warning(f"{live_signal.symbol}: {result['reason']}")
             except Exception as exc:
+                _append_audit_log(
+                    {
+                        "timestamp": pd.Timestamp.utcnow().isoformat(),
+                        "symbol": live_signal.symbol,
+                        "mode": credentials.paper and "PAPER" or "LIVE",
+                        "action": live_signal.action,
+                        "reason": str(exc),
+                        "status": "error",
+                    }
+                )
                 st.error(f"{live_signal.symbol}: {exc}")
         st.markdown(f"[Open live app]({app_url})")
 
@@ -376,6 +518,15 @@ def _render_test_signal(notifier: DiscordNotifier) -> None:
             timestamp=pd.Timestamp.utcnow(),
         )
         st.success("Test signal sent.") if ok else st.error("Discord test failed.")
+
+
+def _render_audit_log() -> None:
+    st.markdown("### Execution Audit Log")
+    entries = st.session_state.trade_audit_log
+    if not entries:
+        st.info("No trade actions recorded yet.")
+        return
+    st.dataframe(pd.DataFrame(entries), use_container_width=True)
 
 
 def _render_vault(credentials: BrokerCredentials | None, tickers: tuple[str, ...]) -> None:
@@ -419,6 +570,10 @@ def _init_broker_state() -> None:
         st.session_state.global_circuit_breaker = GlobalCircuitBreaker()
     if "hourly_drawdown" not in st.session_state:
         st.session_state.hourly_drawdown = 0.0
+    if "trade_audit_log" not in st.session_state:
+        st.session_state.trade_audit_log = []
+    if "trade_cooldown_until" not in st.session_state:
+        st.session_state.trade_cooldown_until = None
 
 
 def _inject_styles() -> None:

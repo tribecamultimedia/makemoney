@@ -14,7 +14,9 @@ class TradeManager:
 
     @property
     def trading_base_url(self) -> str:
-        return "https://paper-api.alpaca.markets"
+        if self.credentials.paper:
+            return "https://paper-api.alpaca.markets"
+        return "https://api.alpaca.markets"
 
     @property
     def market_data_url(self) -> str:
@@ -31,6 +33,25 @@ class TradeManager:
         response = requests.get(f"{self.trading_base_url}/v2/account", headers=self.headers, timeout=10)
         response.raise_for_status()
         return response.json()
+
+    def positions(self) -> list[dict[str, object]]:
+        response = requests.get(f"{self.trading_base_url}/v2/positions", headers=self.headers, timeout=10)
+        response.raise_for_status()
+        return list(response.json())
+
+    def portfolio_snapshot(self) -> dict[str, object]:
+        account = self.account()
+        positions = self.positions()
+        equity = float(account.get("equity", 0.0))
+        last_equity = float(account.get("last_equity", equity or 1.0))
+        daily_pnl_pct = 0.0 if last_equity == 0 else (equity / last_equity) - 1.0
+        return {
+            "equity": equity,
+            "buying_power": float(account.get("buying_power", 0.0)),
+            "cash": float(account.get("cash", 0.0)),
+            "daily_pnl_pct": daily_pnl_pct,
+            "positions": positions,
+        }
 
     def latest_quote(self, symbol: str) -> dict[str, object]:
         response = requests.get(
@@ -59,6 +80,7 @@ class TradeManager:
                 "reason": f"Spread too wide at {spread_bps:.1f} bps.",
             }
 
+        capped_notional = min(signal.target_notional, self.credentials.max_position_notional)
         if signal.action == "PROTECT":
             response = requests.delete(
                 f"{self.trading_base_url}/v2/positions/{signal.symbol}",
@@ -78,7 +100,7 @@ class TradeManager:
             "side": "buy",
             "type": "market",
             "time_in_force": "day",
-            "notional": round(signal.target_notional, 2),
+            "notional": round(capped_notional, 2),
         }
         response = requests.post(
             f"{self.trading_base_url}/v2/orders",
@@ -94,6 +116,7 @@ class TradeManager:
             "submitted": True,
             "spread_bps": spread_bps,
             "order": order,
+            "notional": capped_notional,
         }
 
     def submit_auto_harvest(self, symbol: str) -> dict[str, object]:

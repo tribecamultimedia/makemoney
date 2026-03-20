@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from stable_baselines3 import PPO
 
 try:
     from .backtest import run_backtest
@@ -110,7 +109,7 @@ def main() -> None:
     )
 
 
-@st.fragment(run_every="60m")
+@st.fragment(run_every=3600)
 def _auto_regime_fragment(
     *,
     regime: dict[str, object],
@@ -169,6 +168,8 @@ def run_ticker_workflow(
     learning_rate: float,
     notifier: DiscordNotifier,
 ) -> dict[str, object]:
+    from stable_baselines3 import PPO
+
     features = prepared["features"]
     feature_columns = prepared["feature_columns"]
     market = prepared["market"]

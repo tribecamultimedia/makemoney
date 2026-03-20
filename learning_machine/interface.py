@@ -37,6 +37,19 @@ BUNDLES = {
 }
 
 
+def _render_quick_start() -> None:
+    st.markdown(
+        """
+        <div class="glass-card">
+            <div class="card-label">Start Here</div>
+            <div class="card-copy">1. Connect your paper broker. 2. Click <strong>Refresh AI view</strong>. 3. Review the suggested trade plan before syncing.</div>
+            <div class="card-meta">If the AI looks cautious, that is still a decision. Waiting is part of the product.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def main() -> None:
     st.set_page_config(page_title=APP_NAME, page_icon="◉", layout="wide", initial_sidebar_state="expanded")
     _inject_styles()
@@ -49,15 +62,16 @@ def main() -> None:
     _init_broker_state()
 
     st.markdown("<div class='hero-kicker'>SOVEREIGN AI</div>", unsafe_allow_html=True)
-    st.markdown("<div class='hero-title'>The Institutional Control Layer For Retail Capital</div>", unsafe_allow_html=True)
+    st.markdown("<div class='hero-title'>A simpler control room for your paper-trading machine</div>", unsafe_allow_html=True)
     st.markdown(
-        "<div class='hero-copy'>Macro pulse, crowd positioning, economic event timing, and paper-safe broker sync in one obsidian dashboard.</div>",
+        "<div class='hero-copy'>See the current stance, understand why the AI is cautious or aggressive, and decide whether to sync your paper account.</div>",
         unsafe_allow_html=True,
     )
     st.markdown(_render_broker_status_badge(), unsafe_allow_html=True)
+    _render_quick_start()
 
     selected_bundle = st.segmented_control(
-        "Bundle View",
+        "Choose what to follow",
         options=list(BUNDLES.keys()),
         default="Core Assets",
         selection_mode="single",
@@ -65,20 +79,20 @@ def main() -> None:
     selected_bundle = str(selected_bundle or "Core Assets")
     selected_tickers = BUNDLES[selected_bundle]
     st.markdown(
-        f"<div class='bundle-card'>Active Bundle: {selected_bundle} | Assets: {', '.join(selected_tickers)}</div>",
+        f"<div class='bundle-card'>Current view: {selected_bundle} | Assets: {', '.join(selected_tickers)}</div>",
         unsafe_allow_html=True,
     )
 
     with st.sidebar:
-        st.markdown("### Broker Link")
+        st.markdown("### Connect Broker")
         api_key = st.text_input("Alpaca API Key", type="password")
         secret_key = st.text_input("Alpaca Secret Key", type="password")
-        trade_mode = st.radio("Execution Mode", options=["Paper", "Live"], horizontal=True)
+        trade_mode = st.radio("Mode", options=["Paper", "Live"], horizontal=True)
         account_size = st.number_input("Account size", min_value=50.0, max_value=100000.0, value=200.0, step=50.0)
-        max_position_notional = st.number_input("Max position per trade", min_value=10.0, max_value=10000.0, value=50.0, step=10.0)
-        daily_loss_limit_pct = st.slider("Daily max loss %", min_value=1.0, max_value=10.0, value=3.0, step=0.5)
-        cooldown_minutes = st.select_slider("Cooldown after protection", options=[15, 30, 60, 120, 240], value=60)
-        auto_harvest = st.toggle("🛡️ Auto-Harvest Profits", value=False)
+        max_position_notional = st.number_input("Max trade size", min_value=10.0, max_value=10000.0, value=50.0, step=10.0)
+        daily_loss_limit_pct = st.slider("Daily stop-loss %", min_value=1.0, max_value=10.0, value=3.0, step=0.5)
+        cooldown_minutes = st.select_slider("Pause after protect", options=[15, 30, 60, 120, 240], value=60)
+        auto_harvest = st.toggle("Auto-take partial profits", value=False)
         if trade_mode == "Live":
             st.error("Live mode is advanced. Start with Paper until fills and audit logs behave exactly as expected.")
         if st.button("Link Broker", use_container_width=True):
@@ -102,15 +116,15 @@ def main() -> None:
         st.caption("Recommended startup: Paper mode, $200 account size, $50 max position, $50 sync notional.")
 
         config = DataConfig()
-        start_date = st.date_input("Research start", value=date.fromisoformat(config.start))
-        end_date = st.date_input("Research end", value=date.fromisoformat(config.end))
+        start_date = st.date_input("History start", value=date.fromisoformat(config.start))
+        end_date = st.date_input("History end", value=date.fromisoformat(config.end))
         notional = st.select_slider(
-            "Sync notional",
+            "Trade budget",
             options=[50.0, 250.0, 1000.0, 5000.0, 10000.0],
             value=50.0,
             format_func=lambda value: f"${value:,.0f}",
         )
-        run_button = st.button("Refresh Sovereign Pulse", type="primary", use_container_width=True)
+        run_button = st.button("Refresh AI view", type="primary", use_container_width=True)
 
     if start_date > end_date:
         st.error("Research start must be before research end.")
@@ -160,7 +174,7 @@ def main() -> None:
         st.markdown(
             f"""
             <div class="glass-card">
-                <div class="card-label">Latest Saved Signal</div>
+                <div class="card-label">Current AI Stance</div>
                 <div class="card-copy">{latest_signal['label']}</div>
                 <div class="card-meta">{latest_signal['message']}</div>
             </div>
@@ -171,7 +185,7 @@ def main() -> None:
     st.markdown(
         f"""
         <div class="glass-card">
-            <div class="card-label">Institutional Narrator</div>
+            <div class="card-label">Today's Briefing</div>
             <div class="card-copy">{_guru_briefing(regime_snapshot, pulse, selected_bundle)}</div>
             <div class="card-meta">Yield Curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f} | Inflation YoY: {float(regime_snapshot['inflation_yoy']):.2f}%</div>
         </div>
@@ -185,32 +199,34 @@ def main() -> None:
 
     calendar = get_economic_calendar()
     event_cols = st.columns([1, 1, 1])
-    _glass_card(event_cols[0], "Macro-Regime Narrator", regime_snapshot["narrative"], f"Yield curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f}")
-    _glass_card(event_cols[1], "Macro-Watchdog", _calendar_body(calendar), _calendar_footer(calendar))
-    _glass_card(event_cols[2], "Smart Harvest", _rebalance_message(pipeline), "Lock gains from relative winners instead of letting concentration drift.")
-    intelligence_cols = st.columns([1, 1])
-    _glass_card(
-        intelligence_cols[0],
-        "Market Internals",
-        internals.summary,
-        f"VIX {internals.vix_level:.1f} | TLT 20D {internals.tlt_return_20d:.1f}% | SOXX above 50DMA: {'Yes' if internals.soxx_above_50dma else 'No'}",
-    )
-    _glass_card(
-        intelligence_cols[1],
-        "Event Risk Filter",
-        event_risk.summary,
-        f"Next event: {event_risk.next_event} | Hours: {event_risk.hours_to_event:.1f} | Size multiplier: {event_risk.size_multiplier:.2f}",
-    )
-    factor_cols = st.columns([1, 1])
-    _glass_card(
-        factor_cols[0],
-        "Credit & Liquidity",
-        credit.summary,
-        f"HYG 20D {credit.hyg_return_20d:.1f}% | LQD 20D {credit.lqd_return_20d:.1f}% | IWM vs SPY {credit.iwm_vs_spy_momentum:+.1f}%",
-    )
-    _render_experiment_panel()
+    _glass_card(event_cols[0], "Macro Backdrop", regime_snapshot["narrative"], f"Yield curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f}")
+    _glass_card(event_cols[1], "Important Events", _calendar_body(calendar), _calendar_footer(calendar))
+    _glass_card(event_cols[2], "Positioning Note", _rebalance_message(pipeline), "A quick read on whether leadership is balanced or lopsided.")
 
-    with st.expander("Execution Intelligence", expanded=False):
+    with st.expander("Why the AI feels cautious or confident", expanded=False):
+        intelligence_cols = st.columns([1, 1])
+        _glass_card(
+            intelligence_cols[0],
+            "Market Internals",
+            internals.summary,
+            f"VIX {internals.vix_level:.1f} | TLT 20D {internals.tlt_return_20d:.1f}% | SOXX above 50DMA: {'Yes' if internals.soxx_above_50dma else 'No'}",
+        )
+        _glass_card(
+            intelligence_cols[1],
+            "Event Risk",
+            event_risk.summary,
+            f"Next event: {event_risk.next_event} | Hours: {event_risk.hours_to_event:.1f} | Size multiplier: {event_risk.size_multiplier:.2f}",
+        )
+        factor_cols = st.columns([1, 1])
+        _glass_card(
+            factor_cols[0],
+            "Credit & Liquidity",
+            credit.summary,
+            f"HYG 20D {credit.hyg_return_20d:.1f}% | LQD 20D {credit.lqd_return_20d:.1f}% | IWM vs SPY {credit.iwm_vs_spy_momentum:+.1f}%",
+        )
+        _render_experiment_panel()
+
+    with st.expander("How the AI manages risk", expanded=False):
         st.markdown(
             """
             - `Capital Preservation Mode`: cash-first defense.
@@ -302,7 +318,7 @@ def generate_signal_map(
 
 
 def _render_portfolio_panel() -> None:
-    st.markdown("### Portfolio Command")
+    st.markdown("### Your Paper Account")
     credentials = st.session_state.broker_credentials
     if credentials is None:
         st.info("Link a broker to view live or paper portfolio metrics.")
@@ -337,29 +353,29 @@ def _render_portfolio_panel() -> None:
 
 
 def _render_machine_feed() -> None:
-    st.markdown("### Machine Feed")
+    st.markdown("### What Happens Next")
     left, middle, right, storage_col = st.columns([1.0, 1.0, 1.2, 0.9])
     _glass_card(
         left,
-        "Next Signal Run",
+        "Next Market Check",
         _format_run_body("Macro pulse refresh", _next_top_of_hour()),
         "Triggers Discord only when the market regime changes.",
     )
     _glass_card(
         middle,
-        "Next Execution Run",
+        "Next Trade Window",
         _format_run_body("Paper/live execution", _next_execution_run()),
         "Checks every 15 minutes on weekdays during market hours.",
     )
     _glass_card(
         right,
-        "Trade Trigger Logic",
+        "Simple Trigger Rules",
         _trigger_logic_body(),
         "BUY when the pulse is supportive. PROTECT when macro regime or stress says cash-first.",
     )
     _glass_card(
         storage_col,
-        "Storage Mode",
+        "Data Sync",
         "Shared cloud ledger" if shared_storage_enabled() else "Local app ledger",
         "Add Supabase secrets to unify Streamlit and GitHub worker history." if not shared_storage_enabled() else "App and workers now read the same ledger, equity curve, and latest signal.",
     )
@@ -383,8 +399,8 @@ def _render_experiment_panel() -> None:
     latest = runs.iloc[0]
     st.markdown(
         f"""
-        <div class="glass-card">
-            <div class="card-label">Experiment Tracker</div>
+            <div class="glass-card">
+            <div class="card-label">Decision Engine</div>
             <div class="card-copy">Engine version: {latest['engine_version']}</div>
             <div class="card-meta">Latest mode: {latest['mode']} | {latest['summary']}</div>
         </div>
@@ -394,7 +410,7 @@ def _render_experiment_panel() -> None:
 
 
 def _render_allocation_diagnostics(signal_map: dict[str, ExecutionSignal], total_notional: float) -> None:
-    st.markdown("### Allocation Diagnostics")
+    st.markdown("### Suggested Trade Plan")
     rows = []
     assigned = 0.0
     for signal in signal_map.values():
@@ -413,7 +429,7 @@ def _render_allocation_diagnostics(signal_map: dict[str, ExecutionSignal], total
 
 
 def _render_ledger_panels() -> None:
-    st.markdown("### Algo Test Track Record")
+    st.markdown("### Results So Far")
     equity = read_equity_curve()
     ledger = read_ledger()
     _render_performance_dashboard(equity, ledger)
@@ -433,7 +449,7 @@ def _render_ledger_panels() -> None:
 
 def _render_performance_dashboard(equity: pd.DataFrame, ledger: pd.DataFrame) -> None:
     stats = _build_performance_stats(equity, ledger)
-    st.markdown("#### Performance Dashboard")
+    st.markdown("#### Performance Summary")
     metric_cols = st.columns(5)
     metric_cols[0].metric("Total Return", f"{stats['return_pct']:.2f}%")
     metric_cols[1].metric("Max Drawdown", f"{stats['max_drawdown_pct']:.2f}%")

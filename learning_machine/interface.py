@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 import plotly.graph_objects as go
+import requests
 import streamlit as st
 
 try:
@@ -30,6 +32,7 @@ except ImportError:
 
 APP_NAME = "Sovereign AI"
 DEFAULT_APP_URL = "https://makemoneywithtommy.streamlit.app"
+DEFAULT_OPENAI_MODEL = "gpt-5-mini"
 BUNDLES = {
     "Core Assets": ("SPY", "QQQ"),
     "Defensive": ("GLD", "TLT"),
@@ -261,6 +264,15 @@ def main() -> None:
             latest_signal=latest_signal,
         )
 
+    _render_copilot(
+        pulse=pulse,
+        sovereign_score=sovereign_score,
+        regime_snapshot=regime_snapshot,
+        internals=internals,
+        credit=credit,
+        event_risk=event_risk,
+        latest_signal=latest_signal,
+    )
     _render_machine_feed()
     _render_portfolio_panel()
     _render_ledger_panels()
@@ -416,6 +428,236 @@ def _render_market_view(
     _glass_card(lower_cols[0], "Internals", internals.summary, f"VIX {internals.vix_level:.1f} | Cross-asset {internals.cross_asset_confirmation:+.2f}")
     _glass_card(lower_cols[1], "Credit", credit.summary, f"Liquidity score {credit.liquidity_score:+.2f}")
     _glass_card(lower_cols[2], "Event risk", event_risk.summary, f"Next event in {event_risk.hours_to_event:.1f} hours")
+
+
+def _render_copilot(
+    *,
+    pulse: dict[str, object],
+    sovereign_score: dict[str, float | str],
+    regime_snapshot: dict[str, float | str],
+    internals,
+    credit,
+    event_risk,
+    latest_signal: dict[str, object] | None,
+) -> None:
+    st.markdown("### Sovereign Copilot")
+    api_key, model = _resolve_openai_settings()
+    left, right = st.columns([1.35, 0.9])
+    with left:
+        _glass_card(
+            st,
+            "Ask the machine",
+            "Ask why it traded, why it stayed cautious, what the biggest risk is today, or whether the current stance makes sense in plain English.",
+            "This copilot is grounded in the current dashboard context instead of acting like a generic finance chatbot.",
+        )
+        starter_cols = st.columns(3)
+        prompts = [
+            "Why didn't the AI trade yet?",
+            "What is the biggest risk today?",
+            "Explain the current stance in plain English.",
+        ]
+        for idx, prompt in enumerate(prompts):
+            if starter_cols[idx].button(prompt, use_container_width=True, key=f"copilot_prompt_{idx}"):
+                st.session_state.copilot_pending_prompt = prompt
+
+        if not api_key:
+            st.info("Add `OPENAI_API_KEY` to Streamlit secrets to enable the in-app copilot.")
+            return
+
+        for message in st.session_state.copilot_messages:
+            with st.chat_message(message["role"]):
+                st.markdown(str(message["content"]))
+
+        pending_prompt = st.session_state.pop("copilot_pending_prompt", None)
+        user_prompt = pending_prompt or st.chat_input("Ask the Sovereign Copilot")
+        if user_prompt:
+            st.session_state.copilot_messages.append({"role": "user", "content": user_prompt})
+            with st.chat_message("user"):
+                st.markdown(user_prompt)
+            with st.chat_message("assistant"):
+                with st.spinner("Sovereign Copilot is thinking..."):
+                    reply = _ask_copilot(
+                        api_key=api_key,
+                        model=model,
+                        user_prompt=user_prompt,
+                        context=_build_copilot_context(
+                            pulse=pulse,
+                            sovereign_score=sovereign_score,
+                            regime_snapshot=regime_snapshot,
+                            internals=internals,
+                            credit=credit,
+                            event_risk=event_risk,
+                            latest_signal=latest_signal,
+                        ),
+                    )
+                st.markdown(reply)
+            st.session_state.copilot_messages.append({"role": "assistant", "content": reply})
+
+    with right:
+        _glass_card(
+            st,
+            "Copilot context",
+            _copilot_context_summary(pulse, sovereign_score, internals, credit, event_risk),
+            f"Model: {model} | Mode: {'Enabled' if api_key else 'Disabled'}",
+        )
+
+
+def _resolve_openai_settings() -> tuple[str, str]:
+    try:
+        api_key = str(st.secrets.get("OPENAI_API_KEY", "")).strip()
+    except Exception:
+        api_key = ""
+    try:
+        model = str(st.secrets.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)).strip() or DEFAULT_OPENAI_MODEL
+    except Exception:
+        model = DEFAULT_OPENAI_MODEL
+    return api_key, model
+
+
+def _build_copilot_context(
+    *,
+    pulse: dict[str, object],
+    sovereign_score: dict[str, float | str],
+    regime_snapshot: dict[str, float | str],
+    internals,
+    credit,
+    event_risk,
+    latest_signal: dict[str, object] | None,
+) -> dict[str, object]:
+    credentials = st.session_state.broker_credentials
+    account_context: dict[str, object] = {"connected": False}
+    if credentials is not None:
+        account_context = {
+            "connected": True,
+            "mode": "paper" if credentials.paper else "live",
+            "account_size": credentials.account_size,
+            "max_position_notional": credentials.max_position_notional,
+            "daily_loss_limit_pct": credentials.daily_loss_limit_pct,
+            "cooldown_minutes": credentials.cooldown_minutes,
+            "auto_harvest": credentials.auto_harvest,
+        }
+        try:
+            snapshot = TradeManager(credentials).portfolio_snapshot()
+            account_context["portfolio"] = {
+                "equity": snapshot["equity"],
+                "cash": snapshot["cash"],
+                "buying_power": snapshot["buying_power"],
+                "daily_pnl_pct": snapshot["daily_pnl_pct"],
+                "open_positions": [
+                    {
+                        "symbol": row.get("symbol"),
+                        "qty": row.get("qty"),
+                        "market_value": row.get("market_value"),
+                        "unrealized_plpc": row.get("unrealized_plpc"),
+                    }
+                    for row in snapshot["positions"]
+                ],
+            }
+        except Exception as exc:
+            account_context["portfolio_error"] = str(exc)
+
+    return {
+        "pulse": pulse,
+        "sovereign_score": sovereign_score,
+        "regime_snapshot": {
+            "state": regime_snapshot.get("state"),
+            "narrative": regime_snapshot.get("narrative"),
+            "yield_curve_10y_2y": regime_snapshot.get("yield_curve_10y_2y"),
+            "inflation_yoy": regime_snapshot.get("inflation_yoy"),
+        },
+        "latest_signal": latest_signal,
+        "market_internals": {
+            "summary": internals.summary,
+            "vix_level": internals.vix_level,
+            "cross_asset_confirmation": internals.cross_asset_confirmation,
+            "tlt_return_20d": internals.tlt_return_20d,
+            "gld_return_20d": internals.gld_return_20d,
+            "xlf_above_50dma": internals.xlf_above_50dma,
+            "soxx_above_50dma": internals.soxx_above_50dma,
+        },
+        "credit_liquidity": {
+            "summary": credit.summary,
+            "liquidity_score": credit.liquidity_score,
+            "hyg_return_20d": credit.hyg_return_20d,
+            "lqd_return_20d": credit.lqd_return_20d,
+            "iwm_vs_spy_momentum": credit.iwm_vs_spy_momentum,
+        },
+        "event_risk": {
+            "summary": event_risk.summary,
+            "next_event": event_risk.next_event,
+            "hours_to_event": event_risk.hours_to_event,
+            "size_multiplier": event_risk.size_multiplier,
+        },
+        "portfolio": account_context,
+        "recent_ledger": read_ledger().sort_values("timestamp", ascending=False).head(8).to_dict(orient="records"),
+    }
+
+
+def _copilot_context_summary(
+    pulse: dict[str, object],
+    sovereign_score: dict[str, float | str],
+    internals,
+    credit,
+    event_risk,
+) -> str:
+    return (
+        f"Pulse: {pulse['label']} | Score: {int(float(sovereign_score['score']))}%<br>"
+        f"Internals: {internals.cross_asset_confirmation:+.2f} cross-asset confirmation, VIX {internals.vix_level:.1f}<br>"
+        f"Credit: {credit.liquidity_score:+.2f} liquidity score<br>"
+        f"Event risk: {event_risk.size_multiplier:.2f} size multiplier with {event_risk.hours_to_event:.1f}h to next event"
+    )
+
+
+def _ask_copilot(*, api_key: str, model: str, user_prompt: str, context: dict[str, object]) -> str:
+    system_prompt = (
+        "You are Sovereign Copilot, the in-app assistant for a cautious trading dashboard. "
+        "Answer only using the supplied context. Be concise, plain-English, and practical. "
+        "Do not invent prices, trades, or market data not present in context. "
+        "If context is insufficient, say so directly. "
+        "Focus on explaining the machine's current stance, risks, and next action in a way a retail trader can understand."
+    )
+    payload = {
+        "model": model,
+        "input": [
+            {"role": "system", "content": [{"type": "input_text", "text": system_prompt}]},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": "Dashboard context:\n" + json.dumps(context, default=str, ensure_ascii=True),
+                    },
+                    {"type": "input_text", "text": "User question:\n" + user_prompt},
+                ],
+            },
+        ],
+    }
+    try:
+        response = requests.post(
+            "https://api.openai.com/v1/responses",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=45,
+        )
+        response.raise_for_status()
+        data = response.json()
+    except requests.RequestException as exc:
+        return f"Copilot request failed: {exc}"
+
+    output_text = data.get("output_text")
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text.strip()
+
+    for item in data.get("output", []):
+        for content in item.get("content", []):
+            text = content.get("text")
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+
+    return "Copilot did not return a usable answer."
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -832,7 +1074,7 @@ def _render_sovereign_score_card(score_payload: dict[str, float | str]) -> str:
     score = int(float(score_payload["score"]))
     circumference = 2 * 3.1416 * 52
     dash = circumference * (score / 100)
-    color = "#19C37D" if score >= 70 else "#F4B942" if score >= 45 else "#FF5A5F"
+    color = "#12A150" if score >= 70 else "#111111" if score >= 45 else "#D93025"
     return f"""
     <div class="hero-card">
         <div class="card-label">Sovereign Pulse | {score_payload['ticker']}</div>
@@ -853,25 +1095,26 @@ def _render_sovereign_score_card(score_payload: dict[str, float | str]) -> str:
 
 
 def _build_sentiment_gauge(score: int) -> go.Figure:
+    bar_color = "#12A150" if score >= 60 else "#D93025" if score <= 40 else "#111111"
     fig = go.Figure(
         go.Indicator(
             mode="gauge+number",
             value=score,
-            title={"text": "Crowd vs. Code", "font": {"color": "#E9EEF5", "size": 20}},
-            number={"suffix": "/100", "font": {"color": "#E9EEF5"}},
+            title={"text": "Crowd vs. Code", "font": {"color": "#111111", "size": 20}},
+            number={"suffix": "/100", "font": {"color": "#111111"}},
             gauge={
-                "axis": {"range": [0, 100], "tickcolor": "#4B5563"},
-                "bar": {"color": "#00F5FF"},
-                "bgcolor": "#151A21",
+                "axis": {"range": [0, 100], "tickcolor": "#BDBDBD"},
+                "bar": {"color": bar_color},
+                "bgcolor": "#FFFFFF",
                 "steps": [
-                    {"range": [0, 33], "color": "#2A3140"},
-                    {"range": [33, 66], "color": "#1D3A44"},
-                    {"range": [66, 100], "color": "#143E3B"},
+                    {"range": [0, 33], "color": "#F4F4F4"},
+                    {"range": [33, 66], "color": "#ECECEC"},
+                    {"range": [66, 100], "color": "#E3E3E3"},
                 ],
             },
         )
     )
-    fig.update_layout(template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", margin=dict(l=10, r=10, t=50, b=10), height=250)
+    fig.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", margin=dict(l=10, r=10, t=50, b=10), height=250)
     return fig
 
 
@@ -1248,25 +1491,28 @@ def _render_last_execution_status() -> None:
 
 
 def _build_equity_curve_chart(equity: pd.DataFrame) -> go.Figure:
+    start = float(equity["equity"].iloc[0]) if not equity.empty else 0.0
+    latest = float(equity["equity"].iloc[-1]) if not equity.empty else 0.0
+    line_color = "#12A150" if latest >= start else "#D93025"
     figure = go.Figure()
     figure.add_trace(
         go.Scatter(
             x=equity["timestamp"],
             y=equity["equity"],
             mode="lines",
-            line=dict(color="#00F5FF", width=3),
+            line=dict(color=line_color, width=3),
             name="Equity",
         )
     )
     figure.update_layout(
-        template="plotly_dark",
+        template="plotly_white",
         paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="#151A21",
+        plot_bgcolor="#FFFFFF",
         title="Paper Portfolio Equity Curve",
         margin=dict(l=10, r=10, t=40, b=10),
         height=280,
-        xaxis=dict(showgrid=False),
-        yaxis=dict(showgrid=False),
+        xaxis=dict(showgrid=False, color="#111111"),
+        yaxis=dict(showgrid=False, color="#111111"),
     )
     return figure
 
@@ -1318,39 +1564,76 @@ def _init_broker_state() -> None:
         st.session_state.trade_cooldown_until = None
     if "last_execution_status" not in st.session_state:
         st.session_state.last_execution_status = None
+    if "copilot_messages" not in st.session_state:
+        st.session_state.copilot_messages = []
+    if "copilot_pending_prompt" not in st.session_state:
+        st.session_state.copilot_pending_prompt = None
 
 
 def _inject_styles() -> None:
     st.markdown(
         """
         <style>
+            @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap');
             :root {
-                --bg: #0B0D10;
-                --panel: rgba(21, 26, 33, 0.84);
-                --border: rgba(0, 245, 255, 0.18);
-                --text: #E9EEF5;
-                --muted: #92A3B8;
-                --cyan: #00F5FF;
-                --red: #FF5A5F;
-                --yellow: #F4B942;
-                --green: #19C37D;
+                --bg: #FFFFFF;
+                --panel: #FFFFFF;
+                --border: #D8D8D8;
+                --text: #111111;
+                --muted: #5F6368;
+                --accent: #111111;
+                --red: #D93025;
+                --green: #12A150;
+                --soft: #F7F7F7;
             }
-            .stApp { background: linear-gradient(180deg, #0B0D10 0%, #10141A 100%); color: var(--text); }
-            [data-testid="stHeader"] { background: rgba(11, 13, 16, 0.92); border-bottom: 1px solid #273140; }
+            @keyframes riseIn {
+                from { opacity: 0; transform: translateY(8px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            @keyframes drift {
+                0% { transform: translateY(0px); }
+                50% { transform: translateY(-2px); }
+                100% { transform: translateY(0px); }
+            }
+            .stApp {
+                background: #FFFFFF;
+                color: var(--text);
+                font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+            }
+            [data-testid="stHeader"] { background: rgba(255, 255, 255, 0.95); border-bottom: 1px solid var(--border); }
             [data-testid="stToolbar"], [data-testid="stDecoration"] { background: transparent; }
-            [data-testid="stAppViewContainer"] { background: linear-gradient(180deg, #0B0D10 0%, #10141A 100%); }
+            [data-testid="stAppViewContainer"] { background: #FFFFFF; }
             .block-container { max-width: 1180px; padding-top: 1.2rem; padding-bottom: 4rem; }
-            .hero-kicker, .card-label { color: var(--cyan); text-transform: uppercase; letter-spacing: 0.12rem; font-size: 0.82rem; margin-bottom: 0.4rem; }
-            .hero-title { color: var(--text); font-size: 2.6rem; font-weight: 700; line-height: 1.05; margin-bottom: 0.5rem; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-            .hero-copy, .card-copy, .card-meta, .hero-message { color: var(--muted); font-size: 1rem; line-height: 1.5; }
+            .hero-kicker, .card-label {
+                color: var(--accent);
+                text-transform: uppercase;
+                letter-spacing: 0.14rem;
+                font-size: 0.82rem;
+                margin-bottom: 0.4rem;
+                font-family: "IBM Plex Mono", ui-monospace, monospace;
+            }
+            .hero-title {
+                color: var(--text);
+                font-size: 2.6rem;
+                font-weight: 700;
+                line-height: 1.02;
+                margin-bottom: 0.5rem;
+                font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+                animation: riseIn 0.55s ease-out, drift 5s ease-in-out infinite;
+            }
+            .hero-copy, .card-copy, .card-meta, .hero-message {
+                color: var(--muted);
+                font-size: 1rem;
+                line-height: 1.55;
+            }
             .hero-card, .glass-card, .signal-card, .bundle-card {
-                background: #151A21;
-                backdrop-filter: blur(12px);
-                border: 1px solid #273140;
+                background: var(--panel);
+                border: 1px solid var(--border);
                 border-radius: 22px;
                 padding: 1rem 1.1rem;
                 margin-bottom: 1rem;
-                box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+                box-shadow: 0 14px 36px rgba(0, 0, 0, 0.06);
+                animation: riseIn 0.45s ease-out;
             }
             .intent-grid {
                 display: grid;
@@ -1359,41 +1642,64 @@ def _inject_styles() -> None:
                 margin-bottom: 1rem;
             }
             .intent-card {
-                background: #151A21;
-                border: 1px solid #273140;
+                background: var(--panel);
+                border: 1px solid var(--border);
                 border-radius: 22px;
                 padding: 1rem 1.1rem;
-                box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+                box-shadow: 0 14px 36px rgba(0, 0, 0, 0.05);
+                animation: riseIn 0.5s ease-out;
             }
             .status-badge {
                 display: inline-block;
                 padding: 0.55rem 0.85rem;
                 border-radius: 999px;
-                border: 1px solid #273140;
+                border: 1px solid var(--border);
                 margin-bottom: 1rem;
                 font-size: 0.92rem;
                 font-weight: 600;
             }
             .status-badge.connected {
-                background: rgba(25, 195, 125, 0.12);
-                color: #B8FFD9;
+                background: rgba(18, 161, 80, 0.08);
+                color: var(--green);
             }
             .status-badge.disconnected {
-                background: rgba(255, 90, 95, 0.12);
-                color: #FFD4D6;
+                background: rgba(217, 48, 37, 0.08);
+                color: var(--red);
             }
             .hero-flex { display: flex; gap: 1rem; align-items: center; }
             .hero-mode { color: var(--text); font-size: 1.65rem; font-weight: 700; margin-bottom: 0.35rem; }
             .donut { width: 180px; height: 180px; flex-shrink: 0; }
-            .donut-track { fill: none; stroke: rgba(255,255,255,0.08); stroke-width: 12; }
+            .donut-track { fill: none; stroke: #E7E7E7; stroke-width: 12; }
             .donut-ring { fill: none; stroke-width: 12; stroke-linecap: round; }
             .donut-score { fill: var(--text); font-size: 22px; font-weight: 700; }
             .donut-caption { fill: var(--muted); font-size: 11px; }
             .signal-action { font-size: 1.45rem; font-weight: 700; margin-bottom: 0.4rem; }
             .signal-action.buy { color: var(--green); }
-            .signal-action.protect { color: #FF6A3D; }
-            .stButton > button { min-height: 48px; background: #13232B; color: var(--text); border: 1px solid rgba(0, 245, 255, 0.35); border-radius: 14px; font-weight: 700; }
-            [data-testid="stSidebar"] { background: #10141A; }
+            .signal-action.protect { color: var(--red); }
+            .stButton > button {
+                min-height: 48px;
+                background: #FFFFFF;
+                color: var(--text);
+                border: 1px solid #111111;
+                border-radius: 14px;
+                font-weight: 700;
+                transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease;
+            }
+            .stButton > button:hover {
+                transform: translateY(-1px);
+                background: #111111;
+                color: #FFFFFF;
+            }
+            [data-testid="stSidebar"] { background: var(--soft); }
+            .stMetric {
+                background: #FFFFFF;
+                border: 1px solid var(--border);
+                border-radius: 18px;
+                padding: 0.5rem 0.75rem;
+            }
+            label, .stMarkdown, .stCaption, .stTextInput, .stNumberInput, .stSelectbox, .stSlider, .stRadio {
+                color: var(--text) !important;
+            }
             @media (max-width: 768px) { .hero-flex { flex-direction: column; align-items: flex-start; } .hero-title { font-size: 2rem; } .intent-grid { grid-template-columns: 1fr; } }
         </style>
         """,

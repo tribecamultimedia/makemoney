@@ -9,14 +9,14 @@ import streamlit as st
 try:
     from .data import DataConfig, DataPipeline, get_economic_calendar
     from .execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker
-    from .ledger import read_equity_curve, read_ledger
+    from .ledger import LedgerEntry, append_equity_snapshot, append_ledger, read_equity_curve, read_ledger
     from .notifications import DiscordNotifier
     from .signal_worker import latest_state_payload
     from .trade_manager import TradeManager
 except ImportError:
     from learning_machine.data import DataConfig, DataPipeline, get_economic_calendar
     from learning_machine.execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker
-    from learning_machine.ledger import read_equity_curve, read_ledger
+    from learning_machine.ledger import LedgerEntry, append_equity_snapshot, append_ledger, read_equity_curve, read_ledger
     from learning_machine.notifications import DiscordNotifier
     from learning_machine.signal_worker import latest_state_payload
     from learning_machine.trade_manager import TradeManager
@@ -150,6 +150,7 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
+    _render_machine_feed()
     _render_portfolio_panel()
     _render_ledger_panels()
 
@@ -248,6 +249,39 @@ def _render_portfolio_panel() -> None:
             st.dataframe(pd.DataFrame(position_rows), use_container_width=True)
 
 
+def _render_machine_feed() -> None:
+    st.markdown("### Machine Feed")
+    left, middle, right = st.columns([1.0, 1.0, 1.2])
+    _glass_card(
+        left,
+        "Next Signal Run",
+        _format_run_body("Macro pulse refresh", _next_top_of_hour()),
+        "Triggers Discord only when the market regime changes.",
+    )
+    _glass_card(
+        middle,
+        "Next Execution Run",
+        _format_run_body("Paper/live execution", _next_execution_run()),
+        "Checks every 15 minutes on weekdays during market hours.",
+    )
+    _glass_card(
+        right,
+        "Trade Trigger Logic",
+        _trigger_logic_body(),
+        "BUY when the pulse is supportive. PROTECT when macro regime or stress says cash-first.",
+    )
+
+    ledger = read_ledger()
+    if ledger.empty:
+        st.info("No machine events yet. After the first sync or worker run, this feed will show timestamps, actions, status, and reasons.")
+        return
+
+    feed = ledger.copy().sort_values("timestamp", ascending=False).head(20)
+    feed["timestamp"] = pd.to_datetime(feed["timestamp"]).dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+    columns = ["timestamp", "symbol", "mode", "action", "status", "reason", "notional"]
+    st.dataframe(feed[columns], use_container_width=True)
+
+
 def _render_ledger_panels() -> None:
     st.markdown("### Algo Test Track Record")
     equity = read_equity_curve()
@@ -255,7 +289,7 @@ def _render_ledger_panels() -> None:
     left, right = st.columns([1.2, 1.0])
     with left:
         if equity.empty:
-            st.info("No equity history yet. Run the execution worker or sync trades to start tracking.")
+            st.info("No equity history yet. Sync trades from this app to create a local track record. GitHub worker history does not automatically appear inside Streamlit Cloud because it runs in a separate environment.")
         else:
             st.plotly_chart(_build_equity_curve_chart(equity), use_container_width=True, config={"displayModeBar": False})
     with right:
@@ -264,6 +298,43 @@ def _render_ledger_panels() -> None:
         else:
             recent = ledger.sort_values("timestamp", ascending=False).head(10)
             st.dataframe(recent, use_container_width=True)
+
+
+def _next_top_of_hour(now: datetime | None = None) -> datetime:
+    now = now or datetime.now(timezone.utc)
+    next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    return next_hour
+
+
+def _next_execution_run(now: datetime | None = None) -> datetime:
+    now = now or datetime.now(timezone.utc)
+    candidate = now.replace(second=0, microsecond=0)
+    next_minute = ((candidate.minute // 15) + 1) * 15
+    if next_minute >= 60:
+        candidate = candidate.replace(minute=0) + timedelta(hours=1)
+    else:
+        candidate = candidate.replace(minute=next_minute)
+
+    while candidate.weekday() > 4 or not (14 <= candidate.hour <= 21):
+        candidate += timedelta(minutes=15)
+        candidate = candidate.replace(second=0, microsecond=0)
+    return candidate
+
+
+def _format_run_body(label: str, run_at: datetime) -> str:
+    delta = run_at - datetime.now(timezone.utc)
+    minutes = max(int(delta.total_seconds() // 60), 0)
+    return f"{label}<br><span class='run-time'>{run_at.strftime('%Y-%m-%d %H:%M UTC')}</span><br><span class='run-countdown'>in about {minutes} minutes</span>"
+
+
+def _trigger_logic_body() -> str:
+    return (
+        "1. Pull FRED + market stress.<br>"
+        "2. If 1-hour drawdown <= -3%, force PROTECT.<br>"
+        "3. If yield curve is inverted, stay defensive.<br>"
+        "4. Otherwise hold or add target core positions.<br>"
+        "5. If daily loss breaches the cap, block new BUY orders."
+    )
 
 
 def _render_broker_status_badge() -> str:
@@ -476,9 +547,18 @@ def _render_copy_trade_controls(signal_map: dict[str, ExecutionSignal], notifier
         submit_sync = st.form_submit_button("SYNC WITH GURU", use_container_width=True)
 
     if submit_sync:
+        submission_time = pd.Timestamp.utcnow()
+        mode_label = credentials.paper and "PAPER" or "LIVE"
         if not confirm_sync:
             st.warning("You must confirm order submission before syncing.")
             return
+        if snapshot is not None:
+            append_equity_snapshot(
+                timestamp=submission_time.isoformat(),
+                equity=float(snapshot["equity"]),
+                cash=float(snapshot["cash"]),
+                mode=mode_label,
+            )
         for signal in signal_map.values():
             live_signal = signal
             if protect_override:
@@ -492,7 +572,7 @@ def _render_copy_trade_controls(signal_map: dict[str, ExecutionSignal], notifier
             elif daily_loss_hit and signal.action == "BUY":
                 _append_audit_log(
                     {
-                        "timestamp": pd.Timestamp.utcnow().isoformat(),
+                        "timestamp": submission_time.isoformat(),
                         "symbol": signal.symbol,
                         "mode": "BLOCKED",
                         "action": "BUY",
@@ -500,18 +580,44 @@ def _render_copy_trade_controls(signal_map: dict[str, ExecutionSignal], notifier
                         "status": "blocked",
                     }
                 )
+                append_ledger(
+                    LedgerEntry(
+                        timestamp=submission_time.isoformat(),
+                        symbol=signal.symbol,
+                        mode=mode_label,
+                        action="BUY",
+                        status="blocked",
+                        reason="Daily loss limit reached.",
+                        notional=signal.target_notional,
+                        equity=None if snapshot is None else float(snapshot["equity"]),
+                        cash=None if snapshot is None else float(snapshot["cash"]),
+                    )
+                )
                 st.warning(f"{signal.symbol}: blocked by daily loss limit.")
                 continue
             elif cooldown_on and signal.action == "BUY":
                 _append_audit_log(
                     {
-                        "timestamp": pd.Timestamp.utcnow().isoformat(),
+                        "timestamp": submission_time.isoformat(),
                         "symbol": signal.symbol,
                         "mode": "BLOCKED",
                         "action": "BUY",
                         "reason": cooldown_message,
                         "status": "blocked",
                     }
+                )
+                append_ledger(
+                    LedgerEntry(
+                        timestamp=submission_time.isoformat(),
+                        symbol=signal.symbol,
+                        mode=mode_label,
+                        action="BUY",
+                        status="blocked",
+                        reason=cooldown_message,
+                        notional=signal.target_notional,
+                        equity=None if snapshot is None else float(snapshot["equity"]),
+                        cash=None if snapshot is None else float(snapshot["cash"]),
+                    )
                 )
                 st.warning(f"{signal.symbol}: {cooldown_message}")
                 continue
@@ -521,14 +627,34 @@ def _render_copy_trade_controls(signal_map: dict[str, ExecutionSignal], notifier
                     notifier.send_signal(asset_name=live_signal.symbol, action=live_signal.action, reason=live_signal.reason, price=0.0, timestamp=pd.Timestamp.utcnow())
                     _append_audit_log(
                         {
-                            "timestamp": pd.Timestamp.utcnow().isoformat(),
+                            "timestamp": submission_time.isoformat(),
                             "symbol": live_signal.symbol,
-                            "mode": credentials.paper and "PAPER" or "LIVE",
+                            "mode": mode_label,
                             "action": live_signal.action,
                             "reason": live_signal.reason,
                             "status": "submitted",
                             "notional": result.get("notional", live_signal.target_notional),
                         }
+                    )
+                    latest_snapshot = manager.portfolio_snapshot()
+                    append_ledger(
+                        LedgerEntry(
+                            timestamp=submission_time.isoformat(),
+                            symbol=live_signal.symbol,
+                            mode=mode_label,
+                            action=live_signal.action,
+                            status="submitted",
+                            reason=live_signal.reason,
+                            notional=float(result.get("notional", live_signal.target_notional)),
+                            equity=float(latest_snapshot["equity"]),
+                            cash=float(latest_snapshot["cash"]),
+                        )
+                    )
+                    append_equity_snapshot(
+                        timestamp=pd.Timestamp.utcnow().isoformat(),
+                        equity=float(latest_snapshot["equity"]),
+                        cash=float(latest_snapshot["cash"]),
+                        mode=mode_label,
                     )
                     st.success(f"{live_signal.symbol}: sync submitted.")
                     if live_signal.action == "PROTECT":
@@ -536,25 +662,51 @@ def _render_copy_trade_controls(signal_map: dict[str, ExecutionSignal], notifier
                 else:
                     _append_audit_log(
                         {
-                            "timestamp": pd.Timestamp.utcnow().isoformat(),
+                            "timestamp": submission_time.isoformat(),
                             "symbol": live_signal.symbol,
-                            "mode": credentials.paper and "PAPER" or "LIVE",
+                            "mode": mode_label,
                             "action": live_signal.action,
                             "reason": result["reason"],
                             "status": "rejected",
                         }
                     )
+                    append_ledger(
+                        LedgerEntry(
+                            timestamp=submission_time.isoformat(),
+                            symbol=live_signal.symbol,
+                            mode=mode_label,
+                            action=live_signal.action,
+                            status="rejected",
+                            reason=result["reason"],
+                            notional=live_signal.target_notional,
+                            equity=None if snapshot is None else float(snapshot["equity"]),
+                            cash=None if snapshot is None else float(snapshot["cash"]),
+                        )
+                    )
                     st.warning(f"{live_signal.symbol}: {result['reason']}")
             except Exception as exc:
                 _append_audit_log(
                     {
-                        "timestamp": pd.Timestamp.utcnow().isoformat(),
+                        "timestamp": submission_time.isoformat(),
                         "symbol": live_signal.symbol,
-                        "mode": credentials.paper and "PAPER" or "LIVE",
+                        "mode": mode_label,
                         "action": live_signal.action,
                         "reason": str(exc),
                         "status": "error",
                     }
+                )
+                append_ledger(
+                    LedgerEntry(
+                        timestamp=submission_time.isoformat(),
+                        symbol=live_signal.symbol,
+                        mode=mode_label,
+                        action=live_signal.action,
+                        status="error",
+                        reason=str(exc),
+                        notional=live_signal.target_notional,
+                        equity=None if snapshot is None else float(snapshot["equity"]),
+                        cash=None if snapshot is None else float(snapshot["cash"]),
+                    )
                 )
                 st.error(f"{live_signal.symbol}: {exc}")
         st.markdown(f"[Open live app]({app_url})")

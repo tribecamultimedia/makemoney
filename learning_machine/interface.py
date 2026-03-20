@@ -8,17 +8,19 @@ import streamlit as st
 
 try:
     from .data import DataConfig, DataPipeline, get_economic_calendar
-    from .execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker
+    from .execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker, SovereignAgent
     from .ledger import LedgerEntry, append_equity_snapshot, append_ledger, read_equity_curve, read_ledger
     from .notifications import DiscordNotifier
     from .signal_worker import latest_state_payload
+    from .storage import shared_storage_enabled
     from .trade_manager import TradeManager
 except ImportError:
     from learning_machine.data import DataConfig, DataPipeline, get_economic_calendar
-    from learning_machine.execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker
+    from learning_machine.execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker, SovereignAgent
     from learning_machine.ledger import LedgerEntry, append_equity_snapshot, append_ledger, read_equity_curve, read_ledger
     from learning_machine.notifications import DiscordNotifier
     from learning_machine.signal_worker import latest_state_payload
+    from learning_machine.storage import shared_storage_enabled
     from learning_machine.trade_manager import TradeManager
 
 
@@ -128,14 +130,23 @@ def main() -> None:
     )
     st.session_state.hourly_drawdown = float(stress_snapshot["hourly_drawdown"])
     pulse = _build_pulse(regime_snapshot, stress_snapshot)
+    sovereign_score = pipeline.generate_sovereign_score(selected_tickers[0])
 
     pulse_col, sentiment_col = st.columns([1, 1])
-    pulse_col.markdown(_render_donut_card(pulse), unsafe_allow_html=True)
+    pulse_col.markdown(_render_sovereign_score_card(sovereign_score), unsafe_allow_html=True)
     sentiment_score = _mock_retail_sentiment(selected_bundle)
     sentiment_col.plotly_chart(_build_sentiment_gauge(sentiment_score), use_container_width=True, config={"displayModeBar": False})
-
-    if pulse["mode"] == "capital_preservation" and sentiment_score >= 70:
-        st.warning("⚠️ Market Hype is high, but the Guru is protecting capital. Don't follow the crowd.")
+    hype_copy = _hype_meter_copy(sentiment_score, pulse)
+    st.markdown(
+        f"""
+        <div class="glass-card">
+            <div class="card-label">Hype Meter</div>
+            <div class="card-copy">{hype_copy}</div>
+            <div class="card-meta">Retail Noise: {sentiment_score}/100 | Macro Pulse: {pulse['label']}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     latest_signal = latest_state_payload()
     if latest_signal is not None:
@@ -150,9 +161,20 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
+    st.markdown(
+        f"""
+        <div class="glass-card">
+            <div class="card-label">Institutional Narrator</div>
+            <div class="card-copy">{_guru_briefing(regime_snapshot, pulse, selected_bundle)}</div>
+            <div class="card-meta">Yield Curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f} | Inflation YoY: {float(regime_snapshot['inflation_yoy']):.2f}%</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     _render_machine_feed()
     _render_portfolio_panel()
     _render_ledger_panels()
+    _render_shadow_portfolio_ticker(pipeline, selected_tickers)
 
     calendar = get_economic_calendar()
     event_cols = st.columns([1, 1, 1])
@@ -251,7 +273,7 @@ def _render_portfolio_panel() -> None:
 
 def _render_machine_feed() -> None:
     st.markdown("### Machine Feed")
-    left, middle, right = st.columns([1.0, 1.0, 1.2])
+    left, middle, right, storage_col = st.columns([1.0, 1.0, 1.2, 0.9])
     _glass_card(
         left,
         "Next Signal Run",
@@ -269,6 +291,12 @@ def _render_machine_feed() -> None:
         "Trade Trigger Logic",
         _trigger_logic_body(),
         "BUY when the pulse is supportive. PROTECT when macro regime or stress says cash-first.",
+    )
+    _glass_card(
+        storage_col,
+        "Storage Mode",
+        "Shared cloud ledger" if shared_storage_enabled() else "Local app ledger",
+        "Add Supabase secrets to unify Streamlit and GitHub worker history." if not shared_storage_enabled() else "App and workers now read the same ledger, equity curve, and latest signal.",
     )
 
     ledger = read_ledger()
@@ -394,30 +422,30 @@ def _build_pulse(regime_snapshot: dict[str, float | str], stress_snapshot: dict[
 
 def _pulse_message(mode: str) -> str:
     if mode == "capital_preservation":
-        return "Cash is king while macro stress remains elevated."
+        return "This market is acting like a toddler with leverage. Cash first."
     if mode == "tactical_accumulation":
-        return "Scale into risk while the market forms a stronger base."
-    return "Macro conditions support full core positioning."
+        return "There is a trade here, not a romance. Scale in and keep your dignity."
+    return "The tape is finally acting rational enough to fund optimism."
 
 
-def _render_donut_card(pulse: dict[str, object]) -> str:
-    score = int(pulse["score"])
+def _render_sovereign_score_card(score_payload: dict[str, float | str]) -> str:
+    score = int(float(score_payload["score"]))
     circumference = 2 * 3.1416 * 52
     dash = circumference * (score / 100)
-    color = "#19C37D" if pulse["mode"] == "risk_on_expansion" else "#F4B942" if pulse["mode"] == "tactical_accumulation" else "#FF5A5F"
+    color = "#19C37D" if score >= 70 else "#F4B942" if score >= 45 else "#FF5A5F"
     return f"""
     <div class="hero-card">
-        <div class="card-label">The Pulse</div>
+        <div class="card-label">Sovereign Pulse | {score_payload['ticker']}</div>
         <div class="hero-flex">
             <svg viewBox="0 0 140 140" class="donut">
                 <circle cx="70" cy="70" r="52" class="donut-track"></circle>
                 <circle cx="70" cy="70" r="52" class="donut-ring" stroke="{color}" stroke-dasharray="{dash} {circumference - dash}" transform="rotate(-90 70 70)"></circle>
                 <text x="70" y="66" text-anchor="middle" class="donut-score">{score}%</text>
-                <text x="70" y="84" text-anchor="middle" class="donut-caption">Pulse</text>
+                <text x="70" y="84" text-anchor="middle" class="donut-caption">Score</text>
             </svg>
             <div>
-                <div class="hero-mode">{pulse['label']}</div>
-                <div class="hero-message">{pulse['message']}</div>
+                <div class="hero-mode">{score_payload['label']}</div>
+                <div class="hero-message">{score_payload['copy']}</div>
             </div>
         </div>
     </div>
@@ -453,6 +481,75 @@ def _mock_retail_sentiment(bundle: str) -> int:
         "Defensive": 34,
         "Speculative": 84,
     }.get(bundle, 50)
+
+
+def _hype_meter_copy(sentiment_score: int, pulse: dict[str, object]) -> str:
+    if sentiment_score >= 75 and pulse["mode"] == "capital_preservation":
+        return "The internet is screaming 'To the Moon.' The Guru is looking at the actual interest rates. One of them is lying. Hint: It's the one with the rocket emoji."
+    if sentiment_score >= 75:
+        return "The crowd finally found a pulse. Fine. Just remember volume is not wisdom."
+    if sentiment_score <= 35 and pulse["mode"] == "risk_on_expansion":
+        return "Retail is sulking while the macro tape improves. That usually means the market is already leaving without them."
+    return "Noise is moderate. Which is perfect, because serious money prefers rooms without chanting."
+
+
+def _guru_briefing(regime_snapshot: dict[str, float | str], pulse: dict[str, object], bundle: str) -> str:
+    curve = float(regime_snapshot["yield_curve_10y_2y"])
+    if pulse["mode"] == "risk_on_expansion":
+        return (
+            f"Good morning. The Yield Curve is at {curve:.2f}, which is the financial equivalent of a clear sky. "
+            f"I've expanded your {bundle} core. If you were looking for a sign from the universe, this is it, only with better math."
+        )
+    if pulse["mode"] == "tactical_accumulation":
+        return (
+            f"Good morning. The Yield Curve is at {curve:.2f}. The weather is decent, not perfect. "
+            "The Guru is accumulating with discipline instead of pretending every green candle is destiny."
+        )
+    return (
+        f"Good morning. The Yield Curve is at {curve:.2f}, and the market is being dramatic again. "
+        "I've moved the posture toward defense because preserving capital beats giving speeches about conviction."
+    )
+
+
+def _render_shadow_portfolio_ticker(pipeline: DataPipeline, tickers: tuple[str, ...]) -> None:
+    tracker = _build_shadow_tracker(pipeline, tickers)
+    st.markdown(
+        f"""
+        <div class="shadow-ticker">
+            <span class="shadow-label">Unrealized Sophistication:</span>
+            <span class="shadow-value">{tracker['display_gain']}</span>
+            <span class="shadow-copy">{tracker['copy']}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _build_shadow_tracker(pipeline: DataPipeline, tickers: tuple[str, ...]) -> dict[str, str]:
+    datasets = pipeline.build_dataset()
+    initial_capital = 1_000_000.0
+    growth_factor = 0.0
+    usable = 0
+    for ticker in tickers:
+        frame = datasets.get(ticker)
+        if frame is None or frame.empty:
+            continue
+        close = frame["close"].astype(float)
+        growth_factor += float(close.iloc[-1] / close.iloc[0])
+        usable += 1
+    if usable == 0:
+        unrealized = 0.0
+    else:
+        unrealized = initial_capital * ((growth_factor / usable) - 1.0)
+    display_gain = f"{unrealized:+,.0f}"
+    copy = (
+        f"While you were busy 'thinking about it,' this virtual million grew by ${abs(unrealized):,.0f}. "
+        "I'm not saying you're slow, but the calendar is moving. Connect your broker before the opportunity becomes a memory."
+        if unrealized >= 0
+        else f"While you were wisely hesitating, the virtual million bled ${abs(unrealized):,.0f}. "
+        "The point is not speed. The point is having a process before the next regime change shows up."
+    )
+    return {"display_gain": display_gain, "copy": copy}
 
 
 def _calendar_body(events: list[dict[str, object]]) -> str:
@@ -522,7 +619,8 @@ def _render_copy_trade_controls(signal_map: dict[str, ExecutionSignal], notifier
 
     credentials = st.session_state.broker_credentials
     manager = TradeManager(credentials)
-    protect_override = bool(st.session_state.global_circuit_breaker.should_protect(float(st.session_state.hourly_drawdown)))
+    sovereign_agent = SovereignAgent()
+    protect_override = bool(sovereign_agent.should_kill_trade(float(st.session_state.hourly_drawdown)))
     cooldown_on, cooldown_message = _cooldown_active()
     if cooldown_on:
         st.warning(cooldown_message)
@@ -562,13 +660,8 @@ def _render_copy_trade_controls(signal_map: dict[str, ExecutionSignal], notifier
         for signal in signal_map.values():
             live_signal = signal
             if protect_override:
-                live_signal = ExecutionSignal(
-                    symbol=signal.symbol,
-                    action="PROTECT",
-                    confidence=1.0,
-                    reason="Global circuit breaker forced a defensive posture after a 3% hourly drop.",
-                    target_notional=signal.target_notional,
-                )
+                live_signal = sovereign_agent.override_signal(signal, float(st.session_state.hourly_drawdown))
+                st.error(SovereignAgent.shield_copy())
             elif daily_loss_hit and signal.action == "BUY":
                 _append_audit_log(
                     {

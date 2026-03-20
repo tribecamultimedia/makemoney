@@ -4,7 +4,7 @@ import json
 import os
 from datetime import UTC, datetime
 
-from .execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker
+from .execution import BrokerCredentials, ExecutionSignal, SovereignAgent
 from .ledger import LedgerEntry, append_equity_snapshot, append_ledger
 from .notifications import DiscordNotifier
 from .signal_worker import build_signal_state
@@ -78,19 +78,13 @@ def main() -> None:
         print(json.dumps({"executed": False, "reason": "daily_loss_limit"}))
         return
 
-    breaker = GlobalCircuitBreaker()
-    protect_override = breaker.should_protect(signal_state.hourly_drawdown)
+    sovereign_agent = SovereignAgent()
+    protect_override = sovereign_agent.should_kill_trade(signal_state.hourly_drawdown)
     results: list[dict[str, object]] = []
     for signal in build_signals(signal_state.mode, signal_state.reason, credentials.max_position_notional):
         live_signal = signal
         if protect_override:
-            live_signal = ExecutionSignal(
-                symbol=signal.symbol,
-                action="PROTECT",
-                confidence=1.0,
-                reason="Global circuit breaker forced a defensive posture after a 3% hourly drop.",
-                target_notional=signal.target_notional,
-            )
+            live_signal = sovereign_agent.override_signal(signal, signal_state.hourly_drawdown)
         try:
             result = manager.sync_with_signal(live_signal)
             status = "submitted" if result.get("submitted") else "rejected"

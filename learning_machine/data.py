@@ -150,6 +150,53 @@ class DataPipeline:
             "narrative": self.narrate_regime(yield_curve=yield_curve, inflation=inflation),
         }
 
+    def generate_sovereign_score(self, ticker: str) -> dict[str, float | str]:
+        datasets = self.build_dataset()
+        if ticker not in datasets:
+            raise KeyError(f"{ticker} is not available in the loaded dataset.")
+
+        frame = datasets[ticker].copy()
+        close = frame["close"].astype(float)
+        momentum_20d = float(close.pct_change(20).iloc[-1] * 100.0)
+        drawdown_20d = float(((close / close.rolling(20).max()) - 1.0).iloc[-1] * 100.0)
+        volatility_20d = float(close.pct_change().rolling(20).std().iloc[-1] * (252**0.5) * 100.0)
+        latest = frame.iloc[-1]
+        yield_curve = float(latest.get("yield_curve_10y_2y", 0.0))
+        inflation = float(latest.get("inflation_yoy", 0.0))
+
+        score = 62.0
+        score += max(min(momentum_20d, 15.0), -15.0) * 1.4
+        score += max(min(drawdown_20d, 0.0), -12.0) * 1.8
+        score -= max(volatility_20d - 18.0, 0.0) * 0.8
+        score += 8.0 if yield_curve > 0 else -18.0
+        score += 4.0 if inflation < 3.5 else -10.0
+        score = max(5.0, min(95.0, score))
+
+        if score >= 90:
+            label = "Conviction Zone"
+            copy = "The math finally agrees with the hype. Proceed, but don't get sentimental."
+        elif score >= 70:
+            label = "Constructive"
+            copy = "The tape is acting like an adult. The Guru is willing to participate without writing poetry about it."
+        elif score >= 45:
+            label = "Unclear"
+            copy = "There is a pulse here, but not a clean one. Respect the setup, distrust the drama."
+        else:
+            label = "Avoid"
+            copy = "This stock is a tragedy in three acts. The Guru is staying in the lobby."
+
+        return {
+            "ticker": ticker,
+            "score": round(score, 1),
+            "label": label,
+            "copy": copy,
+            "momentum_20d": momentum_20d,
+            "drawdown_20d": drawdown_20d,
+            "volatility_20d": volatility_20d,
+            "yield_curve_10y_2y": yield_curve,
+            "inflation_yoy": inflation,
+        }
+
     @staticmethod
     def narrate_regime(*, yield_curve: float, inflation: float) -> str:
         if yield_curve < 0:

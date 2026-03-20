@@ -32,3 +32,29 @@ class GlobalCircuitBreaker:
 
     def should_protect(self, hourly_return: float) -> bool:
         return hourly_return <= self.hourly_drawdown_limit
+
+
+@dataclass(slots=True)
+class SovereignAgent:
+    shield_drawdown_limit: float = -0.03
+
+    def should_kill_trade(self, hourly_return: float) -> bool:
+        return hourly_return <= self.shield_drawdown_limit
+
+    def override_signal(self, signal: ExecutionSignal, hourly_return: float) -> ExecutionSignal:
+        if not self.should_kill_trade(hourly_return):
+            return signal
+        return ExecutionSignal(
+            symbol=signal.symbol,
+            action="PROTECT",
+            confidence=1.0,
+            reason=self.shield_copy(),
+            target_notional=signal.target_notional,
+        )
+
+    @staticmethod
+    def shield_copy() -> str:
+        return (
+            "I've moved you to cash. I don't care about your 'long-term vision'—I care about your balance. "
+            "We'll talk when the market stops throwing a tantrum."
+        )

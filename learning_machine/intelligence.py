@@ -7,6 +7,26 @@ import pandas as pd
 import yfinance as yf
 
 
+def _extract_close_series(data: pd.DataFrame, symbol: str) -> pd.Series:
+    if not isinstance(data.columns, pd.MultiIndex):
+        close_column = "Close" if "Close" in data.columns else "close"
+        return pd.Series(data[close_column]).dropna().astype(float)
+
+    level0 = data.columns.get_level_values(0)
+    level1 = data.columns.get_level_values(1)
+
+    if symbol in level0:
+        frame = data[symbol]
+        close_column = "Close" if "Close" in frame.columns else "close"
+        return pd.Series(frame[close_column]).dropna().astype(float)
+
+    if symbol in level1:
+        close_key = ("Close", symbol) if ("Close", symbol) in data.columns else ("close", symbol)
+        return pd.Series(data[close_key]).dropna().astype(float)
+
+    raise KeyError(symbol)
+
+
 @dataclass(slots=True)
 class MarketInternalsSnapshot:
     vix_level: float
@@ -69,9 +89,7 @@ class MarketInternalsFactory:
         )
         closes: dict[str, pd.Series] = {}
         for symbol in symbols:
-            frame = data[symbol] if isinstance(data.columns, pd.MultiIndex) else data
-            close = frame["Close"] if "Close" in frame else frame["close"]
-            closes[symbol] = pd.Series(close).dropna().astype(float)
+            closes[symbol] = _extract_close_series(data, symbol)
 
         vix_level = float(closes["^VIX"].iloc[-1])
         tlt_return_20d = float(closes["TLT"].pct_change(20).iloc[-1] * 100.0)
@@ -158,9 +176,7 @@ class CreditLiquidityFactor:
         )
         closes: dict[str, pd.Series] = {}
         for symbol in symbols:
-            frame = data[symbol] if isinstance(data.columns, pd.MultiIndex) else data
-            close = frame["Close"] if "Close" in frame else frame["close"]
-            closes[symbol] = pd.Series(close).dropna().astype(float)
+            closes[symbol] = _extract_close_series(data, symbol)
 
         hyg_return_20d = float(closes["HYG"].pct_change(20).iloc[-1] * 100.0)
         lqd_return_20d = float(closes["LQD"].pct_change(20).iloc[-1] * 100.0)

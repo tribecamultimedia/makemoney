@@ -50,6 +50,39 @@ def _render_quick_start() -> None:
     )
 
 
+def _render_intent_hub() -> str:
+    st.markdown("### What do you want to do today?")
+    st.markdown(
+        """
+        <div class="intent-grid">
+            <div class="intent-card">
+                <div class="card-label">Trade</div>
+                <div class="card-copy">Find the best short-term setup, see the suggested trade plan, and decide whether to sync.</div>
+                <div class="card-meta">Best for: swing trades and tactical entries</div>
+            </div>
+            <div class="intent-card">
+                <div class="card-label">Invest</div>
+                <div class="card-copy">See whether the machine thinks this is a hold, add, or protect moment for core positions.</div>
+                <div class="card-meta">Best for: building and protecting a longer-term core</div>
+            </div>
+            <div class="intent-card">
+                <div class="card-label">Read the Market</div>
+                <div class="card-copy">Understand what the AI sees in macro, liquidity, sentiment, and event risk without needing to trade today.</div>
+                <div class="card-meta">Best for: market context and risk awareness</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    selected = st.segmented_control(
+        "Choose a path",
+        options=["Trade", "Invest", "Read the Market"],
+        default="Trade",
+        selection_mode="single",
+    )
+    return str(selected or "Trade")
+
+
 def main() -> None:
     st.set_page_config(page_title=APP_NAME, page_icon="◉", layout="wide", initial_sidebar_state="expanded")
     _inject_styles()
@@ -69,6 +102,7 @@ def main() -> None:
     )
     st.markdown(_render_broker_status_badge(), unsafe_allow_html=True)
     _render_quick_start()
+    user_path = _render_intent_hub()
 
     selected_bundle = st.segmented_control(
         "Choose what to follow",
@@ -192,6 +226,36 @@ def main() -> None:
         """,
         unsafe_allow_html=True,
     )
+
+    if user_path == "Trade":
+        _render_trade_view(
+            pipeline=pipeline,
+            pulse=pulse,
+            sovereign_score=sovereign_score,
+            sentiment_score=sentiment_score,
+            regime_snapshot=regime_snapshot,
+            selected_bundle=selected_bundle,
+            app_latest_signal=latest_signal,
+        )
+    elif user_path == "Invest":
+        _render_invest_view(
+            pulse=pulse,
+            sovereign_score=sovereign_score,
+            regime_snapshot=regime_snapshot,
+            selected_bundle=selected_bundle,
+            latest_signal=latest_signal,
+        )
+    else:
+        _render_market_view(
+            pulse=pulse,
+            sentiment_score=sentiment_score,
+            regime_snapshot=regime_snapshot,
+            internals=internals,
+            credit=credit,
+            event_risk=event_risk,
+            latest_signal=latest_signal,
+        )
+
     _render_machine_feed()
     _render_portfolio_panel()
     _render_ledger_panels()
@@ -261,6 +325,87 @@ def main() -> None:
                 message="Global circuit breaker engaged after a 3% hourly market drop.",
                 reason="Sovereign AI is toggling linked accounts to PROTECT until stress normalizes.",
             )
+
+
+def _render_trade_view(
+    *,
+    pipeline: DataPipeline,
+    pulse: dict[str, object],
+    sovereign_score: dict[str, float | str],
+    sentiment_score: int,
+    regime_snapshot: dict[str, float | str],
+    selected_bundle: str,
+    app_latest_signal: dict[str, object] | None,
+) -> None:
+    st.markdown("### Trading Setup")
+    left, right = st.columns([1, 1])
+    left.markdown(_render_sovereign_score_card(sovereign_score), unsafe_allow_html=True)
+    right.plotly_chart(_build_sentiment_gauge(sentiment_score), use_container_width=True, config={"displayModeBar": False})
+    _glass_card(
+        st,
+        "Best short-term read",
+        _trade_blurb(pulse, sovereign_score),
+        f"Bundle: {selected_bundle} | Current pulse: {pulse['label']}",
+    )
+    if app_latest_signal is not None:
+        _glass_card(
+            st,
+            "Machine's latest move",
+            str(app_latest_signal["message"]),
+            str(app_latest_signal["label"]),
+        )
+    _glass_card(
+        st,
+        "Entry mindset",
+        _entry_mindset(regime_snapshot, sovereign_score),
+        "This is the short version of what the machine thinks about pressing risk right now.",
+    )
+
+
+def _render_invest_view(
+    *,
+    pulse: dict[str, object],
+    sovereign_score: dict[str, float | str],
+    regime_snapshot: dict[str, float | str],
+    selected_bundle: str,
+    latest_signal: dict[str, object] | None,
+) -> None:
+    st.markdown("### Investment View")
+    summary_cols = st.columns([1, 1, 1])
+    _glass_card(summary_cols[0], "Core rating", _invest_rating(pulse, sovereign_score), f"Bundle: {selected_bundle}")
+    _glass_card(summary_cols[1], "Macro backdrop", str(regime_snapshot["narrative"]), f"Yield curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f}")
+    _glass_card(
+        summary_cols[2],
+        "Machine stance",
+        "Add carefully" if pulse["mode"] == "tactical_accumulation" else "Hold and protect" if pulse["mode"] == "capital_preservation" else "Stay invested",
+        str(latest_signal["message"]) if latest_signal is not None else "No saved signal yet.",
+    )
+
+
+def _render_market_view(
+    *,
+    pulse: dict[str, object],
+    sentiment_score: int,
+    regime_snapshot: dict[str, float | str],
+    internals,
+    credit,
+    event_risk,
+    latest_signal: dict[str, object] | None,
+) -> None:
+    st.markdown("### Market Read")
+    market_cols = st.columns([1, 1, 1])
+    _glass_card(market_cols[0], "Market pulse", str(pulse["message"]), str(pulse["label"]))
+    _glass_card(market_cols[1], "Crowd mood", _hype_meter_copy(sentiment_score, pulse), f"Retail sentiment: {sentiment_score}/100")
+    _glass_card(
+        market_cols[2],
+        "Current regime",
+        str(regime_snapshot["narrative"]),
+        str(latest_signal["message"]) if latest_signal is not None else "No saved signal yet.",
+    )
+    lower_cols = st.columns([1, 1, 1])
+    _glass_card(lower_cols[0], "Internals", internals.summary, f"VIX {internals.vix_level:.1f} | Cross-asset {internals.cross_asset_confirmation:+.2f}")
+    _glass_card(lower_cols[1], "Credit", credit.summary, f"Liquidity score {credit.liquidity_score:+.2f}")
+    _glass_card(lower_cols[2], "Event risk", event_risk.summary, f"Next event in {event_risk.hours_to_event:.1f} hours")
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -630,6 +775,39 @@ def _build_pulse(regime_snapshot: dict[str, float | str], stress_snapshot: dict[
         "narrative": str(regime_snapshot["narrative"]),
         "message": _pulse_message(mode),
     }
+
+
+def _trade_blurb(pulse: dict[str, object], sovereign_score: dict[str, float | str]) -> str:
+    score = float(sovereign_score["score"])
+    if pulse["mode"] == "capital_preservation":
+        return "The machine sees more downside drama than upside clarity. For now, missing a messy trade is the point."
+    if score >= 70:
+        return "This is one of the cleaner setups on the board. Not perfect, but finally respectable."
+    if score >= 50:
+        return "There is a tradable idea here, but it deserves smaller size and less storytelling."
+    return "The AI sees motion, not conviction. That matters."
+
+
+def _entry_mindset(regime_snapshot: dict[str, float | str], sovereign_score: dict[str, float | str]) -> str:
+    score = float(sovereign_score["score"])
+    if str(regime_snapshot["state"]) == "capital_preservation":
+        return "Wait for better conditions. Protecting cash is a valid position."
+    if score >= 70:
+        return "If you trade, lean in with discipline. The setup has enough support to matter."
+    if score >= 50:
+        return "If you trade, think starter position, not full conviction."
+    return "Stand down unless you enjoy forcing trades that do not want to exist."
+
+
+def _invest_rating(pulse: dict[str, object], sovereign_score: dict[str, float | str]) -> str:
+    score = float(sovereign_score["score"])
+    if pulse["mode"] == "capital_preservation":
+        return "Protect capital"
+    if score >= 75:
+        return "Own with confidence"
+    if score >= 55:
+        return "Build slowly"
+    return "Hold off for now"
 
 
 def _pulse_message(mode: str) -> str:
@@ -1164,6 +1342,19 @@ def _inject_styles() -> None:
                 margin-bottom: 1rem;
                 box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
             }
+            .intent-grid {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 1rem;
+                margin-bottom: 1rem;
+            }
+            .intent-card {
+                background: #151A21;
+                border: 1px solid #273140;
+                border-radius: 22px;
+                padding: 1rem 1.1rem;
+                box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+            }
             .status-badge {
                 display: inline-block;
                 padding: 0.55rem 0.85rem;
@@ -1193,7 +1384,7 @@ def _inject_styles() -> None:
             .signal-action.protect { color: #FF6A3D; }
             .stButton > button { min-height: 48px; background: #13232B; color: var(--text); border: 1px solid rgba(0, 245, 255, 0.35); border-radius: 14px; font-weight: 700; }
             [data-testid="stSidebar"] { background: #10141A; }
-            @media (max-width: 768px) { .hero-flex { flex-direction: column; align-items: flex-start; } .hero-title { font-size: 2rem; } }
+            @media (max-width: 768px) { .hero-flex { flex-direction: column; align-items: flex-start; } .hero-title { font-size: 2rem; } .intent-grid { grid-template-columns: 1fr; } }
         </style>
         """,
         unsafe_allow_html=True,

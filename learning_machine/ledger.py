@@ -1,15 +1,10 @@
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass
-from pathlib import Path
 
 import pandas as pd
 
-
-STATE_DIR = Path(".state")
-LEDGER_PATH = STATE_DIR / "trade_ledger.jsonl"
-EQUITY_PATH = STATE_DIR / "equity_curve.jsonl"
+from .storage import append_equity_record, append_ledger_record, read_equity_frame, read_ledger_frame
 
 
 @dataclass(slots=True)
@@ -26,30 +21,17 @@ class LedgerEntry:
 
 
 def append_ledger(entry: LedgerEntry) -> None:
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    with LEDGER_PATH.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(asdict(entry)) + "\n")
+    append_ledger_record(asdict(entry))
 
 
 def append_equity_snapshot(*, timestamp: str, equity: float, cash: float, mode: str) -> None:
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
     payload = {"timestamp": timestamp, "equity": equity, "cash": cash, "mode": mode}
-    with EQUITY_PATH.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload) + "\n")
+    append_equity_record(payload)
 
 
 def read_ledger() -> pd.DataFrame:
-    if not LEDGER_PATH.exists():
-        return pd.DataFrame(columns=["timestamp", "symbol", "mode", "action", "status", "reason", "notional"])
-    rows = [json.loads(line) for line in LEDGER_PATH.read_text(encoding="utf-8").splitlines() if line.strip()]
-    return pd.DataFrame(rows)
+    return read_ledger_frame()
 
 
 def read_equity_curve() -> pd.DataFrame:
-    if not EQUITY_PATH.exists():
-        return pd.DataFrame(columns=["timestamp", "equity", "cash", "mode"])
-    rows = [json.loads(line) for line in EQUITY_PATH.read_text(encoding="utf-8").splitlines() if line.strip()]
-    frame = pd.DataFrame(rows)
-    if not frame.empty:
-        frame["timestamp"] = pd.to_datetime(frame["timestamp"])
-    return frame.sort_values("timestamp")
+    return read_equity_frame()

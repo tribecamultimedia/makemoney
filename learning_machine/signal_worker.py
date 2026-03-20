@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import asdict, dataclass
-from pathlib import Path
+from datetime import UTC, datetime
 
 from .data import DataConfig, DataPipeline
 from .notifications import DiscordNotifier
+from .storage import load_signal_payload, save_signal_payload
 
 
-STATE_PATH = Path(".state/latest_signal.json")
 DEFAULT_APP_URL = "https://makemoneywithtommy.streamlit.app"
 DEFAULT_TICKERS = ("SPY", "QQQ")
 
@@ -60,15 +60,17 @@ def build_signal_state(fred_api_key: str | None = None) -> SignalState:
 
 
 def load_previous_state() -> SignalState | None:
-    if not STATE_PATH.exists():
+    payload = load_signal_payload()
+    if payload is None:
         return None
-    payload = json.loads(STATE_PATH.read_text())
-    return SignalState(**payload)
+    relevant = {key: payload[key] for key in ("mode", "label", "message", "reason", "hourly_drawdown")}
+    return SignalState(**relevant)
 
 
 def save_state(state: SignalState) -> None:
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    STATE_PATH.write_text(json.dumps(asdict(state), indent=2))
+    payload = asdict(state)
+    payload["updated_at"] = datetime.now(UTC).isoformat()
+    save_signal_payload(payload)
 
 
 def latest_state_payload() -> dict[str, object] | None:

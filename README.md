@@ -75,6 +75,27 @@ COOLDOWN_MINUTES
 AUTO_HARVEST
 ```
 
+## Shared Storage
+
+Local `.state` files still work, but the app and GitHub workers live on different machines. If you want one unified live feed and one shared track record, enable Supabase-backed storage.
+
+1. Create a Supabase project.
+2. Run [supabase/schema.sql](/Users/tonysoprano/Documents/New%20project/supabase/schema.sql) in the SQL editor.
+3. Add these secrets to both Streamlit Cloud and GitHub Actions:
+
+```text
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+```
+
+Once those secrets exist, the app and the workers will share:
+
+- trade ledger
+- equity curve
+- latest saved signal
+
+If those secrets are missing, the code falls back to local `.state` files.
+
 Recommended small-account defaults:
 
 ```text

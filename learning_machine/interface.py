@@ -625,19 +625,19 @@ def _inject_styles() -> None:
         """
         <style>
             :root {
-                --bg: #05060a;
-                --panel: #0f1117;
-                --panel-2: #151823;
-                --gold: #d4af37;
-                --gold-soft: #f5deb3;
-                --text: #f8f1c8;
-                --muted: #bcae79;
-                --border: rgba(212, 175, 55, 0.22);
+                --bg: #0b1020;
+                --panel: #121a2b;
+                --panel-2: #182235;
+                --accent: #4da3ff;
+                --accent-soft: #9ecbff;
+                --text: #f4f7fb;
+                --muted: #b7c3d9;
+                --border: rgba(120, 160, 220, 0.24);
             }
             .stApp {
                 background:
-                    radial-gradient(circle at top right, rgba(212, 175, 55, 0.12), transparent 28%),
-                    linear-gradient(180deg, #06070c 0%, #0b0d14 100%);
+                    radial-gradient(circle at top right, rgba(77, 163, 255, 0.14), transparent 28%),
+                    linear-gradient(180deg, #0a0f1d 0%, #111827 100%);
                 color: var(--text);
             }
             .block-container {
@@ -646,7 +646,7 @@ def _inject_styles() -> None:
                 padding-bottom: 4rem;
             }
             .hero-eyebrow {
-                color: var(--gold);
+                color: var(--accent);
                 font-size: 0.85rem;
                 letter-spacing: 0.24rem;
                 text-transform: uppercase;
@@ -666,7 +666,7 @@ def _inject_styles() -> None:
                 max-width: 720px;
             }
             .insight-label {
-                color: var(--gold);
+                color: var(--accent);
                 font-size: 0.82rem;
                 letter-spacing: 0.18rem;
                 text-transform: uppercase;
@@ -691,7 +691,7 @@ def _inject_styles() -> None:
                 box-shadow: 0 18px 34px rgba(0, 0, 0, 0.28);
             }
             .insight-title, .signal-title {
-                color: var(--gold);
+                color: var(--accent);
                 font-size: 0.9rem;
                 text-transform: uppercase;
                 letter-spacing: 0.12rem;
@@ -703,7 +703,7 @@ def _inject_styles() -> None:
                 line-height: 1.45;
             }
             .practice-label {
-                color: var(--gold);
+                color: var(--accent);
                 text-transform: uppercase;
                 letter-spacing: 0.12rem;
                 font-size: 0.84rem;
@@ -719,7 +719,7 @@ def _inject_styles() -> None:
                 margin-top: 0.35rem;
             }
             .signal-action {
-                color: var(--gold-soft);
+                color: var(--accent-soft);
                 font-size: 1.6rem;
                 font-weight: 700;
                 margin-bottom: 0.35rem;
@@ -728,7 +728,7 @@ def _inject_styles() -> None:
                 display: inline-block;
                 border-radius: 999px;
                 padding: 0.45rem 0.9rem;
-                background: rgba(212, 175, 55, 0.12);
+                background: rgba(77, 163, 255, 0.12);
                 border: 1px solid var(--border);
                 color: var(--text);
                 font-weight: 700;
@@ -739,7 +739,9 @@ def _inject_styles() -> None:
                 min-height: 48px;
                 border-radius: 14px;
                 font-weight: 700;
-                border: 1px solid rgba(212, 175, 55, 0.32);
+                background: #1d4ed8;
+                color: #ffffff;
+                border: 1px solid #3b82f6;
             }
             [data-testid="stMetric"] {
                 background: rgba(255,255,255,0.02);
@@ -747,11 +749,28 @@ def _inject_styles() -> None:
                 border-radius: 18px;
                 padding: 0.8rem 1rem;
             }
+            [data-testid="stMetricValue"] {
+                color: var(--text);
+            }
             [data-testid="stMetricLabel"] {
                 color: var(--muted);
             }
             [data-testid="stSidebar"] {
-                background: #090b10;
+                background: #0f172a;
+            }
+            [data-testid="stExpander"] details {
+                background: var(--panel);
+                border: 1px solid var(--border);
+                border-radius: 16px;
+            }
+            [data-testid="stExpander"] summary {
+                color: var(--text);
+            }
+            .stSelectbox label, .stMultiSelect label, .stDateInput label, .stSlider label, .stToggle label {
+                color: var(--text);
+            }
+            .stMarkdown, .stText {
+                color: var(--text);
             }
             @media (max-width: 768px) {
                 .hero-title {

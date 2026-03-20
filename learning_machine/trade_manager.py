@@ -39,6 +39,17 @@ class TradeManager:
         response.raise_for_status()
         return list(response.json())
 
+    def position(self, symbol: str) -> dict[str, object] | None:
+        response = requests.get(
+            f"{self.trading_base_url}/v2/positions/{symbol}",
+            headers=self.headers,
+            timeout=10,
+        )
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.json()
+
     def portfolio_snapshot(self) -> dict[str, object]:
         account = self.account()
         positions = self.positions()
@@ -82,6 +93,12 @@ class TradeManager:
 
         capped_notional = min(signal.target_notional, self.credentials.max_position_notional)
         if signal.action == "PROTECT":
+            position = self.position(signal.symbol)
+            if position is None:
+                return {
+                    "submitted": False,
+                    "reason": "No open position to protect.",
+                }
             response = requests.delete(
                 f"{self.trading_base_url}/v2/positions/{signal.symbol}",
                 headers=self.headers,
@@ -95,12 +112,21 @@ class TradeManager:
                 "order": {"status": "closed_position", "symbol": signal.symbol},
             }
 
+        position = self.position(signal.symbol)
+        current_market_value = 0.0 if position is None else abs(float(position.get("market_value", 0.0)))
+        remaining_notional = round(capped_notional - current_market_value, 2)
+        if remaining_notional <= 5.0:
+            return {
+                "submitted": False,
+                "reason": f"Target allocation already in place at ${current_market_value:,.2f}.",
+            }
+
         order_payload = {
             "symbol": signal.symbol,
             "side": "buy",
             "type": "market",
             "time_in_force": "day",
-            "notional": round(capped_notional, 2),
+            "notional": remaining_notional,
         }
         response = requests.post(
             f"{self.trading_base_url}/v2/orders",
@@ -116,7 +142,7 @@ class TradeManager:
             "submitted": True,
             "spread_bps": spread_bps,
             "order": order,
-            "notional": capped_notional,
+            "notional": remaining_notional,
         }
 
     def submit_auto_harvest(self, symbol: str) -> dict[str, object]:

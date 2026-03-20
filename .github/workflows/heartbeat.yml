@@ -1,12 +1,18 @@
-name: sovereign-heartbeat
+name: sovereign-machines
 
 on:
   schedule:
     - cron: "0 * * * *"
+    - cron: "*/15 * * * 1-5"
+    - cron: "5 21 * * 1-5"
   workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   signal-worker:
+    if: github.event.schedule == '0 * * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -23,11 +29,14 @@ jobs:
       - name: Sync dependencies
         run: uv sync --frozen
 
-      - name: Restore signal state cache
-        uses: actions/cache@v4
+      - name: Restore state cache
+        id: restore-state
+        uses: actions/cache/restore@v4
         with:
           path: .state
-          key: sovereign-signal-state-${{ github.ref_name }}
+          key: sovereign-worker-state-${{ github.ref_name }}-${{ github.run_id }}-signal
+          restore-keys: |
+            sovereign-worker-state-${{ github.ref_name }}-
 
       - name: Run Sovereign signal worker
         env:
@@ -35,3 +44,99 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           APP_URL: ${{ secrets.APP_URL }}
         run: uv run python -m learning_machine.signal_worker
+
+      - name: Save state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state
+          key: sovereign-worker-state-${{ github.ref_name }}-${{ github.run_id }}-signal
+
+  execution-worker:
+    if: github.event.schedule == '*/15 * * * 1-5' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Restore state cache
+        id: restore-state
+        uses: actions/cache/restore@v4
+        with:
+          path: .state
+          key: sovereign-worker-state-${{ github.ref_name }}-${{ github.run_id }}-execution
+          restore-keys: |
+            sovereign-worker-state-${{ github.ref_name }}-
+
+      - name: Run execution worker
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          APP_URL: ${{ secrets.APP_URL }}
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          ALPACA_MODE: ${{ secrets.ALPACA_MODE }}
+          ACCOUNT_SIZE: ${{ secrets.ACCOUNT_SIZE }}
+          MAX_POSITION_NOTIONAL: ${{ secrets.MAX_POSITION_NOTIONAL }}
+          DAILY_LOSS_LIMIT_PCT: ${{ secrets.DAILY_LOSS_LIMIT_PCT }}
+          COOLDOWN_MINUTES: ${{ secrets.COOLDOWN_MINUTES }}
+          AUTO_HARVEST: ${{ secrets.AUTO_HARVEST }}
+        run: uv run python -m learning_machine.execution_worker
+
+      - name: Save state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state
+          key: sovereign-worker-state-${{ github.ref_name }}-${{ github.run_id }}-execution
+
+  report-worker:
+    if: github.event.schedule == '5 21 * * 1-5' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Restore state cache
+        id: restore-state
+        uses: actions/cache/restore@v4
+        with:
+          path: .state
+          key: sovereign-worker-state-${{ github.ref_name }}-${{ github.run_id }}-report
+          restore-keys: |
+            sovereign-worker-state-${{ github.ref_name }}-
+
+      - name: Run report worker
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          APP_URL: ${{ secrets.APP_URL }}
+        run: uv run python -m learning_machine.report_worker
+
+      - name: Save state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state
+          key: sovereign-worker-state-${{ github.ref_name }}-${{ github.run_id }}-report

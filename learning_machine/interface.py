@@ -9,12 +9,14 @@ import streamlit as st
 try:
     from .data import DataConfig, DataPipeline, get_economic_calendar
     from .execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker
+    from .ledger import read_equity_curve, read_ledger
     from .notifications import DiscordNotifier
     from .signal_worker import latest_state_payload
     from .trade_manager import TradeManager
 except ImportError:
     from learning_machine.data import DataConfig, DataPipeline, get_economic_calendar
     from learning_machine.execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker
+    from learning_machine.ledger import read_equity_curve, read_ledger
     from learning_machine.notifications import DiscordNotifier
     from learning_machine.signal_worker import latest_state_payload
     from learning_machine.trade_manager import TradeManager
@@ -149,6 +151,7 @@ def main() -> None:
         )
 
     _render_portfolio_panel()
+    _render_ledger_panels()
 
     calendar = get_economic_calendar()
     event_cols = st.columns([1, 1, 1])
@@ -172,6 +175,7 @@ def main() -> None:
         _render_copy_trade_controls(signals, notifier, app_url)
         _render_test_signal(notifier)
         _render_audit_log()
+        _render_last_execution_status()
         if stress_snapshot["triggered"]:
             notifier.send_regime_change(
                 tickers=selected_tickers,
@@ -244,6 +248,24 @@ def _render_portfolio_panel() -> None:
             st.dataframe(pd.DataFrame(position_rows), use_container_width=True)
 
 
+def _render_ledger_panels() -> None:
+    st.markdown("### Algo Test Track Record")
+    equity = read_equity_curve()
+    ledger = read_ledger()
+    left, right = st.columns([1.2, 1.0])
+    with left:
+        if equity.empty:
+            st.info("No equity history yet. Run the execution worker or sync trades to start tracking.")
+        else:
+            st.plotly_chart(_build_equity_curve_chart(equity), use_container_width=True, config={"displayModeBar": False})
+    with right:
+        if ledger.empty:
+            st.info("No ledger entries yet.")
+        else:
+            recent = ledger.sort_values("timestamp", ascending=False).head(10)
+            st.dataframe(recent, use_container_width=True)
+
+
 def _render_broker_status_badge() -> str:
     credentials = st.session_state.broker_credentials
     if credentials is None:
@@ -263,6 +285,7 @@ def _render_broker_status_badge() -> str:
 def _append_audit_log(entry: dict[str, object]) -> None:
     st.session_state.trade_audit_log.insert(0, entry)
     st.session_state.trade_audit_log = st.session_state.trade_audit_log[:100]
+    st.session_state.last_execution_status = entry
 
 
 def _cooldown_active() -> tuple[bool, str]:
@@ -442,14 +465,17 @@ def _render_copy_trade_controls(signal_map: dict[str, ExecutionSignal], notifier
 
     if daily_loss_hit:
         st.error("Daily loss limit reached. New BUY orders are blocked for the rest of the session.")
-    confirm_sync = st.checkbox(
-        f"Confirm all {credentials.paper and 'paper' or 'live'} orders before submission",
-        key="confirm_sync_orders",
-    )
-    st.caption(
-        "Execution flow: review signal -> confirm order submission -> sync -> verify the audit log and Discord alert."
-    )
-    if st.button("SYNC WITH GURU", use_container_width=True):
+    with st.form("sync_with_guru_form", clear_on_submit=False):
+        confirm_sync = st.checkbox(
+            f"Confirm all {credentials.paper and 'paper' or 'live'} orders before submission",
+            key="confirm_sync_orders",
+        )
+        st.caption(
+            "Execution flow: review signal -> confirm order submission -> sync -> verify the audit log and Discord alert."
+        )
+        submit_sync = st.form_submit_button("SYNC WITH GURU", use_container_width=True)
+
+    if submit_sync:
         if not confirm_sync:
             st.warning("You must confirm order submission before syncing.")
             return
@@ -471,6 +497,7 @@ def _render_copy_trade_controls(signal_map: dict[str, ExecutionSignal], notifier
                         "mode": "BLOCKED",
                         "action": "BUY",
                         "reason": "Daily loss limit reached.",
+                        "status": "blocked",
                     }
                 )
                 st.warning(f"{signal.symbol}: blocked by daily loss limit.")
@@ -483,6 +510,7 @@ def _render_copy_trade_controls(signal_map: dict[str, ExecutionSignal], notifier
                         "mode": "BLOCKED",
                         "action": "BUY",
                         "reason": cooldown_message,
+                        "status": "blocked",
                     }
                 )
                 st.warning(f"{signal.symbol}: {cooldown_message}")
@@ -554,6 +582,50 @@ def _render_audit_log() -> None:
     st.dataframe(pd.DataFrame(entries), use_container_width=True)
 
 
+def _render_last_execution_status() -> None:
+    status = st.session_state.last_execution_status
+    if not status:
+        return
+    symbol = status.get("symbol", "N/A")
+    action = status.get("action", "N/A")
+    state = status.get("status", "unknown")
+    reason = status.get("reason", "")
+    st.markdown(
+        f"""
+        <div class="glass-card">
+            <div class="card-label">Last Execution Status</div>
+            <div class="card-copy">{symbol} | {action} | {state.upper()}</div>
+            <div class="card-meta">{reason}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _build_equity_curve_chart(equity: pd.DataFrame) -> go.Figure:
+    figure = go.Figure()
+    figure.add_trace(
+        go.Scatter(
+            x=equity["timestamp"],
+            y=equity["equity"],
+            mode="lines",
+            line=dict(color="#00F5FF", width=3),
+            name="Equity",
+        )
+    )
+    figure.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="#151A21",
+        title="Paper Portfolio Equity Curve",
+        margin=dict(l=10, r=10, t=40, b=10),
+        height=280,
+        xaxis=dict(showgrid=False),
+        yaxis=dict(showgrid=False),
+    )
+    return figure
+
+
 def _render_vault(credentials: BrokerCredentials | None, tickers: tuple[str, ...]) -> None:
     status = "Linked to Alpaca paper trading." if credentials else "No broker connected."
     harvest = "Auto-Harvest On" if credentials and credentials.auto_harvest else "Auto-Harvest Off"
@@ -599,6 +671,8 @@ def _init_broker_state() -> None:
         st.session_state.trade_audit_log = []
     if "trade_cooldown_until" not in st.session_state:
         st.session_state.trade_cooldown_until = None
+    if "last_execution_status" not in st.session_state:
+        st.session_state.last_execution_status = None
 
 
 def _inject_styles() -> None:

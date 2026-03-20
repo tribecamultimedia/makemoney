@@ -83,3 +83,32 @@ class DiscordNotifier:
             return True
         except requests.RequestException:
             return False
+
+    def send_report(self, *, report: dict[str, object], timestamp: pd.Timestamp) -> bool:
+        if not self.webhook_url:
+            return False
+
+        payload = {
+            "username": self.username,
+            "embeds": [
+                {
+                    "title": "Sovereign AI Daily Paper Report",
+                    "color": 0x00F5FF,
+                    "fields": [
+                        {"name": "Trades Logged", "value": str(report["trades"]), "inline": True},
+                        {"name": "Submitted", "value": str(report["submitted"]), "inline": True},
+                        {"name": "Errors", "value": str(report["errors"]), "inline": True},
+                        {"name": "Latest Equity", "value": f"${float(report['latest_equity']):,.2f}", "inline": True},
+                        {"name": "Return", "value": f"{float(report['return_pct']):.2f}%", "inline": True},
+                        {"name": "Open The App", "value": self.app_url, "inline": False},
+                    ],
+                    "footer": {"text": f"Report time: {pd.Timestamp(timestamp).isoformat()}"},
+                }
+            ],
+        }
+        try:
+            response = requests.post(self.webhook_url, json=payload, timeout=10)
+            response.raise_for_status()
+            return True
+        except requests.RequestException:
+            return False

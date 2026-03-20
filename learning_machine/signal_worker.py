@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 
 from .data import DataConfig, DataPipeline
+from .intelligence import EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory
 from .notifications import DiscordNotifier
 from .storage import load_signal_payload, save_signal_payload
 
@@ -30,25 +31,28 @@ def build_signal_state(fred_api_key: str | None = None) -> SignalState:
     )
     regime = pipeline.regime_snapshot()
     stress = pipeline.market_stress_signal()
+    sovereign_score = pipeline.generate_sovereign_score(DEFAULT_TICKERS[0])
+    internals = MarketInternalsFactory().build()
+    event_risk = EventRiskFilter().evaluate(pipeline.get_economic_calendar())
+    decision = EnsembleDecisionEngine().decide(
+        ticker=DEFAULT_TICKERS[0],
+        regime_snapshot=regime,
+        stress_snapshot=stress,
+        sovereign_score=sovereign_score,
+        internals=internals,
+        event_risk=event_risk,
+        base_notional=50.0,
+    )
 
-    mode = "risk_on_expansion"
-    label = "Risk-On Expansion"
-    message = "Core positions can stay engaged while macro conditions remain supportive."
-    reason = str(regime["narrative"])
-
-    if bool(stress["triggered"]) or str(regime["state"]) == "capital_preservation":
-        mode = "capital_preservation"
-        label = "Capital Preservation Mode"
-        message = "Cash is king while macro stress and market structure stay fragile."
-        if bool(stress["triggered"]):
-            reason = (
-                "The market has dropped more than 3% in an hour, so Sovereign AI is forcing a "
-                "portfolio-wide protective stance."
-            )
-    elif str(regime["state"]) == "tactical_accumulation":
-        mode = "tactical_accumulation"
-        label = "Tactical Accumulation"
-        message = "Scale in carefully while the market builds a stronger foundation."
+    mode = decision.mode
+    label = {
+        "risk_on_expansion": "Risk-On Expansion",
+        "tactical_accumulation": "Tactical Accumulation",
+        "capital_preservation": "Capital Preservation Mode",
+        "event_freeze": "Event Freeze",
+    }.get(decision.mode, "Risk-On Expansion")
+    message = decision.summary
+    reason = f"{regime['narrative']} | {internals.summary} | {event_risk.summary} | {decision.attribution}"
 
     return SignalState(
         mode=mode,

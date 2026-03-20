@@ -5,6 +5,16 @@ from .data import DataPipeline
 from .execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker
 from .env import TradingEnvironment
 from .features import FeatureFactory
+from .intelligence import (
+    EnsembleDecision,
+    EnsembleDecisionEngine,
+    EventRiskFilter,
+    EventRiskSnapshot,
+    MarketInternalsFactory,
+    MarketInternalsSnapshot,
+    PositionSizer,
+    TradeAttributionLog,
+)
 from .ledger import append_equity_snapshot, append_ledger, read_equity_curve, read_ledger
 from .risk import CircuitBreaker
 from .sentiment import SimulatedNewsFeed, SentimentSnapshot
@@ -17,6 +27,14 @@ __all__ = [
     "ExecutionSignal",
     "FeatureFactory",
     "GlobalCircuitBreaker",
+    "EnsembleDecision",
+    "EnsembleDecisionEngine",
+    "EventRiskFilter",
+    "EventRiskSnapshot",
+    "MarketInternalsFactory",
+    "MarketInternalsSnapshot",
+    "PositionSizer",
+    "TradeAttributionLog",
     "append_equity_snapshot",
     "append_ledger",
     "read_equity_curve",

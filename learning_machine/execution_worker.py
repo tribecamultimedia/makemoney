@@ -5,6 +5,8 @@ import os
 from datetime import UTC, datetime
 
 from .execution import BrokerCredentials, ExecutionSignal, SovereignAgent
+from .data import DataPipeline
+from .intelligence import EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory
 from .ledger import LedgerEntry, append_equity_snapshot, append_ledger
 from .notifications import DiscordNotifier
 from .signal_worker import build_signal_state
@@ -37,22 +39,6 @@ def build_credentials_from_env() -> BrokerCredentials:
         auto_harvest=os.getenv("AUTO_HARVEST", "false").lower() == "true",
     )
 
-
-def build_signals(mode: str, reason: str, target_notional: float) -> list[ExecutionSignal]:
-    action = "BUY" if mode != "capital_preservation" else "PROTECT"
-    confidence = 0.9 if action == "PROTECT" else 0.75
-    return [
-        ExecutionSignal(
-            symbol=symbol,
-            action=action,
-            confidence=confidence,
-            reason=reason,
-            target_notional=target_notional,
-        )
-        for symbol in DEFAULT_TICKERS
-    ]
-
-
 def main() -> None:
     now = datetime.now(UTC)
     if not is_market_hours(now):
@@ -67,6 +53,12 @@ def main() -> None:
         app_url=os.getenv("APP_URL", "https://makemoneywithtommy.streamlit.app"),
     )
     signal_state = build_signal_state(fred_api_key=os.getenv("FRED_API_KEY"))
+    pipeline = DataPipeline(fred_api_key=os.getenv("FRED_API_KEY"))
+    regime_snapshot = pipeline.regime_snapshot()
+    stress_snapshot = pipeline.market_stress_signal()
+    internals = MarketInternalsFactory().build()
+    event_risk = EventRiskFilter().evaluate(pipeline.get_economic_calendar())
+    decision_engine = EnsembleDecisionEngine()
     snapshot = manager.portfolio_snapshot()
     append_equity_snapshot(
         timestamp=now.isoformat(),
@@ -81,7 +73,24 @@ def main() -> None:
     sovereign_agent = SovereignAgent()
     protect_override = sovereign_agent.should_kill_trade(signal_state.hourly_drawdown)
     results: list[dict[str, object]] = []
-    for signal in build_signals(signal_state.mode, signal_state.reason, credentials.max_position_notional):
+    for symbol in DEFAULT_TICKERS:
+        sovereign_score = pipeline.generate_sovereign_score(symbol)
+        decision = decision_engine.decide(
+            ticker=symbol,
+            regime_snapshot=regime_snapshot,
+            stress_snapshot=stress_snapshot,
+            sovereign_score=sovereign_score,
+            internals=internals,
+            event_risk=event_risk,
+            base_notional=credentials.max_position_notional,
+        )
+        signal = ExecutionSignal(
+            symbol=symbol,
+            action=decision.action,
+            confidence=decision.confidence,
+            reason=f"{decision.summary} | {decision.attribution}",
+            target_notional=decision.target_notional,
+        )
         live_signal = signal
         if protect_override:
             live_signal = sovereign_agent.override_signal(signal, signal_state.hourly_drawdown)

@@ -9,6 +9,7 @@ import streamlit as st
 try:
     from .data import DataConfig, DataPipeline, get_economic_calendar
     from .execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker, SovereignAgent
+    from .intelligence import EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory
     from .ledger import LedgerEntry, append_equity_snapshot, append_ledger, read_equity_curve, read_ledger
     from .notifications import DiscordNotifier
     from .signal_worker import latest_state_payload
@@ -17,6 +18,7 @@ try:
 except ImportError:
     from learning_machine.data import DataConfig, DataPipeline, get_economic_calendar
     from learning_machine.execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker, SovereignAgent
+    from learning_machine.intelligence import EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory
     from learning_machine.ledger import LedgerEntry, append_equity_snapshot, append_ledger, read_equity_curve, read_ledger
     from learning_machine.notifications import DiscordNotifier
     from learning_machine.signal_worker import latest_state_payload
@@ -131,6 +133,8 @@ def main() -> None:
     st.session_state.hourly_drawdown = float(stress_snapshot["hourly_drawdown"])
     pulse = _build_pulse(regime_snapshot, stress_snapshot)
     sovereign_score = pipeline.generate_sovereign_score(selected_tickers[0])
+    internals = MarketInternalsFactory().build()
+    event_risk = EventRiskFilter().evaluate(get_economic_calendar())
 
     pulse_col, sentiment_col = st.columns([1, 1])
     pulse_col.markdown(_render_sovereign_score_card(sovereign_score), unsafe_allow_html=True)
@@ -181,6 +185,19 @@ def main() -> None:
     _glass_card(event_cols[0], "Macro-Regime Narrator", regime_snapshot["narrative"], f"Yield curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f}")
     _glass_card(event_cols[1], "Macro-Watchdog", _calendar_body(calendar), _calendar_footer(calendar))
     _glass_card(event_cols[2], "Smart Harvest", _rebalance_message(pipeline), "Lock gains from relative winners instead of letting concentration drift.")
+    intelligence_cols = st.columns([1, 1])
+    _glass_card(
+        intelligence_cols[0],
+        "Market Internals",
+        internals.summary,
+        f"VIX {internals.vix_level:.1f} | TLT 20D {internals.tlt_return_20d:.1f}% | SOXX above 50DMA: {'Yes' if internals.soxx_above_50dma else 'No'}",
+    )
+    _glass_card(
+        intelligence_cols[1],
+        "Event Risk Filter",
+        event_risk.summary,
+        f"Next event: {event_risk.next_event} | Hours: {event_risk.hours_to_event:.1f} | Size multiplier: {event_risk.size_multiplier:.2f}",
+    )
 
     with st.expander("Execution Intelligence", expanded=False):
         st.markdown(
@@ -193,7 +210,16 @@ def main() -> None:
         )
 
     if run_button:
-        signals = generate_signal_map(selected_tickers, pulse, notional)
+        signals = generate_signal_map(
+            tickers=selected_tickers,
+            pulse=pulse,
+            notional=notional,
+            pipeline=pipeline,
+            regime_snapshot=regime_snapshot,
+            stress_snapshot=stress_snapshot,
+            internals=internals,
+            event_risk=event_risk,
+        )
         _render_signal_cards(signals)
         _render_copy_trade_controls(signals, notifier, app_url)
         _render_test_signal(notifier)
@@ -220,20 +246,40 @@ def load_market_stress(*, fred_api_key: str, start_date: str, end_date: str, tic
     return pipeline.market_stress_signal()
 
 
-def generate_signal_map(tickers: tuple[str, ...], pulse: dict[str, object], notional: float) -> dict[str, ExecutionSignal]:
-    action = "BUY" if pulse["mode"] != "capital_preservation" else "PROTECT"
-    confidence = 0.95 if action == "PROTECT" else float(pulse["score"]) / 100.0
+def generate_signal_map(
+    *,
+    tickers: tuple[str, ...],
+    pulse: dict[str, object],
+    notional: float,
+    pipeline: DataPipeline,
+    regime_snapshot: dict[str, float | str],
+    stress_snapshot: dict[str, float | bool],
+    internals,
+    event_risk,
+) -> dict[str, ExecutionSignal]:
+    del pulse
     per_ticker = notional / max(len(tickers), 1)
-    return {
-        ticker: ExecutionSignal(
-            symbol=ticker,
-            action=action,
-            confidence=confidence,
-            reason=str(pulse["narrative"]),
-            target_notional=per_ticker,
+    engine = EnsembleDecisionEngine()
+    signals: dict[str, ExecutionSignal] = {}
+    for ticker in tickers:
+        sovereign_score = pipeline.generate_sovereign_score(ticker)
+        decision = engine.decide(
+            ticker=ticker,
+            regime_snapshot=regime_snapshot,
+            stress_snapshot=stress_snapshot,
+            sovereign_score=sovereign_score,
+            internals=internals,
+            event_risk=event_risk,
+            base_notional=per_ticker,
         )
-        for ticker in tickers
-    }
+        signals[ticker] = ExecutionSignal(
+            symbol=ticker,
+            action=decision.action,
+            confidence=decision.confidence,
+            reason=f"{decision.summary} | {decision.attribution}",
+            target_notional=decision.target_notional,
+        )
+    return signals
 
 
 def _render_portfolio_panel() -> None:

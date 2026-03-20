@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from .execution import BrokerCredentials, ExecutionSignal, SovereignAgent
 from .data import DataPipeline
-from .intelligence import EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory
+from .intelligence import CreditLiquidityFactor, EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory, PortfolioAllocator
 from .ledger import LedgerEntry, append_equity_snapshot, append_ledger
 from .notifications import DiscordNotifier
 from .signal_worker import build_signal_state
@@ -57,8 +57,10 @@ def main() -> None:
     regime_snapshot = pipeline.regime_snapshot()
     stress_snapshot = pipeline.market_stress_signal()
     internals = MarketInternalsFactory().build()
+    credit = CreditLiquidityFactor().build()
     event_risk = EventRiskFilter().evaluate(pipeline.get_economic_calendar())
     decision_engine = EnsembleDecisionEngine()
+    allocator = PortfolioAllocator()
     snapshot = manager.portfolio_snapshot()
     append_equity_snapshot(
         timestamp=now.isoformat(),
@@ -73,23 +75,28 @@ def main() -> None:
     sovereign_agent = SovereignAgent()
     protect_override = sovereign_agent.should_kill_trade(signal_state.hourly_drawdown)
     results: list[dict[str, object]] = []
+    decisions = {}
     for symbol in DEFAULT_TICKERS:
         sovereign_score = pipeline.generate_sovereign_score(symbol)
-        decision = decision_engine.decide(
+        decisions[symbol] = decision_engine.decide(
             ticker=symbol,
             regime_snapshot=regime_snapshot,
             stress_snapshot=stress_snapshot,
             sovereign_score=sovereign_score,
             internals=internals,
             event_risk=event_risk,
+            credit=credit,
             base_notional=credentials.max_position_notional,
         )
+    allocation = allocator.allocate(decisions=decisions, total_notional=credentials.max_position_notional * len(DEFAULT_TICKERS))
+    for symbol in DEFAULT_TICKERS:
+        decision = decisions[symbol]
         signal = ExecutionSignal(
             symbol=symbol,
             action=decision.action,
             confidence=decision.confidence,
             reason=f"{decision.summary} | {decision.attribution}",
-            target_notional=decision.target_notional,
+            target_notional=allocation.notionals.get(symbol, decision.target_notional),
         )
         live_signal = signal
         if protect_override:

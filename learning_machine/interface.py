@@ -9,7 +9,8 @@ import streamlit as st
 try:
     from .data import DataConfig, DataPipeline, get_economic_calendar
     from .execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker, SovereignAgent
-    from .intelligence import EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory
+    from .experiment_tracker import read_experiment_runs
+    from .intelligence import CreditLiquidityFactor, EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory, PortfolioAllocator
     from .ledger import LedgerEntry, append_equity_snapshot, append_ledger, read_equity_curve, read_ledger
     from .notifications import DiscordNotifier
     from .signal_worker import latest_state_payload
@@ -18,7 +19,8 @@ try:
 except ImportError:
     from learning_machine.data import DataConfig, DataPipeline, get_economic_calendar
     from learning_machine.execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker, SovereignAgent
-    from learning_machine.intelligence import EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory
+    from learning_machine.experiment_tracker import read_experiment_runs
+    from learning_machine.intelligence import CreditLiquidityFactor, EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory, PortfolioAllocator
     from learning_machine.ledger import LedgerEntry, append_equity_snapshot, append_ledger, read_equity_curve, read_ledger
     from learning_machine.notifications import DiscordNotifier
     from learning_machine.signal_worker import latest_state_payload
@@ -134,6 +136,7 @@ def main() -> None:
     pulse = _build_pulse(regime_snapshot, stress_snapshot)
     sovereign_score = pipeline.generate_sovereign_score(selected_tickers[0])
     internals = MarketInternalsFactory().build()
+    credit = CreditLiquidityFactor().build()
     event_risk = EventRiskFilter().evaluate(get_economic_calendar())
 
     pulse_col, sentiment_col = st.columns([1, 1])
@@ -198,6 +201,14 @@ def main() -> None:
         event_risk.summary,
         f"Next event: {event_risk.next_event} | Hours: {event_risk.hours_to_event:.1f} | Size multiplier: {event_risk.size_multiplier:.2f}",
     )
+    factor_cols = st.columns([1, 1])
+    _glass_card(
+        factor_cols[0],
+        "Credit & Liquidity",
+        credit.summary,
+        f"HYG 20D {credit.hyg_return_20d:.1f}% | LQD 20D {credit.lqd_return_20d:.1f}% | IWM vs SPY {credit.iwm_vs_spy_momentum:+.1f}%",
+    )
+    _render_experiment_panel()
 
     with st.expander("Execution Intelligence", expanded=False):
         st.markdown(
@@ -219,8 +230,10 @@ def main() -> None:
             stress_snapshot=stress_snapshot,
             internals=internals,
             event_risk=event_risk,
+            credit=credit,
         )
         _render_signal_cards(signals)
+        _render_allocation_diagnostics(signals, notional)
         _render_copy_trade_controls(signals, notifier, app_url)
         _render_test_signal(notifier)
         _render_audit_log()
@@ -256,28 +269,34 @@ def generate_signal_map(
     stress_snapshot: dict[str, float | bool],
     internals,
     event_risk,
+    credit,
 ) -> dict[str, ExecutionSignal]:
     del pulse
     per_ticker = notional / max(len(tickers), 1)
     engine = EnsembleDecisionEngine()
-    signals: dict[str, ExecutionSignal] = {}
+    allocator = PortfolioAllocator()
+    decisions = {}
     for ticker in tickers:
         sovereign_score = pipeline.generate_sovereign_score(ticker)
-        decision = engine.decide(
+        decisions[ticker] = engine.decide(
             ticker=ticker,
             regime_snapshot=regime_snapshot,
             stress_snapshot=stress_snapshot,
             sovereign_score=sovereign_score,
             internals=internals,
             event_risk=event_risk,
+            credit=credit,
             base_notional=per_ticker,
         )
+    allocation = allocator.allocate(decisions=decisions, total_notional=notional)
+    signals: dict[str, ExecutionSignal] = {}
+    for ticker, decision in decisions.items():
         signals[ticker] = ExecutionSignal(
             symbol=ticker,
             action=decision.action,
             confidence=decision.confidence,
             reason=f"{decision.summary} | {decision.attribution}",
-            target_notional=decision.target_notional,
+            target_notional=allocation.notionals.get(ticker, decision.target_notional),
         )
     return signals
 
@@ -354,6 +373,43 @@ def _render_machine_feed() -> None:
     feed["timestamp"] = pd.to_datetime(feed["timestamp"]).dt.strftime("%Y-%m-%d %H:%M:%S UTC")
     columns = ["timestamp", "symbol", "mode", "action", "status", "reason", "notional"]
     st.dataframe(feed[columns], use_container_width=True)
+
+
+def _render_experiment_panel() -> None:
+    runs = read_experiment_runs(limit=5)
+    if runs.empty:
+        st.info("No experiment versions logged yet.")
+        return
+    latest = runs.iloc[0]
+    st.markdown(
+        f"""
+        <div class="glass-card">
+            <div class="card-label">Experiment Tracker</div>
+            <div class="card-copy">Engine version: {latest['engine_version']}</div>
+            <div class="card-meta">Latest mode: {latest['mode']} | {latest['summary']}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_allocation_diagnostics(signal_map: dict[str, ExecutionSignal], total_notional: float) -> None:
+    st.markdown("### Allocation Diagnostics")
+    rows = []
+    assigned = 0.0
+    for signal in signal_map.values():
+        assigned += float(signal.target_notional)
+        rows.append(
+            {
+                "symbol": signal.symbol,
+                "action": signal.action,
+                "confidence_pct": round(signal.confidence * 100.0, 1),
+                "target_notional": float(signal.target_notional),
+                "reason": signal.reason,
+            }
+        )
+    st.dataframe(pd.DataFrame(rows), use_container_width=True)
+    st.caption(f"Requested notional: ${total_notional:,.2f} | Assigned notional: ${assigned:,.2f}")
 
 
 def _render_ledger_panels() -> None:

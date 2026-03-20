@@ -3,9 +3,13 @@
 from .backtest import run_backtest
 from .data import DataPipeline
 from .execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker
+from .experiment_tracker import log_experiment_run, read_experiment_runs
 from .env import TradingEnvironment
 from .features import FeatureFactory
 from .intelligence import (
+    AllocationPlan,
+    CreditLiquidityFactor,
+    CreditLiquiditySnapshot,
     EnsembleDecision,
     EnsembleDecisionEngine,
     EventRiskFilter,
@@ -27,6 +31,9 @@ __all__ = [
     "ExecutionSignal",
     "FeatureFactory",
     "GlobalCircuitBreaker",
+    "AllocationPlan",
+    "CreditLiquidityFactor",
+    "CreditLiquiditySnapshot",
     "EnsembleDecision",
     "EnsembleDecisionEngine",
     "EventRiskFilter",
@@ -35,6 +42,8 @@ __all__ = [
     "MarketInternalsSnapshot",
     "PositionSizer",
     "TradeAttributionLog",
+    "log_experiment_run",
+    "read_experiment_runs",
     "append_equity_snapshot",
     "append_ledger",
     "read_equity_curve",

@@ -30,6 +30,15 @@ class EventRiskSnapshot:
 
 
 @dataclass(slots=True)
+class CreditLiquiditySnapshot:
+    hyg_return_20d: float
+    lqd_return_20d: float
+    iwm_vs_spy_momentum: float
+    liquidity_score: float
+    summary: str
+
+
+@dataclass(slots=True)
 class EnsembleDecision:
     mode: str
     action: str
@@ -38,6 +47,13 @@ class EnsembleDecision:
     target_notional: float
     summary: str
     attribution: str
+
+
+@dataclass(slots=True)
+class AllocationPlan:
+    weights: dict[str, float]
+    notionals: dict[str, float]
+    summary: str
 
 
 class MarketInternalsFactory:
@@ -129,6 +145,50 @@ class EventRiskFilter:
         )
 
 
+class CreditLiquidityFactor:
+    def build(self) -> CreditLiquiditySnapshot:
+        symbols = ["HYG", "LQD", "IWM", "SPY"]
+        data = yf.download(
+            symbols,
+            period="6mo",
+            interval="1d",
+            auto_adjust=False,
+            progress=False,
+            group_by="ticker",
+        )
+        closes: dict[str, pd.Series] = {}
+        for symbol in symbols:
+            frame = data[symbol] if isinstance(data.columns, pd.MultiIndex) else data
+            close = frame["Close"] if "Close" in frame else frame["close"]
+            closes[symbol] = pd.Series(close).dropna().astype(float)
+
+        hyg_return_20d = float(closes["HYG"].pct_change(20).iloc[-1] * 100.0)
+        lqd_return_20d = float(closes["LQD"].pct_change(20).iloc[-1] * 100.0)
+        iwm_vs_spy_momentum = float(
+            closes["IWM"].pct_change(20).iloc[-1] - closes["SPY"].pct_change(20).iloc[-1]
+        ) * 100.0
+
+        liquidity_score = 0.0
+        liquidity_score += 0.3 if hyg_return_20d > 0 else -0.3
+        liquidity_score += 0.2 if lqd_return_20d > 0 else -0.2
+        liquidity_score += 0.15 if iwm_vs_spy_momentum > 0 else -0.1
+
+        if liquidity_score >= 0.3:
+            summary = "Credit and small-cap liquidity are cooperating. That usually means risk appetite has real backing."
+        elif liquidity_score <= -0.2:
+            summary = "Credit is not confirming the equity story. Institutions would notice."
+        else:
+            summary = "Liquidity is neither hostile nor enthusiastic. Treat that as faint praise."
+
+        return CreditLiquiditySnapshot(
+            hyg_return_20d=hyg_return_20d,
+            lqd_return_20d=lqd_return_20d,
+            iwm_vs_spy_momentum=iwm_vs_spy_momentum,
+            liquidity_score=liquidity_score,
+            summary=summary,
+        )
+
+
 class PositionSizer:
     def size_notional(
         self,
@@ -162,19 +222,48 @@ class TradeAttributionLog:
         sovereign_score: float,
         internals: MarketInternalsSnapshot,
         event_risk: EventRiskSnapshot,
+        credit: CreditLiquiditySnapshot,
+        version: str,
     ) -> str:
         parts = [
+            f"version={version}",
             f"regime={regime_state}",
             f"score={sovereign_score:.1f}",
             f"vix={internals.vix_level:.1f}",
             f"cross_asset={internals.cross_asset_confirmation:+.2f}",
+            f"liquidity={credit.liquidity_score:+.2f}",
             f"event={event_risk.next_event}",
             f"hours_to_event={event_risk.hours_to_event:.1f}",
         ]
         return " | ".join(parts)
 
 
+class PortfolioAllocator:
+    def allocate(self, *, decisions: dict[str, EnsembleDecision], total_notional: float) -> AllocationPlan:
+        buy_scores = {
+            ticker: max(decision.composite_score, 0.0)
+            for ticker, decision in decisions.items()
+            if decision.action == "BUY"
+        }
+        if not buy_scores:
+            return AllocationPlan(
+                weights={ticker: 0.0 for ticker in decisions},
+                notionals={ticker: 0.0 for ticker in decisions},
+                summary="No asset earned a real allocation. Cash remains the least offensive asset.",
+            )
+
+        total_score = sum(buy_scores.values()) or 1.0
+        weights = {ticker: score / total_score for ticker, score in buy_scores.items()}
+        notionals = {ticker: round(total_notional * weight, 2) for ticker, weight in weights.items()}
+        full_weights = {ticker: weights.get(ticker, 0.0) for ticker in decisions}
+        full_notionals = {ticker: notionals.get(ticker, 0.0) for ticker in decisions}
+        summary = "Capital is being distributed by composite conviction, not equally out of politeness."
+        return AllocationPlan(weights=full_weights, notionals=full_notionals, summary=summary)
+
+
 class EnsembleDecisionEngine:
+    version = "ensemble-v2"
+
     def __init__(self) -> None:
         self.position_sizer = PositionSizer()
         self.attribution_log = TradeAttributionLog()
@@ -188,12 +277,14 @@ class EnsembleDecisionEngine:
         sovereign_score: dict[str, float | str],
         internals: MarketInternalsSnapshot,
         event_risk: EventRiskSnapshot,
+        credit: CreditLiquiditySnapshot,
         base_notional: float,
     ) -> EnsembleDecision:
         regime_state = str(regime_snapshot["state"])
         score = float(sovereign_score["score"])
         composite = score
         composite += internals.cross_asset_confirmation * 20.0
+        composite += credit.liquidity_score * 18.0
         composite -= 18.0 if bool(stress_snapshot["triggered"]) else 0.0
         composite -= 10.0 if event_risk.block_new_risk else 0.0
         composite = max(0.0, min(100.0, composite))
@@ -237,6 +328,8 @@ class EnsembleDecisionEngine:
             sovereign_score=score,
             internals=internals,
             event_risk=event_risk,
+            credit=credit,
+            version=self.version,
         )
         return EnsembleDecision(
             mode=mode,

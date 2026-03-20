@@ -6,7 +6,8 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 
 from .data import DataConfig, DataPipeline
-from .intelligence import EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory
+from .experiment_tracker import log_experiment_run
+from .intelligence import CreditLiquidityFactor, EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory
 from .notifications import DiscordNotifier
 from .storage import load_signal_payload, save_signal_payload
 
@@ -33,6 +34,7 @@ def build_signal_state(fred_api_key: str | None = None) -> SignalState:
     stress = pipeline.market_stress_signal()
     sovereign_score = pipeline.generate_sovereign_score(DEFAULT_TICKERS[0])
     internals = MarketInternalsFactory().build()
+    credit = CreditLiquidityFactor().build()
     event_risk = EventRiskFilter().evaluate(pipeline.get_economic_calendar())
     decision = EnsembleDecisionEngine().decide(
         ticker=DEFAULT_TICKERS[0],
@@ -41,6 +43,7 @@ def build_signal_state(fred_api_key: str | None = None) -> SignalState:
         sovereign_score=sovereign_score,
         internals=internals,
         event_risk=event_risk,
+        credit=credit,
         base_notional=50.0,
     )
 
@@ -52,7 +55,7 @@ def build_signal_state(fred_api_key: str | None = None) -> SignalState:
         "event_freeze": "Event Freeze",
     }.get(decision.mode, "Risk-On Expansion")
     message = decision.summary
-    reason = f"{regime['narrative']} | {internals.summary} | {event_risk.summary} | {decision.attribution}"
+    reason = f"{regime['narrative']} | {internals.summary} | {credit.summary} | {event_risk.summary} | {decision.attribution}"
 
     return SignalState(
         mode=mode,
@@ -118,6 +121,14 @@ def main() -> None:
         app_url=app_url,
     )
     changed = notify_if_changed(state, notifier)
+    log_experiment_run(
+        {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "engine_version": EnsembleDecisionEngine.version,
+            "mode": state.mode,
+            "summary": state.message,
+        }
+    )
     print(
         json.dumps(
             {

@@ -406,6 +406,23 @@ def _inject_styles() -> None:
                 background: linear-gradient(180deg, #0B0D10 0%, #10141A 100%);
                 color: var(--text);
             }
+            [data-testid="stHeader"] {
+                background: rgba(11, 13, 16, 0.92);
+                border-bottom: 1px solid #273140;
+            }
+            [data-testid="stToolbar"] {
+                background: transparent;
+            }
+            [data-testid="stDecoration"] {
+                background: none;
+            }
+            [data-testid="stStatusWidget"] {
+                background: transparent;
+                color: var(--text);
+            }
+            [data-testid="stAppViewContainer"] {
+                background: linear-gradient(180deg, #0B0D10 0%, #10141A 100%);
+            }
             .block-container {
                 max-width: 1180px;
                 padding-top: 1.2rem;

@@ -110,6 +110,59 @@ class DataPipeline:
             merged[ticker] = frame.join(macro, how="left").sort_index().ffill().dropna()
         return merged
 
+    def regime_snapshot(self) -> dict[str, float | str]:
+        datasets = self.build_dataset()
+        frame = next(iter(datasets.values()))
+        latest = frame.iloc[-1]
+        yield_curve = float(latest.get("yield_curve_10y_2y", 0.0))
+        inflation = float(latest.get("inflation_yoy", 0.0))
+        state = "risk_on"
+        if yield_curve < 0:
+            state = "capital_preservation"
+        elif inflation > 3.5:
+            state = "tactical_accumulation"
+        return {
+            "yield_curve_10y_2y": yield_curve,
+            "inflation_yoy": inflation,
+            "state": state,
+            "narrative": self.narrate_regime(yield_curve=yield_curve, inflation=inflation),
+        }
+
+    @staticmethod
+    def narrate_regime(*, yield_curve: float, inflation: float) -> str:
+        if yield_curve < 0:
+            return (
+                "The bond market is signaling a structural slowdown, so Sovereign AI is rotating "
+                "toward capital preservation and protecting principal before chasing growth."
+            )
+        if inflation > 3.5:
+            return (
+                "Inflation remains firm enough to keep markets jumpy, so Sovereign AI is accumulating "
+                "risk carefully instead of moving to full exposure."
+            )
+        return (
+            "Macro pressure looks contained and the credit backdrop is supportive, so Sovereign AI can "
+            "expand core risk positions with more confidence."
+        )
+
+    def market_stress_signal(self, ticker: str = "SPY") -> dict[str, float | bool]:
+        intraday = yf.download(
+            ticker,
+            period="2d",
+            interval="60m",
+            auto_adjust=False,
+            progress=False,
+        )
+        if intraday.empty:
+            return {"triggered": False, "hourly_drawdown": 0.0}
+        intraday = self._normalize_yfinance_columns(intraday)
+        intraday["hourly_return"] = intraday["close"].pct_change().fillna(0.0)
+        worst_hour = float(intraday["hourly_return"].min())
+        return {
+            "triggered": worst_hour <= -0.03,
+            "hourly_drawdown": worst_hour,
+        }
+
     @staticmethod
     def _normalize_yfinance_columns(df: pd.DataFrame) -> pd.DataFrame:
         columns: list[str] = []

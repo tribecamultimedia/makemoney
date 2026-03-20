@@ -759,6 +759,13 @@ def _render_portfolio_panel() -> None:
         ]
         with st.expander("Open Positions", expanded=False):
             st.dataframe(pd.DataFrame(position_rows), use_container_width=True)
+    elif credentials.provider == "coinbase":
+        wallet_rows = snapshot.get("wallet_balances", [])
+        if wallet_rows:
+            with st.expander("Wallet Balances", expanded=False):
+                st.dataframe(pd.DataFrame(wallet_rows), use_container_width=True)
+        else:
+            st.info("Coinbase connected, but no wallet balances were detected from the Advanced Trade account response.")
 
 
 def _render_machine_feed() -> None:

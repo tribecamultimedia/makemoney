@@ -91,6 +91,7 @@ class TradeManager:
                 "cash": float(account.get("cash", 0.0)),
                 "daily_pnl_pct": float(account.get("daily_pnl_pct", 0.0)),
                 "positions": positions,
+                "wallet_balances": list(account.get("wallet_balances", [])),
             }
 
         account = self.account()
@@ -287,45 +288,37 @@ class TradeManager:
 
     def _coinbase_account_snapshot(self) -> dict[str, object]:
         accounts = self._coinbase_list_accounts()
+        wallet_rows = self._coinbase_wallet_rows(accounts)
         equity = 0.0
         cash = 0.0
-        for account in accounts:
-            currency = str(account.get("currency", "")).upper()
-            balance = float(account.get("available_balance", {}).get("value", 0.0))
-            if currency == "USD":
+        for row in wallet_rows:
+            currency = str(row.get("currency", "")).upper()
+            balance = float(row.get("available_balance", 0.0))
+            if currency in {"USD", "USDC", "USDT"}:
                 cash += balance
                 equity += balance
                 continue
             if balance <= 0:
                 continue
-            product_id = f"{currency}-USD"
-            try:
-                quote = self._coinbase_best_bid_ask(product_id)
-                midpoint = (float(quote.get("bid", 0.0)) + float(quote.get("ask", 0.0))) / 2
-            except Exception:
-                midpoint = 0.0
+            midpoint = self._coinbase_mark_price(currency)
             equity += balance * midpoint
         return {
             "equity": equity,
             "cash": cash,
             "buying_power": cash,
             "daily_pnl_pct": 0.0,
+            "wallet_balances": wallet_rows,
         }
 
     def _coinbase_positions(self) -> list[dict[str, object]]:
         rows: list[dict[str, object]] = []
-        accounts = self._coinbase_list_accounts()
-        for account in accounts:
-            currency = str(account.get("currency", "")).upper()
-            qty = float(account.get("available_balance", {}).get("value", 0.0))
-            if currency in {"USD", ""} or qty <= 0:
+        for row in self._coinbase_wallet_rows(self._coinbase_list_accounts()):
+            currency = str(row.get("currency", "")).upper()
+            qty = float(row.get("available_balance", 0.0))
+            if currency in {"USD", "USDC", "USDT", ""} or qty <= 0:
                 continue
-            product_id = f"{currency}-USD"
-            try:
-                quote = self._coinbase_best_bid_ask(product_id)
-                midpoint = (float(quote.get("bid", 0.0)) + float(quote.get("ask", 0.0))) / 2
-            except Exception:
-                midpoint = 0.0
+            product_id = self._coinbase_product_for_currency(currency)
+            midpoint = self._coinbase_mark_price(currency)
             rows.append(
                 {
                     "symbol": product_id,
@@ -337,9 +330,55 @@ class TradeManager:
         return rows
 
     def _coinbase_list_accounts(self) -> list[dict[str, Any]]:
-        response = self._coinbase_request("GET", "/api/v3/brokerage/accounts")
+        response = self._coinbase_request("GET", "/api/v3/brokerage/accounts?limit=250")
         payload = response.json()
         return list(payload.get("accounts", []))
+
+    @staticmethod
+    def _coinbase_wallet_rows(accounts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for account in accounts:
+            currency = str(account.get("currency", "")).upper()
+            available_balance = TradeManager._coinbase_balance_value(account.get("available_balance"))
+            hold_balance = TradeManager._coinbase_balance_value(account.get("hold"))
+            if currency == "":
+                continue
+            rows.append(
+                {
+                    "currency": currency,
+                    "available_balance": available_balance,
+                    "hold_balance": hold_balance,
+                    "type": str(account.get("type", "")),
+                    "uuid": str(account.get("uuid", "")),
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _coinbase_balance_value(payload: Any) -> float:
+        if isinstance(payload, dict):
+            raw = payload.get("value", 0.0)
+        else:
+            raw = payload if payload is not None else 0.0
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _coinbase_product_for_currency(self, currency: str) -> str:
+        if currency == "USDC":
+            return "USDC-USD"
+        return f"{currency}-USD"
+
+    def _coinbase_mark_price(self, currency: str) -> float:
+        if currency in {"USD", "USDC", "USDT"}:
+            return 1.0
+        product_id = self._coinbase_product_for_currency(currency)
+        try:
+            quote = self._coinbase_best_bid_ask(product_id)
+            return (float(quote.get("bid", 0.0)) + float(quote.get("ask", 0.0))) / 2
+        except Exception:
+            return 0.0
 
     def _coinbase_best_bid_ask(self, symbol: str) -> dict[str, Any]:
         response = self._coinbase_request("GET", f"/api/v3/brokerage/best_bid_ask?product_ids={symbol}")

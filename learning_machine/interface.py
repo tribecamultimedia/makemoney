@@ -314,6 +314,7 @@ def _render_ledger_panels() -> None:
     st.markdown("### Algo Test Track Record")
     equity = read_equity_curve()
     ledger = read_ledger()
+    _render_performance_dashboard(equity, ledger)
     left, right = st.columns([1.2, 1.0])
     with left:
         if equity.empty:
@@ -326,6 +327,99 @@ def _render_ledger_panels() -> None:
         else:
             recent = ledger.sort_values("timestamp", ascending=False).head(10)
             st.dataframe(recent, use_container_width=True)
+
+
+def _render_performance_dashboard(equity: pd.DataFrame, ledger: pd.DataFrame) -> None:
+    stats = _build_performance_stats(equity, ledger)
+    st.markdown("#### Performance Dashboard")
+    metric_cols = st.columns(5)
+    metric_cols[0].metric("Total Return", f"{stats['return_pct']:.2f}%")
+    metric_cols[1].metric("Max Drawdown", f"{stats['max_drawdown_pct']:.2f}%")
+    metric_cols[2].metric("Win Rate", f"{stats['win_rate_pct']:.1f}%")
+    metric_cols[3].metric("Submitted Trades", str(stats["submitted_trades"]))
+    metric_cols[4].metric("Protect Actions", str(stats["protect_count"]))
+    st.markdown(
+        f"""
+        <div class="glass-card">
+            <div class="card-label">Daily Report Card</div>
+            <div class="card-copy">{stats['summary_copy']}</div>
+            <div class="card-meta">Signals Logged: {stats['total_events']} | Errors: {stats['error_count']} | Latest Equity: ${stats['latest_equity']:,.2f}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _build_performance_stats(equity: pd.DataFrame, ledger: pd.DataFrame) -> dict[str, float | int | str]:
+    if equity.empty:
+        return {
+            "return_pct": 0.0,
+            "max_drawdown_pct": 0.0,
+            "win_rate_pct": 0.0,
+            "submitted_trades": 0,
+            "protect_count": 0,
+            "total_events": int(len(ledger)),
+            "error_count": int((ledger["status"] == "error").sum()) if not ledger.empty and "status" in ledger else 0,
+            "latest_equity": 0.0,
+            "summary_copy": "The machine has not logged enough history to judge it yet. Give it time or give it trades.",
+        }
+
+    equity_frame = equity.copy().sort_values("timestamp").reset_index(drop=True)
+    equity_frame["equity"] = equity_frame["equity"].astype(float)
+    start_equity = float(equity_frame["equity"].iloc[0])
+    latest_equity = float(equity_frame["equity"].iloc[-1])
+    return_pct = 0.0 if start_equity == 0 else ((latest_equity / start_equity) - 1.0) * 100.0
+    running_peak = equity_frame["equity"].cummax()
+    drawdown = (equity_frame["equity"] / running_peak) - 1.0
+    max_drawdown_pct = abs(float(drawdown.min()) * 100.0)
+
+    submitted_trades = 0
+    protect_count = 0
+    error_count = 0
+    win_rate_pct = 0.0
+    if not ledger.empty:
+        ledger_frame = ledger.copy()
+        ledger_frame["timestamp"] = pd.to_datetime(ledger_frame["timestamp"])
+        submitted = ledger_frame[ledger_frame["status"] == "submitted"].sort_values("timestamp")
+        submitted_trades = int(len(submitted))
+        protect_count = int(((ledger_frame["status"] == "submitted") & (ledger_frame["action"] == "PROTECT")).sum())
+        error_count = int((ledger_frame["status"] == "error").sum())
+        wins = 0
+        evaluated = 0
+        for row in submitted.itertuples():
+            before = equity_frame[equity_frame["timestamp"] <= row.timestamp]
+            after = equity_frame[equity_frame["timestamp"] > row.timestamp]
+            if before.empty or after.empty:
+                continue
+            before_equity = float(before.iloc[-1]["equity"])
+            after_equity = float(after.iloc[0]["equity"])
+            evaluated += 1
+            if row.action == "BUY" and after_equity >= before_equity:
+                wins += 1
+            elif row.action == "PROTECT" and after_equity <= before_equity:
+                wins += 1
+        win_rate_pct = 0.0 if evaluated == 0 else (wins / evaluated) * 100.0
+
+    if return_pct > 0 and max_drawdown_pct < 3:
+        summary_copy = "The machine is compounding without embarrassing itself. That is rarer than financial Twitter would have you believe."
+    elif return_pct > 0:
+        summary_copy = "The machine is making money, but it is not exactly doing it quietly. Watch the drawdown."
+    elif submitted_trades == 0:
+        summary_copy = "The engine is awake, but it has not seen enough clean setups to earn an opinion."
+    else:
+        summary_copy = "The machine is learning expensive lessons. Good. That is what paper capital is for."
+
+    return {
+        "return_pct": return_pct,
+        "max_drawdown_pct": max_drawdown_pct,
+        "win_rate_pct": win_rate_pct,
+        "submitted_trades": submitted_trades,
+        "protect_count": protect_count,
+        "total_events": int(len(ledger)),
+        "error_count": error_count,
+        "latest_equity": latest_equity,
+        "summary_copy": summary_copy,
+    }
 
 
 def _next_top_of_hour(now: datetime | None = None) -> datetime:

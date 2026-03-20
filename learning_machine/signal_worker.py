@@ -71,6 +71,15 @@ def save_state(state: SignalState) -> None:
     STATE_PATH.write_text(json.dumps(asdict(state), indent=2))
 
 
+def latest_state_payload() -> dict[str, object] | None:
+    previous = load_previous_state()
+    if previous is None:
+        return None
+    payload = asdict(previous)
+    payload["app_url"] = DEFAULT_APP_URL
+    return payload
+
+
 def notify_if_changed(state: SignalState, notifier: DiscordNotifier) -> bool:
     previous = load_previous_state()
     save_state(state)

@@ -10,11 +10,13 @@ try:
     from .data import DataConfig, DataPipeline
     from .execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker
     from .notifications import DiscordNotifier
+    from .signal_worker import latest_state_payload
     from .trade_manager import TradeManager
 except ImportError:
     from learning_machine.data import DataConfig, DataPipeline
     from learning_machine.execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker
     from learning_machine.notifications import DiscordNotifier
+    from learning_machine.signal_worker import latest_state_payload
     from learning_machine.trade_manager import TradeManager
 
 
@@ -106,6 +108,19 @@ def main() -> None:
     with vault_col:
         _render_vault(st.session_state.broker_credentials, selected_tickers)
 
+    latest_signal = latest_state_payload()
+    if latest_signal is not None:
+        st.markdown(
+            f"""
+            <div class="glass-card">
+                <div class="card-label">Latest Saved Signal</div>
+                <div class="card-copy">{latest_signal['label']}</div>
+                <div class="card-meta">{latest_signal['message']}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
     insight_cols = st.columns(3)
     _glass_card(
         insight_cols[0],
@@ -142,6 +157,7 @@ def main() -> None:
             signal_map = generate_signal_map(selected_tickers, pulse, practice_cash)
             _render_signal_cards(signal_map)
             _render_copy_trade_controls(signal_map, notifier, app_url)
+            _render_test_signal(notifier, app_url)
             if stress_snapshot["triggered"]:
                 notifier.send_regime_change(
                     tickers=selected_tickers,
@@ -260,6 +276,22 @@ def _render_copy_trade_controls(signal_map: dict[str, ExecutionSignal], notifier
             except Exception as exc:
                 st.error(f"{live_signal.symbol}: {exc}")
         st.markdown(f"[Open live app]({app_url})")
+
+
+def _render_test_signal(notifier: DiscordNotifier, app_url: str) -> None:
+    st.markdown("### Discord Testing")
+    if st.button("Send Test Discord Signal", use_container_width=True):
+        success = notifier.send_signal(
+            asset_name="SOVEREIGN TEST",
+            action="BUY",
+            reason="This is a manual test signal from the dashboard to confirm Discord delivery.",
+            price=0.0,
+            timestamp=pd.Timestamp.utcnow(),
+        )
+        if success:
+            st.success(f"Test signal sent. Review Discord or open the app at {app_url}.")
+        else:
+            st.error("Test signal failed. Check the Discord webhook secret.")
 
 
 def _build_pulse(regime_snapshot: dict[str, float | str], stress_snapshot: dict[str, float | bool]) -> dict[str, object]:

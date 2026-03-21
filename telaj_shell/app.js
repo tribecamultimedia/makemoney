@@ -4,11 +4,17 @@ const defaultState = {
   onboarding: {
     completed: false,
     currentStep: 0,
+    stage: "questions",
     answers: {},
     profiles: {
       householdProfile: null,
       behaviorProfile: null,
       goalProfile: null,
+    },
+    intent: {
+      notes: "",
+      analysis: null,
+      confirmed: false,
     },
   },
   morningSignal: {
@@ -502,16 +508,29 @@ function loadOnboardingState() {
     state.onboarding = {
       completed: Boolean(parsed.completed),
       currentStep: Number(parsed.currentStep ?? 0),
+      stage: parsed.stage === "intent" ? "intent" : "questions",
       answers: typeof parsed.answers === "object" && parsed.answers ? parsed.answers : {},
       profiles:
         typeof parsed.profiles === "object" && parsed.profiles
           ? parsed.profiles
           : structuredClone(defaultState.onboarding.profiles),
+      intent:
+        typeof parsed.intent === "object" && parsed.intent
+          ? {
+              notes: typeof parsed.intent.notes === "string" ? parsed.intent.notes : "",
+              analysis: parsed.intent.analysis ?? null,
+              confirmed: Boolean(parsed.intent.confirmed),
+            }
+          : structuredClone(defaultState.onboarding.intent),
     };
     const firstMissing = getFirstMissingQuestionIndex();
     if (firstMissing >= 0) {
       state.onboarding.completed = false;
+      state.onboarding.stage = "questions";
       state.onboarding.currentStep = firstMissing;
+    } else if (!state.onboarding.intent?.analysis) {
+      state.onboarding.completed = false;
+      state.onboarding.stage = "intent";
     }
   } catch (error) {
     console.warn("TELAJ onboarding state could not be restored.", error);
@@ -524,8 +543,10 @@ function persistOnboardingState() {
     JSON.stringify({
       completed: state.onboarding.completed,
       currentStep: state.onboarding.currentStep,
+      stage: state.onboarding.stage,
       answers: state.onboarding.answers,
       profiles: state.onboarding.profiles,
+      intent: state.onboarding.intent,
     })
   );
 }
@@ -750,8 +771,147 @@ function deriveLifeMatrixProfiles() {
   };
 }
 
+function dedupeList(items) {
+  return [...new Set(items.filter(Boolean))];
+}
+
+function analyzeIntentNotes(notes, profiles) {
+  const text = notes.trim();
+  if (!text) {
+    return null;
+  }
+
+  const normalized = text.toLowerCase();
+  const household = profiles?.householdProfile;
+  const behavior = profiles?.behaviorProfile;
+  const goals = profiles?.goalProfile;
+
+  const priorityTags = [];
+  const cautionTags = [];
+  const reasons = [];
+  const risks = [];
+  const optimizeFor = [];
+
+  if (/(child|children|family|daughter|son|wife|husband|spouse|parent)/.test(normalized)) {
+    priorityTags.push("Family-first");
+    optimizeFor.push("household stability");
+  }
+  if (/(home|house|property|real estate|rental|rent)/.test(normalized)) {
+    priorityTags.push("Real-estate intent");
+    optimizeFor.push("property readiness");
+  }
+  if (/(income|cash flow|monthly|rent|dividend)/.test(normalized)) {
+    priorityTags.push("Income focus");
+    optimizeFor.push("durable cash flow");
+  }
+  if (/(legacy|future|generation|children|inherit)/.test(normalized)) {
+    priorityTags.push("Legacy orientation");
+    optimizeFor.push("long-duration family capital");
+  }
+  if (/(safe|safety|protect|emergency|reserve|buffer|stability)/.test(normalized)) {
+    priorityTags.push("Safety-first");
+    optimizeFor.push("reserve strength");
+  }
+  if (/(grow|growth|compound|long term|long-term|wealth)/.test(normalized)) {
+    priorityTags.push("Growth intent");
+    optimizeFor.push("measured compounding");
+  }
+
+  if (/(crypto|options|meme|gamble|bet|leverage|yolo)/.test(normalized)) {
+    cautionTags.push("Speculation risk");
+    risks.push("The motivation includes language that sounds closer to speculation than disciplined allocation.");
+  }
+  if (/(fast|quick|urgent|asap|immediately|get rich|rich quick)/.test(normalized)) {
+    cautionTags.push("Speed pressure");
+    risks.push("The goal may be pushing for speed in a way that can weaken discipline.");
+  }
+  if (/(fear|afraid|anxious|stress|panic)/.test(normalized)) {
+    cautionTags.push("Emotional pressure");
+    risks.push("Emotional stress is part of the decision environment, so TELAJ should stay more conservative.");
+  }
+  if (/(debt|loan|mortgage|owe)/.test(normalized)) {
+    cautionTags.push("Debt sensitivity");
+    optimizeFor.push("debt pressure control");
+  }
+
+  if (goals?.primaryGoal === "safety") {
+    reasons.push("Your structured profile already says safety comes first, and the written motivation supports that.");
+  } else if (goals?.primaryGoal === "growth") {
+    reasons.push("Your notes point toward growth, but TELAJ will still filter growth through liquidity and discipline.");
+  } else if (goals?.primaryGoal === "legacy") {
+    reasons.push("Your motivation reads like long-duration family planning rather than short-term performance chasing.");
+  }
+
+  if (household?.liquidityProfile === "very-low") {
+    risks.push("The household profile still shows weak liquidity, so good goals can still be mistimed.");
+  }
+  if (household?.primaryResidenceStatus === "own-mortgage" && household?.primaryHomeDebtRate === "high") {
+    risks.push("A higher-cost primary-home mortgage may deserve attention before optional new risk.");
+  }
+  if (behavior?.weakness === "fomo") {
+    cautionTags.push("FOMO guardrail");
+    risks.push("Your behavior profile suggests TELAJ should challenge excitement-driven decisions more aggressively.");
+  } else if (behavior?.weakness === "overspending") {
+    cautionTags.push("Spending control");
+    risks.push("Lifestyle leakage can quietly overpower even good allocation goals.");
+  }
+
+  const heard = text.length > 220 ? `${text.slice(0, 217).trim()}...` : text;
+  const makesSense =
+    reasons[0] ??
+    "The motivation is usable and TELAJ can translate it into a calmer allocation posture rather than generic finance advice.";
+  const critique =
+    risks[0] ??
+    "The goal sounds valid, but TELAJ will still pressure-test timing, liquidity, and concentration before endorsing action.";
+  const optimize =
+    dedupeList(optimizeFor)[0] ??
+    (goals?.recommendedPosture === "Reserves first" ? "household resilience" : "disciplined long-term allocation");
+  const watchout =
+    dedupeList(cautionTags)[0] ??
+    (behavior?.riskBehavior === "Fragile under stress" ? "Stress reactions under drawdown" : "Forcing moves too early");
+
+  return {
+    heard,
+    priorityTags: dedupeList(priorityTags).slice(0, 4),
+    cautionTags: dedupeList(cautionTags).slice(0, 4),
+    makesSense,
+    critique,
+    optimizeFor: optimize,
+    watchout,
+  };
+}
+
+async function analyzeIntent(notes, profiles) {
+  try {
+    const response = await fetch("/api/intent-analysis", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        notes,
+        profiles,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Intent route failed: ${response.status}`);
+    }
+
+    const payload = await response.json();
+    if (payload?.analysis) {
+      return payload.analysis;
+    }
+  } catch (error) {
+    console.warn("TELAJ intent API unavailable, using local analysis.", error);
+  }
+
+  return analyzeIntentNotes(notes, profiles);
+}
+
 function applyProfilesToNarrative() {
   const { householdProfile, behaviorProfile, goalProfile } = state.onboarding.profiles;
+  const intent = state.onboarding.intent?.analysis;
   if (!householdProfile || !behaviorProfile || !goalProfile) {
     return;
   }
@@ -828,6 +988,20 @@ function applyProfilesToNarrative() {
     state.recommendation.secondaryAction = "Delay optional risk until the home balance sheet is stronger";
   }
 
+  if (intent?.optimizeFor === "property readiness") {
+    state.recommendation.secondaryAction = "Translate the goal into a property-readiness plan, not an impulse move";
+    state.property.signal = "Property intent is real, but TELAJ wants readiness over urgency";
+  } else if (intent?.optimizeFor === "durable cash flow") {
+    state.recommendation.headline = "Build reliable cash flow without weakening the household core";
+    state.recommendation.growthSleeve = "Favor durable ETF and cash-flow assets over concentrated bets";
+  } else if (intent?.optimizeFor === "reserve strength") {
+    state.morningSignal.move = "Protect the household buffer before reaching for the next idea";
+  }
+
+  if (intent?.watchout === "Speculation risk" || intent?.watchout === "Speed pressure") {
+    state.recommendation.avoid = "Fast, narrative-driven moves that break the household plan";
+  }
+
   if (behaviorProfile.weakness === "overspending") {
     state.recommendation.avoid = "Lifestyle inflation and emotional spending";
   } else if (behaviorProfile.weakness === "fomo") {
@@ -841,6 +1015,11 @@ function renderOnboarding() {
   if (state.onboarding.completed) {
     onboardingShell.classList.remove("is-active");
     appShell.classList.remove("is-hidden");
+    return;
+  }
+
+  if (state.onboarding.stage === "intent") {
+    renderIntentStage();
     return;
   }
 
@@ -919,16 +1098,113 @@ function renderOnboarding() {
     }
     if (isLast) {
       state.onboarding.profiles = deriveLifeMatrixProfiles();
-      state.onboarding.completed = true;
+      state.onboarding.stage = "intent";
       persistOnboardingState();
-      applyProfilesToNarrative();
       renderOnboarding();
-      renderAll();
       return;
     }
     state.onboarding.currentStep += 1;
     persistOnboardingState();
     renderOnboarding();
+  });
+}
+
+function renderIntentStage() {
+  const notes = state.onboarding.intent?.notes ?? "";
+  const analysis = state.onboarding.intent?.analysis;
+
+  onboardingShell.classList.add("is-active");
+  appShell.classList.add("is-hidden");
+  onboardingShell.innerHTML = `
+    <div class="onboarding-card intent-card">
+      <div class="onboarding-head">
+        <div>
+          <div class="eyebrow">TELAJ INTENT CHAT</div>
+          <h1 class="onboarding-title">Now explain the human reason behind the plan.</h1>
+          <p class="onboarding-copy">Write in your own words. TELAJ will summarize what it heard, challenge weak assumptions, and carry your motivations into future advice.</p>
+        </div>
+        <div class="onboarding-step">Intent | final step</div>
+      </div>
+      <div class="question-stage">
+        <div class="micro-label">Your words</div>
+        <textarea id="intent-notes" class="intent-textarea" placeholder="Example: I want to protect my family, stop making rushed decisions, and know when real estate actually makes sense for us. I care more about avoiding a big mistake than chasing the fastest return.">${notes}</textarea>
+        <div class="onboarding-actions intent-actions">
+          <button class="ghost-button" id="intent-back">Back</button>
+          <div class="task-pill">${analysis ? "Intent analyzed" : "Write freely, then analyze"}</div>
+          <button class="action-button" id="intent-analyze">Analyze with TELAJ</button>
+          <button class="action-button primary" id="intent-enter" ${analysis ? "" : "disabled"}>Enter TELAJ</button>
+        </div>
+      </div>
+      <div class="onboarding-summary">
+        <div class="micro-label">What TELAJ heard</div>
+        ${
+          analysis
+            ? `
+              <div class="panel-copy">${analysis.heard}</div>
+              <div class="summary-grid">
+                <div class="profile-chip">
+                  <div class="micro-label">What makes sense</div>
+                  <div class="panel-copy">${analysis.makesSense}</div>
+                </div>
+                <div class="profile-chip">
+                  <div class="micro-label">What TELAJ will challenge</div>
+                  <div class="panel-copy">${analysis.critique}</div>
+                </div>
+                <div class="profile-chip">
+                  <div class="micro-label">TELAJ will optimize for</div>
+                  <div class="panel-copy">${analysis.optimizeFor}</div>
+                </div>
+                <div class="profile-chip">
+                  <div class="micro-label">Main watchout</div>
+                  <div class="panel-copy">${analysis.watchout}</div>
+                </div>
+              </div>
+              <div class="summary-grid">
+                <div class="profile-chip">
+                  <div class="micro-label">Priority tags</div>
+                  <div class="tag-row">
+                    ${(analysis.priorityTags.length ? analysis.priorityTags : ["General planning"]).map((item) => `<span class="task-pill">${item}</span>`).join("")}
+                  </div>
+                </div>
+                <div class="profile-chip">
+                  <div class="micro-label">Caution tags</div>
+                  <div class="tag-row">
+                    ${(analysis.cautionTags.length ? analysis.cautionTags : ["No major warning"]).map((item) => `<span class="task-pill">${item}</span>`).join("")}
+                  </div>
+                </div>
+              </div>
+            `
+            : `<div class="panel-copy">Use this to explain motivation, fear, family priorities, values, or what kind of mistake you want TELAJ to help you avoid.</div>`
+        }
+      </div>
+    </div>
+  `;
+
+  document.getElementById("intent-back")?.addEventListener("click", () => {
+    state.onboarding.stage = "questions";
+    state.onboarding.currentStep = Math.max(0, getLifeMatrixQuestions().length - 1);
+    persistOnboardingState();
+    renderOnboarding();
+  });
+
+  document.getElementById("intent-analyze")?.addEventListener("click", async () => {
+    const nextNotes = document.getElementById("intent-notes").value.trim();
+    state.onboarding.intent.notes = nextNotes;
+    state.onboarding.intent.analysis = await analyzeIntent(nextNotes, state.onboarding.profiles);
+    state.onboarding.intent.confirmed = false;
+    persistOnboardingState();
+    renderIntentStage();
+  });
+
+  document.getElementById("intent-enter")?.addEventListener("click", async () => {
+    state.onboarding.intent.notes = document.getElementById("intent-notes").value.trim();
+    state.onboarding.intent.analysis = await analyzeIntent(state.onboarding.intent.notes, state.onboarding.profiles);
+    state.onboarding.intent.confirmed = Boolean(state.onboarding.intent.analysis);
+    state.onboarding.completed = true;
+    persistOnboardingState();
+    applyProfilesToNarrative();
+    renderOnboarding();
+    renderAll();
   });
 }
 
@@ -1102,6 +1378,17 @@ function renderProfileMatrix() {
         <div class="profile-chip-title">${profiles.goalProfile.goalArchetype}</div>
         <div class="panel-copy">Goal ${profiles.goalProfile.primaryGoal} | Wealth for ${profiles.goalProfile.wealthFor} | Posture ${profiles.goalProfile.recommendedPosture}</div>
       </div>
+      ${
+        state.onboarding.intent?.analysis
+          ? `
+            <div class="profile-chip">
+              <div class="micro-label">IntentLayer</div>
+              <div class="profile-chip-title">${state.onboarding.intent.analysis.optimizeFor}</div>
+              <div class="panel-copy">Watchout ${state.onboarding.intent.analysis.watchout} | Tags ${(state.onboarding.intent.analysis.priorityTags || []).join(", ") || "General planning"}</div>
+            </div>
+          `
+          : ""
+      }
     </div>
   `;
 }
@@ -1536,6 +1823,11 @@ async function bootstrap() {
   await loadMockApiState();
   if (state.onboarding.completed && (!state.onboarding.profiles?.householdProfile || !state.onboarding.profiles?.behaviorProfile || !state.onboarding.profiles?.goalProfile)) {
     state.onboarding.profiles = deriveLifeMatrixProfiles();
+    persistOnboardingState();
+  }
+  if (state.onboarding.completed && !state.onboarding.intent?.analysis) {
+    state.onboarding.completed = false;
+    state.onboarding.stage = "intent";
     persistOnboardingState();
   }
   if (state.onboarding.completed) {

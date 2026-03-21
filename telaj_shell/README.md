@@ -31,3 +31,14 @@ Static TELAJ product shell for drag-and-drop deployment on Netlify.
   - `mock-api/family-dashboard.json`
 - The Life Matrix onboarding currently derives `HouseholdProfile`, `BehaviorProfile`, and `GoalProfile` locally in the browser.
 - `mock-api/family-profile.json` documents the future API shape for that derived profile layer.
+- The intent step can now call a Vercel serverless route:
+  - `/api/intent-analysis`
+- Supported model env vars for Vercel:
+  - `TELAJ_MODEL_PROVIDER`
+    - `openai`
+    - `gemini`
+  - `OPENAI_API_KEY`
+  - `OPENAI_MODEL`
+  - `GEMINI_API_KEY`
+  - `GEMINI_MODEL`
+- If no provider key is available, the route falls back to TELAJ's local heuristic analysis.

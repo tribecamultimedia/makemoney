@@ -211,6 +211,40 @@ select:focus {
   gap: 10px;
 }
 
+.intent-card {
+  grid-template-rows: auto 1fr auto;
+}
+
+.intent-textarea {
+  width: 100%;
+  min-height: 220px;
+  border: 2px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  padding: 16px;
+  font: inherit;
+  line-height: 1.6;
+  resize: vertical;
+  box-shadow: var(--shadow);
+}
+
+.intent-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--accent-faint);
+}
+
+.intent-actions {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .summary-grid {
   display: grid;
   gap: 10px;

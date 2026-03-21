@@ -2170,43 +2170,46 @@ def _inject_styles() -> None:
     st.markdown(
         """
         <style>
-            @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600;700&display=swap');
             :root {
-                --bg: #F7F1E8;
-                --panel: #FFFFFF;
-                --border: #CFC7BD;
-                --text: #111111;
-                --muted: #5F6368;
-                --accent: #111111;
-                --red: #D93025;
-                --green: #12A150;
-                --soft: #EFE6D9;
+                --bg: #0A0A0B;
+                --surface: #111113;
+                --panel: #151518;
+                --border: #2A2A2E;
+                --text: #F3F4F6;
+                --muted: #A3A8B3;
+                --accent: #1F6BFF;
+                --accent-strong: #3D8BFF;
+                --accent-soft: #6FA8FF;
+                --red: #FF4D4F;
+                --green: #2ECC71;
+                --soft: #111113;
             }
             @keyframes riseIn {
                 from { opacity: 0; transform: translateY(8px); }
                 to { opacity: 1; transform: translateY(0); }
             }
-            @keyframes drift {
-                0% { transform: translateY(0px); }
-                50% { transform: translateY(-2px); }
-                100% { transform: translateY(0px); }
+            @keyframes pulseLine {
+                0% { border-color: var(--border); }
+                50% { border-color: rgba(61, 139, 255, 0.65); }
+                100% { border-color: var(--border); }
             }
             .stApp {
                 background: var(--bg);
                 color: var(--text);
                 font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
             }
-            [data-testid="stHeader"] { background: rgba(247, 241, 232, 0.96); border-bottom: 1px solid var(--border); }
+            [data-testid="stHeader"] { background: rgba(10, 10, 11, 0.98); border-bottom: 1px solid var(--border); }
             [data-testid="stToolbar"], [data-testid="stDecoration"] { background: transparent; }
             [data-testid="stAppViewContainer"] { background: var(--bg); }
             .block-container { max-width: 1180px; padding-top: 1.2rem; padding-bottom: 4rem; }
             .hero-kicker, .card-label {
-                color: var(--accent);
+                color: var(--accent-soft);
                 text-transform: uppercase;
                 letter-spacing: 0.14rem;
                 font-size: 0.82rem;
                 margin-bottom: 0.4rem;
-                font-family: "IBM Plex Mono", ui-monospace, monospace;
+                font-family: "JetBrains Mono", ui-monospace, monospace;
             }
             .hero-title {
                 color: var(--text);
@@ -2215,7 +2218,7 @@ def _inject_styles() -> None:
                 line-height: 1.02;
                 margin-bottom: 0.5rem;
                 font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
-                animation: riseIn 0.55s ease-out, drift 5s ease-in-out infinite;
+                animation: riseIn 0.55s ease-out;
             }
             .hero-copy, .card-copy, .card-meta, .hero-message {
                 color: var(--muted);
@@ -2224,34 +2227,39 @@ def _inject_styles() -> None:
             }
             .hero-card, .glass-card, .signal-card, .bundle-card {
                 background: var(--panel);
-                border: 1px solid var(--border);
-                border-radius: 12px;
+                border: 1.5px solid var(--border);
+                border-radius: 6px;
                 padding: 1rem 1.1rem;
                 margin-bottom: 1rem;
-                box-shadow: 0 10px 24px rgba(0, 0, 0, 0.04);
+                box-shadow: none;
                 animation: riseIn 0.45s ease-out;
+                transition: border-color 0.18s ease, transform 0.18s ease;
+            }
+            .hero-card:hover, .glass-card:hover, .signal-card:hover, .bundle-card:hover, .intent-card:hover, .brief-lead:hover, .media-brief:hover {
+                border-color: var(--accent);
+                transform: translateY(-1px);
             }
             .brief-lead, .media-brief {
                 background: var(--panel);
-                border: 1px solid var(--border);
-                border-radius: 12px;
+                border: 1.5px solid var(--border);
+                border-radius: 6px;
                 padding: 1.1rem 1.15rem 1rem 1.15rem;
                 min-height: 100%;
-                box-shadow: 0 10px 24px rgba(0, 0, 0, 0.04);
+                box-shadow: none;
                 animation: riseIn 0.45s ease-out;
             }
             .brief-title {
-                font-family: Georgia, "Times New Roman", serif;
+                font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
                 font-size: 1.8rem;
                 line-height: 1.08;
                 color: var(--text);
                 margin-bottom: 0.45rem;
             }
             .brief-copy {
-                font-family: Georgia, "Times New Roman", serif;
+                font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
                 font-size: 1.05rem;
                 line-height: 1.6;
-                color: #202124;
+                color: var(--text);
                 margin-bottom: 0.55rem;
             }
             .brief-meta {
@@ -2259,23 +2267,25 @@ def _inject_styles() -> None:
                 font-size: 0.92rem;
                 border-top: 1px solid var(--border);
                 padding-top: 0.65rem;
+                font-family: "JetBrains Mono", ui-monospace, monospace;
             }
             .media-brief.green { border-left: 4px solid var(--green); }
             .media-brief.red { border-left: 4px solid var(--red); }
-            .media-brief.neutral { border-left: 4px solid #111111; }
+            .media-brief.neutral { border-left: 4px solid var(--accent); }
             .intent-grid {
                 display: grid;
-                grid-template-columns: repeat(3, minmax(0, 1fr));
+                grid-template-columns: repeat(4, minmax(0, 1fr));
                 gap: 1rem;
                 margin-bottom: 1rem;
             }
             .intent-card {
                 background: var(--panel);
-                border: 1px solid var(--border);
-                border-radius: 12px;
+                border: 1.5px solid var(--border);
+                border-radius: 6px;
                 padding: 1rem 1.1rem;
-                box-shadow: 0 14px 36px rgba(0, 0, 0, 0.05);
+                box-shadow: none;
                 animation: riseIn 0.5s ease-out;
+                transition: border-color 0.18s ease, transform 0.18s ease;
             }
             .status-badge {
                 display: inline-block;
@@ -2285,19 +2295,20 @@ def _inject_styles() -> None:
                 margin-bottom: 1rem;
                 font-size: 0.92rem;
                 font-weight: 600;
+                font-family: "JetBrains Mono", ui-monospace, monospace;
             }
             .status-badge.connected {
-                background: rgba(18, 161, 80, 0.08);
-                color: var(--green);
+                background: rgba(31, 107, 255, 0.08);
+                color: var(--accent-soft);
             }
             .status-badge.disconnected {
-                background: rgba(217, 48, 37, 0.08);
+                background: rgba(255, 77, 79, 0.08);
                 color: var(--red);
             }
             .hero-flex { display: flex; gap: 1rem; align-items: center; }
             .hero-mode { color: var(--text); font-size: 1.65rem; font-weight: 700; margin-bottom: 0.35rem; }
             .donut { width: 180px; height: 180px; flex-shrink: 0; }
-            .donut-track { fill: none; stroke: #E7E7E7; stroke-width: 12; }
+            .donut-track { fill: none; stroke: #22242A; stroke-width: 12; }
             .donut-ring { fill: none; stroke-width: 12; stroke-linecap: round; }
             .donut-score { fill: var(--text); font-size: 22px; font-weight: 700; }
             .donut-caption { fill: var(--muted); font-size: 11px; }
@@ -2306,27 +2317,43 @@ def _inject_styles() -> None:
             .signal-action.protect { color: var(--red); }
             .stButton > button {
                 min-height: 48px;
-                background: #FFFFFF;
+                background: var(--surface);
                 color: var(--text);
-                border: 1px solid #111111;
-                border-radius: 8px;
+                border: 1.5px solid var(--border);
+                border-radius: 4px;
                 font-weight: 700;
                 transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease;
             }
             .stButton > button:hover {
                 transform: translateY(-1px);
-                background: #111111;
-                color: #FFFFFF;
+                background: var(--surface);
+                color: var(--accent-soft);
+                border-color: var(--accent);
             }
             [data-testid="stSidebar"] { background: var(--soft); border-right: 1px solid var(--border); }
             .stMetric {
-                background: #FFFFFF;
-                border: 1px solid var(--border);
-                border-radius: 10px;
+                background: var(--panel);
+                border: 1.5px solid var(--border);
+                border-radius: 4px;
                 padding: 0.5rem 0.75rem;
             }
             label, .stMarkdown, .stCaption, .stTextInput, .stNumberInput, .stSelectbox, .stSlider, .stRadio {
                 color: var(--text) !important;
+            }
+            [data-testid="stMetricValue"], [data-testid="stMetricDelta"], .run-time, .run-countdown {
+                font-family: "JetBrains Mono", ui-monospace, monospace;
+            }
+            .card-meta, .shadow-value, .shadow-label {
+                font-family: "JetBrains Mono", ui-monospace, monospace;
+            }
+            .shadow-ticker {
+                background: var(--surface);
+                border: 1.5px solid var(--border);
+                border-radius: 4px;
+                padding: 0.9rem 1rem;
+                margin-top: 1rem;
+                color: var(--text);
+                animation: pulseLine 4s linear infinite;
             }
             @media (max-width: 768px) {
                 .hero-flex { flex-direction: column; align-items: flex-start; }

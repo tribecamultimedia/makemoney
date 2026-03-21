@@ -234,6 +234,30 @@ const questionBank = [
     ],
   },
   {
+    id: "propertyCount",
+    category: "Household",
+    prompt: "How many properties do you currently own?",
+    helper: "TELAJ should understand whether property is absent, emerging, or a major part of the family balance sheet.",
+    options: [
+      { value: "0", title: "None", note: "No current property ownership." },
+      { value: "1", title: "1 property", note: "Usually a first home or one property exposure." },
+      { value: "2-3", title: "2-3 properties", note: "Property is a meaningful family capital bucket." },
+      { value: "4plus", title: "4+", note: "Property is a major part of the system." },
+    ],
+  },
+  {
+    id: "propertyType",
+    category: "Household",
+    prompt: "What type of properties best describes what you own?",
+    helper: "Broad property type matters because a primary home, rentals, and commercial exposure behave very differently.",
+    options: [
+      { value: "primary-home", title: "Primary home", note: "Mostly owner-occupied housing." },
+      { value: "rental", title: "Rental property", note: "Residential income-producing property." },
+      { value: "mixed-residential", title: "Mixed residential", note: "Primary plus rental or multiple homes." },
+      { value: "commercial-land", title: "Commercial or land", note: "Land, mixed-use, or commercial exposure." },
+    ],
+  },
+  {
     id: "liabilities",
     category: "Household",
     prompt: "What liabilities do you currently have?",
@@ -412,6 +436,11 @@ function loadOnboardingState() {
           ? parsed.profiles
           : structuredClone(defaultState.onboarding.profiles),
     };
+    const firstMissing = getFirstMissingQuestionIndex();
+    if (firstMissing >= 0) {
+      state.onboarding.completed = false;
+      state.onboarding.currentStep = firstMissing;
+    }
   } catch (error) {
     console.warn("TELAJ onboarding state could not be restored.", error);
   }
@@ -516,11 +545,26 @@ function getLifeMatrixQuestions() {
     if (question.id === "dependents" && answers.householdRole === "single") {
       return false;
     }
+    if (question.id === "propertyCount") {
+      return ["property", "mixed"].includes(answers.ownedAssets) || answers.propertyIntent === "existing";
+    }
+    if (question.id === "propertyType") {
+      return (
+        (["property", "mixed"].includes(answers.ownedAssets) || answers.propertyIntent === "existing") &&
+        Boolean(answers.propertyCount) &&
+        answers.propertyCount !== "0"
+      );
+    }
     if (question.id === "propertyIntent" && answers.ownedAssets === "mostly-cash" && answers.goal === "safety") {
       return false;
     }
     return true;
   });
+}
+
+function getFirstMissingQuestionIndex() {
+  const questions = getLifeMatrixQuestions();
+  return questions.findIndex((question) => !state.onboarding.answers[question.id]);
 }
 
 function deriveHouseholdProfile(answers) {
@@ -551,6 +595,8 @@ function deriveHouseholdProfile(answers) {
     assetBase,
     liabilityPressure: answers.liabilities ?? "unknown",
     liquidityProfile: answers.liquidity ?? "unknown",
+    propertyCount: answers.propertyCount ?? "0",
+    propertyType: answers.propertyType ?? "none",
     propertyExposure,
     archetype,
   };
@@ -676,6 +722,15 @@ function applyProfilesToNarrative() {
   if (householdProfile.propertyExposure && goalProfile.propertyIntent !== "none") {
     state.property.signal = "Real estate matters, but only if liquidity and stress still work";
     state.property.note = "The property decision should serve the household system, not become the system.";
+  }
+
+  if (["2-3", "4plus"].includes(householdProfile.propertyCount)) {
+    state.property.signal = "Property concentration now deserves active portfolio discipline";
+    state.property.note =
+      "TELAJ sees multiple properties on the balance sheet, so liquidity, debt structure, and vacancy resilience matter more than the next acquisition story.";
+  } else if (householdProfile.propertyType === "rental" || householdProfile.propertyType === "commercial-land") {
+    state.property.note =
+      "TELAJ treats income-producing property as an operating asset, so cash flow discipline and stress testing matter more than headline valuations.";
   }
 
   if (behaviorProfile.weakness === "overspending") {
@@ -939,6 +994,7 @@ function renderProfileMatrix() {
         <div class="micro-label">HouseholdProfile</div>
         <div class="profile-chip-title">${profiles.householdProfile.archetype}</div>
         <div class="panel-copy">Age ${profiles.householdProfile.ageBand} | ${profiles.householdProfile.assetBase} | Liquidity ${profiles.householdProfile.liquidityProfile}</div>
+        <div class="panel-copy">Property ${profiles.householdProfile.propertyCount} | Type ${profiles.householdProfile.propertyType}</div>
       </div>
       <div class="profile-chip">
         <div class="micro-label">BehaviorProfile</div>

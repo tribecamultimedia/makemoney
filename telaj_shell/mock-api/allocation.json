@@ -1,0 +1,22 @@
+{
+  "recommendation": {
+    "headline": "Increase liquidity first, then add gold and broad ETFs",
+    "summary": "TELAJ is not against investing. It wants the household to be harder to destabilize before you push further into risk.",
+    "primaryAction": "Add to cash reserve",
+    "secondaryAction": "Allocate 10% to gold",
+    "growthSleeve": "Use a broad ETF basket only",
+    "avoid": "Concentrated speculative bets"
+  },
+  "rules": [
+    "Cash before complexity when reserves are thin",
+    "Gold when the model wants defense, not panic",
+    "Broad ETFs before narrow bets",
+    "Real estate only when liquidity and stress tests support it"
+  ],
+  "watchouts": [
+    "Do not buy assets you cannot hold through drawdowns",
+    "Do not let one asset dominate the family system",
+    "Do not weaken reserves to feel invested"
+  ],
+  "source": "mock-api/allocation.json"
+}

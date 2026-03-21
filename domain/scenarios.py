@@ -31,3 +31,16 @@ class ScenarioShockResult:
     guidance: tuple[str, ...]
     narrative: str
 
+
+@dataclass(frozen=True, slots=True)
+class HouseholdScenarioResult:
+    scenario_name: str
+    shock_description: str
+    monthly_income_change: float
+    monthly_expense_change: float
+    monthly_liability_change: float
+    net_worth_impact_pct: float
+    reserve_gap_months: float
+    pressure_points: tuple[str, ...]
+    safer_move: str
+    narrative: str

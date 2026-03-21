@@ -1,0 +1,19 @@
+{
+  "property": {
+    "signal": "Wait before entering real estate aggressively",
+    "note": "Rates and liquidity say prepare first, not force the move.",
+    "metrics": [
+      { "label": "Readiness score", "value": "64 / 100" },
+      { "label": "Cash for down payment", "value": "72%" },
+      { "label": "Rate environment", "value": "Still elevated" },
+      { "label": "Reserve overlap", "value": "Too tight" }
+    ],
+    "checklist": [
+      "Finish 6-month emergency reserve",
+      "Reduce short-term debt pressure",
+      "Model vacancy and maintenance stress",
+      "Only buy if cash flow still works under stress"
+    ]
+  },
+  "source": "mock-api/real-estate.json"
+}

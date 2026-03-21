@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from domain.scenarios import ScenarioShockResult, WealthMapState
+from domain.scenarios import HouseholdScenarioResult, ScenarioShockResult, WealthMapState
 
 
 class ScenarioEngine:
@@ -171,4 +171,129 @@ class ScenarioEngine:
         )
         payload = asdict(result)
         payload["wealth_map"] = asdict(wealth_map)
+        return payload
+
+    def run_household_scenario(
+        self,
+        *,
+        scenario_name: str,
+        profile: dict[str, str],
+        balance_sheet_inputs: dict[str, object],
+    ) -> dict[str, object]:
+        liquid_assets = float(balance_sheet_inputs.get("liquid_assets", 0.0) or 0.0)
+        investments = float(balance_sheet_inputs.get("investments", 0.0) or 0.0)
+        real_estate = float(balance_sheet_inputs.get("real_estate", 0.0) or 0.0)
+        business_assets = float(balance_sheet_inputs.get("business_assets", 0.0) or 0.0)
+        liabilities = float(balance_sheet_inputs.get("liabilities", 0.0) or 0.0)
+        monthly_income = float(balance_sheet_inputs.get("monthly_household_income", 0.0) or 0.0)
+        monthly_expenses = float(balance_sheet_inputs.get("monthly_household_expenses", 0.0) or 0.0)
+        monthly_liability_payment = float(balance_sheet_inputs.get("monthly_liability_payment", 0.0) or 0.0)
+
+        scenarios = {
+            "income_drop": {
+                "description": "Household income softens and monthly flexibility gets tighter.",
+                "income_pct": -15.0,
+                "expense_pct": 0.0,
+                "liability_pct": 0.0,
+                "asset_pct": 0.0,
+            },
+            "job_loss": {
+                "description": "One income source disappears for a period and reserves become the operating engine.",
+                "income_pct": -45.0,
+                "expense_pct": -10.0,
+                "liability_pct": 0.0,
+                "asset_pct": -3.0,
+            },
+            "rate_spike": {
+                "description": "Borrowing costs rise and debt becomes a heavier drag on the household.",
+                "income_pct": 0.0,
+                "expense_pct": 0.0,
+                "liability_pct": 12.0,
+                "asset_pct": -4.0,
+            },
+            "property_vacancy": {
+                "description": "Property income weakens and the real-estate bucket stops helping the plan.",
+                "income_pct": -12.0 if real_estate > 0 else -2.0,
+                "expense_pct": 6.0,
+                "liability_pct": 0.0,
+                "asset_pct": -6.0 if real_estate > 0 else -1.0,
+            },
+            "market_drawdown": {
+                "description": "Risk assets fall and the family must lean on liquidity and discipline.",
+                "income_pct": 0.0,
+                "expense_pct": 0.0,
+                "liability_pct": 0.0,
+                "asset_pct": -10.0,
+            },
+            "business_slowdown": {
+                "description": "Private or business-related capital slows down and spillover hits family cash planning.",
+                "income_pct": -20.0 if business_assets > 0 else -5.0,
+                "expense_pct": 3.0,
+                "liability_pct": 0.0,
+                "asset_pct": -8.0 if business_assets > 0 else -2.0,
+            },
+        }
+        shock = scenarios[scenario_name]
+
+        monthly_income_change = monthly_income * (shock["income_pct"] / 100.0)
+        monthly_expense_change = monthly_expenses * (shock["expense_pct"] / 100.0)
+        monthly_liability_change = monthly_liability_payment * (shock["liability_pct"] / 100.0)
+
+        total_assets = liquid_assets + investments + real_estate + business_assets
+        net_worth = total_assets - liabilities
+        net_worth_impact_pct = shock["asset_pct"]
+        shocked_assets = total_assets * (1 + shock["asset_pct"] / 100.0)
+        shocked_net_worth = shocked_assets - liabilities
+        reserve_gap_months = 0.0
+        shocked_free_cash_flow = (
+            (monthly_income + monthly_income_change)
+            - (monthly_expenses + monthly_expense_change)
+            - (monthly_liability_payment + monthly_liability_change)
+        )
+        if shocked_free_cash_flow < 0:
+            reserve_gap_months = abs(shocked_free_cash_flow)
+            reserve_gap_months = reserve_gap_months / max(liquid_assets / 12.0, 1.0)
+
+        pressure_points: list[str] = []
+        if monthly_income + monthly_income_change < monthly_expenses + monthly_expense_change + monthly_liability_payment + monthly_liability_change:
+            pressure_points.append("monthly cash flow turns negative")
+        if liquid_assets < max(monthly_expenses + monthly_liability_payment, 1.0) * 3:
+            pressure_points.append("liquid reserves look thin relative to household obligations")
+        if real_estate > total_assets * 0.4 and scenario_name == "property_vacancy":
+            pressure_points.append("property concentration makes vacancy unusually painful")
+        if business_assets > total_assets * 0.35 and scenario_name == "business_slowdown":
+            pressure_points.append("business concentration spills into family stability")
+        if not pressure_points:
+            pressure_points.append("the household remains functional, but the scenario still exposes what matters most")
+
+        if scenario_name in {"job_loss", "income_drop"}:
+            safer_move = "Increase liquid reserves and reduce fixed obligations before taking additional market risk."
+        elif scenario_name == "rate_spike":
+            safer_move = "Review debt structure and prioritize liabilities that reprice or carry the highest drag."
+        elif scenario_name == "property_vacancy":
+            safer_move = "Do not let property assumptions carry the whole family plan without reserve protection."
+        elif scenario_name == "business_slowdown":
+            safer_move = "Separate family operating reserves from business optimism."
+        else:
+            safer_move = "Balance long-term investing with a reserve level that lets the family stay disciplined."
+
+        narrative = (
+            f"In plain English: this {scenario_name.replace('_', ' ')} scenario would move monthly family flexibility by "
+            f"${monthly_income_change - monthly_expense_change - monthly_liability_change:,.0f} and shift net worth by about {net_worth_impact_pct:.1f}%."
+        )
+        result = HouseholdScenarioResult(
+            scenario_name=scenario_name,
+            shock_description=shock["description"],
+            monthly_income_change=round(monthly_income_change, 2),
+            monthly_expense_change=round(monthly_expense_change, 2),
+            monthly_liability_change=round(monthly_liability_change, 2),
+            net_worth_impact_pct=round(((shocked_net_worth / max(net_worth, 1.0)) - 1.0) * 100.0 if net_worth != 0 else net_worth_impact_pct, 1),
+            reserve_gap_months=round(reserve_gap_months, 1),
+            pressure_points=tuple(pressure_points),
+            safer_move=safer_move,
+            narrative=narrative,
+        )
+        payload = asdict(result)
+        payload["profile"] = dict(profile)
+        payload["balance_sheet_inputs"] = dict(balance_sheet_inputs)
         return payload

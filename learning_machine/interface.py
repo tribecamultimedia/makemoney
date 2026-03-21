@@ -36,7 +36,7 @@ try:
     from .ledger import LedgerEntry, append_equity_snapshot, append_ledger, read_equity_curve, read_ledger
     from .notifications import DiscordNotifier
     from .signal_worker import latest_state_payload
-    from .storage import shared_storage_enabled
+    from .storage import load_family_wealth_state, save_family_wealth_state, shared_storage_enabled
     from .trade_manager import TradeManager
     from domain.user_profiles import OnboardingState
 except ImportError:
@@ -59,25 +59,43 @@ except ImportError:
     from learning_machine.ledger import LedgerEntry, append_equity_snapshot, append_ledger, read_equity_curve, read_ledger
     from learning_machine.notifications import DiscordNotifier
     from learning_machine.signal_worker import latest_state_payload
-    from learning_machine.storage import shared_storage_enabled
+    from learning_machine.storage import load_family_wealth_state, save_family_wealth_state, shared_storage_enabled
     from learning_machine.trade_manager import TradeManager
     from domain.user_profiles import OnboardingState
 
 try:
+    from services.allocation_engine import AllocationEngine
+    from services.asset_productivity_engine import AssetProductivityEngine
+    from services.balance_sheet_engine import BalanceSheetEngine
     from domain.signals import MarketPulseSummary
+    from services.legacy_engine import LegacyEngine
+    from services.family_capital_engine import FamilyCapitalEngine
+    from services.liability_pressure_engine import LiabilityPressureEngine
+    from services.onboarding_engine import OnboardingEngine
     from services.briefing_engine import BriefingEngine
     from services.market_brain import MarketBrainService
     from services.planning_engine import PlanningEngine
     from services.portfolio_doctor import PortfolioDoctorService
+    from services.real_estate_decision_engine import RealEstateDecisionEngine
     from services.real_estate_lab import RealEstateLab
+    from services.real_estate_portfolio_engine import RealEstatePortfolioEngine
     from services.scenario_engine import ScenarioEngine
 except ImportError:  # pragma: no cover - fallback for mixed deploys
+    AllocationEngine = None
+    AssetProductivityEngine = None
+    BalanceSheetEngine = None
+    FamilyCapitalEngine = None
+    LegacyEngine = None
+    LiabilityPressureEngine = None
     MarketPulseSummary = None
+    OnboardingEngine = None
     BriefingEngine = None
     MarketBrainService = None
     PlanningEngine = None
     PortfolioDoctorService = None
+    RealEstateDecisionEngine = None
     RealEstateLab = None
+    RealEstatePortfolioEngine = None
     ScenarioEngine = None
 
 
@@ -186,44 +204,67 @@ def _product_shell_enabled() -> bool:
 
 
 def _render_product_shell() -> str:
+    st.session_state.setdefault("shell_section", "Balance Sheet")
     st.markdown(
         """
         <div class="shell-frame">
             <div class="shell-kicker">TELAJ PREVIEW</div>
-            <div class="shell-title">A wealth operating system, not just a dashboard</div>
-            <div class="shell-copy">Move between planning, signals, portfolio diagnostics, market context, and account operations without losing access to the current machine.</div>
+            <div class="shell-title">A family wealth operating system, not a dashboard</div>
+            <div class="shell-copy">Start from the family balance sheet, decide where the next dollar should go, and use markets as one decision layer, not the center of the product.</div>
+            <div class="shell-strip">
+                <div class="shell-strip-block">
+                    <div class="shell-strip-label">Morning signal</div>
+                    <div class="shell-strip-value">One clear call each day</div>
+                </div>
+                <div class="shell-strip-block">
+                    <div class="shell-strip-label">Capital mission</div>
+                    <div class="shell-strip-value">Protect. Allocate. Compound.</div>
+                </div>
+                <div class="shell-strip-block">
+                    <div class="shell-strip-label">Family mode</div>
+                    <div class="shell-strip-value">Built for real households</div>
+                </div>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
     shell_cols = st.columns(7)
-    shell_labels = ["Plan", "Signals", "Portfolio", "Market", "Real Estate", "Scenario Lab", "Account"]
+    shell_labels = ["Balance Sheet", "Allocation", "Portfolio", "Market", "Real Estate", "Scenario Lab", "Account"]
     shell_notes = [
-        "Use the planner and starter allocation tools.",
-        "See trade ideas, investing calls, and sync controls.",
-        "Review account diagnostics, holdings, and track record.",
-        "Read the macro tape, media tone, and machine feed.",
-        "Explore property-oriented planning as TELAJ grows.",
-        "Test future shock and what-if flows.",
-        "Manage broker connection and machine status.",
+        "Understand what the family owns, owes, and what needs attention first.",
+        "See where the next dollar should go and why.",
+        "Review holdings, productivity, diagnostics, and track record.",
+        "Use the market and signal layer as decision support, not the product center.",
+        "Review property decisions, rental math, and asset quality.",
+        "Stress test the family plan before the market does it for you.",
+        "Manage broker connection, execution status, and system operations.",
     ]
+    shell_codes = ["01", "02", "03", "04", "05", "06", "07"]
     for col, label, note in zip(shell_cols, shell_labels, shell_notes, strict=True):
-        col.markdown(
-            f"""
-            <div class="shell-card">
-                <div class="shell-card-label">{label}</div>
-                <div class="shell-card-note">{note}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        code = shell_codes[shell_labels.index(label)]
+        with col:
+            if st.button(label, key=f"shell-card-{label}", use_container_width=True):
+                st.session_state["shell_section"] = label
+                st.rerun()
+            st.markdown(
+                f"""
+                <div class="shell-card">
+                    <div class="shell-card-code">{code}</div>
+                    <div class="shell-card-label">{label}</div>
+                    <div class="shell-card-note">{note}</div>
+                    <div class="shell-card-footer">Open module</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
     selected = st.segmented_control(
         "Choose a section",
         options=shell_labels,
-        default="Signals",
+        key="shell_section",
         selection_mode="single",
     )
-    return str(selected or "Signals")
+    return str(selected or "Balance Sheet")
 
 
 def _render_placeholder_module(*, title: str, body: str, footer: str) -> None:
@@ -247,6 +288,505 @@ def _safe_portfolio_snapshot() -> dict[str, object] | None:
         return TradeManager(credentials).portfolio_snapshot()
     except Exception:
         return None
+
+
+def _current_family_profile() -> dict[str, str]:
+    profile = st.session_state.onboarding_state.get("profile", {})
+    return dict(profile) if isinstance(profile, dict) else {}
+
+
+def _option_index(options: list[str], value: str, fallback: int = 0) -> int:
+    try:
+        return options.index(value)
+    except ValueError:
+        return fallback
+
+
+def _current_balance_sheet_summary() -> dict[str, object]:
+    profile = _current_family_profile()
+    if not profile:
+        return {}
+    if BalanceSheetEngine is None:
+        return {}
+    return BalanceSheetEngine().build_summary(profile, st.session_state.get("family_balance_sheet_inputs"))
+
+
+def _current_balance_sheet_inputs() -> dict[str, float]:
+    if BalanceSheetEngine is None:
+        return {}
+    return BalanceSheetEngine().normalize_inputs(st.session_state.get("family_balance_sheet_inputs"))
+
+
+def _current_liability_pressure() -> dict[str, object]:
+    profile = _current_family_profile()
+    if not profile or LiabilityPressureEngine is None:
+        return {}
+    return LiabilityPressureEngine().evaluate(profile, st.session_state.get("family_balance_sheet_inputs"))
+
+
+def _current_asset_productivity() -> dict[str, object]:
+    profile = _current_family_profile()
+    summary = _current_balance_sheet_summary()
+    if not profile or not summary or AssetProductivityEngine is None:
+        return {}
+    return AssetProductivityEngine().build_report(profile, summary)
+
+
+def _current_legacy_plan_inputs() -> dict[str, object]:
+    return dict(st.session_state.get("legacy_plan_inputs", {}))
+
+
+def _current_legacy_plan() -> dict[str, object]:
+    profile = _current_family_profile()
+    balance_sheet_inputs = _current_balance_sheet_inputs()
+    if not profile or not balance_sheet_inputs or LegacyEngine is None:
+        return {}
+    return LegacyEngine().build_plan(
+        profile=profile,
+        balance_sheet_inputs=balance_sheet_inputs,
+        raw_inputs=_current_legacy_plan_inputs(),
+    )
+
+
+def _current_real_estate_registry() -> list[dict[str, object]]:
+    registry = st.session_state.get("real_estate_registry", [])
+    return list(registry) if isinstance(registry, list) else []
+
+
+def _current_real_estate_portfolio() -> dict[str, object]:
+    if RealEstatePortfolioEngine is None:
+        return {}
+    return RealEstatePortfolioEngine().build_portfolio(_current_real_estate_registry())
+
+
+def _current_allocation_recommendation() -> dict[str, object]:
+    profile = _current_family_profile()
+    if not profile:
+        return {}
+    if AllocationEngine is None:
+        return {}
+    return AllocationEngine().recommend_next_dollar(profile, _current_balance_sheet_summary(), _current_liability_pressure())
+
+
+def _render_family_capital_dashboard() -> None:
+    profile = _current_family_profile()
+    summary = _current_balance_sheet_summary()
+    st.markdown("### Family Capital Dashboard")
+    if not profile or not summary:
+        st.info("Complete TELAJ onboarding and save the family balance sheet to activate the family capital dashboard.")
+        return
+    dashboard = None
+    if FamilyCapitalEngine is not None:
+        dashboard = FamilyCapitalEngine().build_dashboard(
+            profile=profile,
+            summary=summary,
+            liability=_current_liability_pressure(),
+            productivity=_current_asset_productivity(),
+            allocation=_current_allocation_recommendation(),
+            legacy=_current_legacy_plan(),
+            real_estate=_current_real_estate_portfolio(),
+            balance_inputs=_current_balance_sheet_inputs(),
+        )
+
+    if dashboard is None:
+        st.info("Family capital summary is temporarily unavailable.")
+        return
+
+    st.markdown(
+        f"""
+        <div class="glass-card">
+            <div class="card-label">{dashboard.title}</div>
+            <div class="card-copy">{dashboard.subtitle}</div>
+            <div class="card-meta">Use this as the family operating view before diving into the detail modules.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    liability = _current_liability_pressure()
+    legacy = _current_legacy_plan()
+    property_summary = _current_real_estate_portfolio().get("summary", {})
+    balance_inputs = _current_balance_sheet_inputs()
+    monthly_income = float(balance_inputs.get("monthly_household_income", 0.0))
+    monthly_expenses = float(balance_inputs.get("monthly_household_expenses", 0.0))
+    monthly_burden = float(liability.get("monthly_burden", 0.0))
+    liquidity_ratio = 0.0 if monthly_expenses <= 0 else min(float(summary.get("liquid_assets", {}).get("amount", 0.0)) / max(monthly_expenses * 6.0, 1.0), 1.0)
+    burden_ratio = min(float(liability.get("burden_to_income_pct", 0.0)) / 40.0, 1.0)
+    reserve_ratio = 1.0 if float(legacy.get("reserve_gap", 0.0)) <= 0 else max(0.0, 1.0 - min(float(legacy.get("reserve_gap", 0.0)) / max(float(legacy.get("reserve_target", 1.0)), 1.0), 1.0))
+    property_ratio = 0.0
+    total_property_value = float(property_summary.get("total_property_value", 0.0))
+    if total_property_value > 0:
+        property_ratio = max(0.0, min((float(property_summary.get("total_equity", 0.0)) / total_property_value), 1.0))
+
+    st.markdown(
+        f"""
+        <div class="mission-grid">
+            <div class="mission-card">
+                <div class="card-label">TODAY'S MISSION</div>
+                <div class="mission-title">{dashboard.cards[0].value}</div>
+                <div class="mission-copy">{dashboard.cards[0].detail}</div>
+                <div class="meter-track"><div class="meter-fill" style="width: {max(min(float(_current_allocation_recommendation().get('confidence', 0.0)) * 100.0, 100.0), 8.0):.0f}%"></div></div>
+            </div>
+            <div class="mission-card">
+                <div class="card-label">LIQUIDITY SHIELD</div>
+                <div class="mission-title">{liquidity_ratio * 100:.0f}/100</div>
+                <div class="mission-copy">Liquid assets versus six months of expenses.</div>
+                <div class="meter-track"><div class="meter-fill" style="width: {liquidity_ratio * 100:.0f}%"></div></div>
+            </div>
+            <div class="mission-card">
+                <div class="card-label">DEBT PRESSURE</div>
+                <div class="mission-title">{str(liability.get("pressure_level", "Unknown"))}</div>
+                <div class="mission-copy">Income ${monthly_income:,.0f} | Costs ${monthly_expenses + monthly_burden:,.0f}</div>
+                <div class="meter-track danger"><div class="meter-fill danger" style="width: {burden_ratio * 100:.0f}%"></div></div>
+            </div>
+            <div class="mission-card">
+                <div class="card-label">LEGACY READINESS</div>
+                <div class="mission-title">{reserve_ratio * 100:.0f}/100</div>
+                <div class="mission-copy">{str(legacy.get("posture", "Legacy not defined yet."))}</div>
+                <div class="meter-track"><div class="meter-fill" style="width: {reserve_ratio * 100:.0f}%"></div></div>
+            </div>
+            <div class="mission-card">
+                <div class="card-label">PROPERTY POSITION</div>
+                <div class="mission-title">{property_ratio * 100:.0f}/100</div>
+                <div class="mission-copy">{str(property_summary.get("posture", "No property registry yet."))}</div>
+                <div class="meter-track"><div class="meter-fill" style="width: {property_ratio * 100:.0f}%"></div></div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    card_cols = st.columns(3)
+    for index, card in enumerate(dashboard.cards):
+        _glass_card(card_cols[index % 3], card.title, card.value, card.detail)
+
+    focus = list(dashboard.focus)
+    if focus:
+        st.markdown(
+            """
+            <div class="glass-card">
+                <div class="card-label">Current focus</div>
+                <div class="card-copy">"""
+            + "<br>".join(focus[:3])
+            + """</div>
+                <div class="card-meta">TELAJ should direct attention, not create more noise.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    nav_cols = st.columns(len(dashboard.cards))
+    for idx, card in enumerate(dashboard.cards):
+        if nav_cols[idx].button(f"Open {card.target_section}", key=f"family-capital-nav-{idx}", use_container_width=True):
+            st.session_state["shell_section"] = card.target_section
+            st.rerun()
+
+
+def _render_morning_command_center(
+    *,
+    pulse: dict[str, object],
+    regime_snapshot: dict[str, float | str],
+    selected_bundle: str,
+    latest_signal: dict[str, object] | None,
+    media_brief: dict[str, object],
+    calendar: list[dict[str, object]],
+) -> None:
+    allocation = _current_allocation_recommendation()
+    liability = _current_liability_pressure()
+    legacy = _current_legacy_plan()
+    property_summary = _current_real_estate_portfolio().get("summary", {})
+    profile = _current_family_profile()
+
+    invest_call = str(allocation.get("recommendation", "Wait for the family picture to get clearer."))
+    liquidity_call = str(liability.get("recommendation", "Preserve enough liquidity to survive stress without forced selling."))
+    property_call = (
+        "Real estate deserves active attention now."
+        if str(property_summary.get("posture", "")).lower() not in {"", "no property registry yet."}
+        else "No property book yet. Add properties before making a real-estate decision."
+    )
+    reserve_call = str(legacy.get("safer_option", "Default to reserves and simplicity before reaching for complexity."))
+    family_move = str(allocation.get("safer_option", "Move slower than the market wants you to."))
+    morning_signal = latest_signal["label"] if latest_signal is not None else pulse["label"]
+    morning_message = latest_signal["message"] if latest_signal is not None else pulse["message"]
+
+    st.markdown("### Morning Command Center")
+    st.markdown(
+        f"""
+        <div class="glass-card morning-card">
+            <div class="card-label">Daily operating brief</div>
+            <div class="morning-title">{morning_signal}</div>
+            <div class="morning-copy">{morning_message}</div>
+            <div class="morning-meta">Macro pulse: {pulse['label']} | Bundle: {selected_bundle} | Media tone: {media_brief.get('tone', 'Mixed')}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    action_cols = st.columns(5)
+    action_cards = [
+        ("Invest", invest_call, "Allocation"),
+        ("Hold liquidity", liquidity_call, "Balance Sheet"),
+        ("Real estate", property_call, "Real Estate"),
+        ("ETF / gold / reserves", reserve_call, "Allocation"),
+        ("Today's family move", family_move, "Scenario Lab"),
+    ]
+    for idx, (title, body, target) in enumerate(action_cards):
+        _glass_card(action_cols[idx], title, body, f"Open {target}")
+
+    nav_cols = st.columns(5)
+    for idx, (_, _, target) in enumerate(action_cards):
+        if nav_cols[idx].button(f"Go to {target}", key=f"morning-nav-{idx}", use_container_width=True):
+            st.session_state["shell_section"] = target
+            st.rerun()
+
+    lower_cols = st.columns([1.2, 1, 1])
+    _glass_card(
+        lower_cols[0],
+        "Today's Briefing",
+        _guru_briefing(regime_snapshot, pulse, selected_bundle),
+        f"Yield Curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f} | Inflation YoY: {float(regime_snapshot['inflation_yoy']):.2f}%",
+    )
+    _glass_card(
+        lower_cols[1],
+        "What the media says",
+        str(media_brief.get("summary", "Media layer unavailable.")),
+        str(media_brief.get("commentary", "")),
+    )
+    _glass_card(
+        lower_cols[2],
+        "Today matters because",
+        _calendar_footer(calendar),
+        _calendar_body(calendar),
+    )
+
+    if profile:
+        st.markdown(
+            f"""
+            <div class="glass-card">
+                <div class="card-label">Household context</div>
+                <div class="card-copy">Goal: {profile['primary_goal'].title()} | Wealth for: {profile['wealth_for'].replace('-', ' ').title()} | Archetype: {profile['archetype']}</div>
+                <div class="card-meta">TELAJ should translate the market into a family-level decision, not leave you with a pile of disconnected signals.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+def _render_family_balance_sheet() -> None:
+    profile = _current_family_profile()
+    summary = _current_balance_sheet_summary()
+    if not profile or not summary:
+        st.info("Complete TELAJ onboarding to generate the family balance sheet.")
+        return
+
+    st.markdown("### Family Balance Sheet")
+    with st.expander("Edit family profile", expanded=False):
+        with st.form("family_profile_form", clear_on_submit=False):
+            left, right = st.columns([1, 1])
+            goal_options = ["safety", "income", "growth", "legacy"]
+            wealth_for_options = ["me", "spouse", "children", "multi-generational"]
+            liquidity_options = ["Most of it is liquid", "About half is liquid", "A smaller share is liquid", "Very little is liquid", "I am not sure"]
+            drawdown_options = ["Sell quickly", "Wait and watch", "Hold steady", "Buy more", "I do not know"]
+            primary_goal = left.selectbox("Primary goal", options=goal_options, index=_option_index(goal_options, profile.get("primary_goal", "growth"), 2))
+            wealth_for = left.selectbox("Who this wealth is for", options=wealth_for_options, index=_option_index(wealth_for_options, profile.get("wealth_for", "me"), 0))
+            liquidity_profile = right.selectbox("Liquidity profile", options=liquidity_options, index=_option_index(liquidity_options, profile.get("liquidity_profile", "I am not sure"), len(liquidity_options) - 1))
+            drawdown_response = right.selectbox("20% drawdown response", options=drawdown_options, index=_option_index(drawdown_options, profile.get("drawdown_response", "Wait and watch"), 1))
+            owned_assets = st.text_input("Owned assets summary", value=profile.get("owned_assets", ""))
+            liabilities_label = st.text_input("Liability summary", value=profile.get("liabilities", ""))
+            invested_assets = st.text_input("Invested assets summary", value=profile.get("invested_assets", ""))
+            saved_profile = st.form_submit_button("Save family profile", type="primary", use_container_width=True)
+            if saved_profile and OnboardingEngine is not None:
+                answers = {
+                    "owned_assets": owned_assets or profile.get("owned_assets", ""),
+                    "liabilities": liabilities_label or profile.get("liabilities", ""),
+                    "liquidity_profile": liquidity_profile,
+                    "primary_goal": primary_goal,
+                    "wealth_for": wealth_for,
+                    "drawdown_response": drawdown_response,
+                    "invested_assets": invested_assets or profile.get("invested_assets", ""),
+                }
+                st.session_state.onboarding_state["answers"].update(answers)
+                st.session_state.onboarding_state["profile"] = OnboardingEngine().build_family_profile(answers)
+                save_family_wealth_state(
+                    profile=st.session_state.onboarding_state["profile"],
+                    balance_sheet=st.session_state.get("family_balance_sheet_inputs", {}),
+                    legacy_plan=st.session_state.get("legacy_plan_inputs", {}),
+                    real_estate_registry=st.session_state.get("real_estate_registry", []),
+                )
+                st.success("Family profile updated.")
+                st.rerun()
+
+    inputs = _current_balance_sheet_inputs()
+    with st.form("family_balance_sheet_form", clear_on_submit=False):
+        input_cols = st.columns([1, 1, 1, 1])
+        liquid_assets = input_cols[0].number_input("Liquid assets", min_value=0.0, value=float(inputs.get("liquid_assets", 0.0)), step=1000.0)
+        investments = input_cols[1].number_input("Investments", min_value=0.0, value=float(inputs.get("investments", 0.0)), step=1000.0)
+        real_estate = input_cols[2].number_input("Real estate", min_value=0.0, value=float(inputs.get("real_estate", 0.0)), step=5000.0)
+        business_assets = input_cols[3].number_input("Business assets", min_value=0.0, value=float(inputs.get("business_assets", 0.0)), step=5000.0)
+
+        debt_cols = st.columns([1, 1, 1, 1, 1])
+        liabilities = debt_cols[0].number_input("Liabilities", min_value=0.0, value=float(inputs.get("liabilities", 0.0)), step=1000.0)
+        monthly_liability_payment = debt_cols[1].number_input("Monthly liability payment", min_value=0.0, value=float(inputs.get("monthly_liability_payment", 0.0)), step=50.0)
+        average_interest_rate_pct = debt_cols[2].number_input("Average liability rate %", min_value=0.0, max_value=50.0, value=float(inputs.get("average_interest_rate_pct", 0.0)), step=0.25)
+        monthly_household_income = debt_cols[3].number_input("Monthly household income", min_value=0.0, value=float(inputs.get("monthly_household_income", 0.0)), step=100.0)
+        monthly_household_expenses = debt_cols[4].number_input("Monthly household expenses", min_value=0.0, value=float(inputs.get("monthly_household_expenses", 0.0)), step=100.0)
+
+        saved = st.form_submit_button("Save family balance sheet", type="primary", use_container_width=True)
+        if saved:
+            st.session_state.family_balance_sheet_inputs = {
+                "liquid_assets": float(liquid_assets),
+                "investments": float(investments),
+                "real_estate": float(real_estate),
+                "business_assets": float(business_assets),
+                "liabilities": float(liabilities),
+                "monthly_liability_payment": float(monthly_liability_payment),
+                "average_interest_rate_pct": float(average_interest_rate_pct),
+                "monthly_household_income": float(monthly_household_income),
+                "monthly_household_expenses": float(monthly_household_expenses),
+            }
+            save_family_wealth_state(
+                profile=profile,
+                balance_sheet=st.session_state.family_balance_sheet_inputs,
+                legacy_plan=st.session_state.get("legacy_plan_inputs", {}),
+                real_estate_registry=st.session_state.get("real_estate_registry", []),
+            )
+            st.success("Family wealth state saved.")
+            st.rerun()
+
+    summary = _current_balance_sheet_summary()
+    liability_pressure = _current_liability_pressure()
+    productivity = _current_asset_productivity()
+    intro_cols = st.columns([1, 1, 1])
+    _glass_card(intro_cols[0], "Family archetype", profile["archetype"], profile["operating_posture"])
+    _glass_card(intro_cols[1], "Risk posture", profile["risk_level"], f"Liquidity priority: {profile['liquidity_priority']}")
+    _glass_card(intro_cols[2], "Who this wealth is for", profile["wealth_for"].replace("-", " ").title(), f"Legacy priority: {profile['legacy_priority']}")
+
+    bucket_cols = st.columns([1, 1, 1])
+    for column, key in zip(bucket_cols, ["liquid_assets", "investments", "real_estate"], strict=True):
+        bucket = summary[key]
+        _glass_card(column, bucket["label"], bucket["posture"], bucket["recommendation"])
+
+    lower_cols = st.columns([1, 1, 1])
+    for column, key in zip(lower_cols, ["business_assets", "liabilities"], strict=False):
+        bucket = summary[key]
+        _glass_card(column, bucket["label"], bucket["posture"], bucket["recommendation"])
+    _glass_card(lower_cols[2], "Net worth posture", str(summary["net_worth_posture"]), f"Assets ${summary['total_assets']:,.0f} | Liabilities ${summary['total_liabilities']:,.0f} | Net worth ${summary['net_worth']:,.0f}")
+
+    engine_cols = st.columns([1, 1, 1])
+    _glass_card(engine_cols[0], "Asset Productivity Engine", str(summary["productivity_summary"]), "Keep, optimize, sell, or review should become the language of the household balance sheet.")
+    _glass_card(
+        engine_cols[1],
+        "Liability Pressure Engine",
+        str(liability_pressure.get("impact_on_growth", summary["liability_summary"])),
+        (
+            f"Pressure: {liability_pressure.get('pressure_level', 'Unknown')} | "
+            f"Urgency: {liability_pressure.get('urgency', 'Unknown')} | "
+            f"Monthly burden: ${float(liability_pressure.get('monthly_burden', 0.0)):,.0f} | "
+            f"Burden / income: {float(liability_pressure.get('burden_to_income_pct', 0.0)):.1f}%"
+        ),
+    )
+    _glass_card(engine_cols[2], "Legacy Engine", str(summary["legacy_summary"]), "TELAJ should always name who the wealth is meant to protect or build for.")
+
+    st.markdown("### Asset Productivity Engine")
+    _glass_card(st, "Productivity posture", str(productivity.get("posture", "No productivity read yet.")), str(productivity.get("summary", "")))
+    items = productivity.get("items", [])
+    if items:
+        rows = [
+            {
+                "Asset class": item["asset_class"],
+                "Return": item["estimated_return_profile"],
+                "Cash flow": item["cash_flow_profile"],
+                "Liquidity": item["liquidity_profile"],
+                "Risk": item["risk_profile"],
+                "Call": item["recommendation"],
+                "Why": item["reason"],
+            }
+            for item in items
+        ]
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+
+def _render_capital_allocation_engine(board: pd.DataFrame) -> None:
+    recommendation = _current_allocation_recommendation()
+    liability_pressure = _current_liability_pressure()
+    summary = _current_balance_sheet_summary()
+    st.markdown("### Capital Allocation Engine")
+    if not recommendation:
+        st.info("Complete TELAJ onboarding to generate a next-dollar recommendation.")
+        return
+
+    top_cols = st.columns([1, 1, 1])
+    _glass_card(top_cols[0], "Where should the next dollar go?", str(recommendation["recommendation"]), f"Confidence: {recommendation['confidence']}")
+    _glass_card(top_cols[1], "Who this is for", str(recommendation["who_its_for"]), "TELAJ should connect capital allocation to the people the money is meant to serve.")
+    _glass_card(top_cols[2], "Safer option", str(recommendation["safer_option"]), "The system should always explain the lower-stress version of the decision.")
+
+    lower_cols = st.columns([1, 1, 1])
+    _glass_card(lower_cols[0], "Why", "<br>".join(recommendation["why"]), "Calm reasons beat noise.")
+    _glass_card(lower_cols[1], "Risks", "<br>".join(recommendation["risks"]), "<br>".join(recommendation["next_priority_stack"]))
+    _glass_card(
+        lower_cols[2],
+        "Liability pressure",
+        str(liability_pressure.get("recommendation", "Add liabilities and monthly burden to sharpen this recommendation.")),
+        (
+            f"Pressure: {liability_pressure.get('pressure_level', 'Unknown')} | "
+            f"Net worth: ${float(summary.get('net_worth', 0.0)):,.0f}"
+        ),
+    )
+
+    _render_money_planner_view(board)
+
+
+def _render_legacy_engine() -> None:
+    st.markdown("### Legacy Engine")
+    profile = _current_family_profile()
+    balance_sheet_inputs = _current_balance_sheet_inputs()
+    if not profile or not balance_sheet_inputs:
+        st.info("Complete TELAJ onboarding and save the family balance sheet to activate the Legacy Engine.")
+        return
+
+    defaults = LegacyEngine.default_inputs() if LegacyEngine is not None else {
+        "children_fund_target": 0.0,
+        "long_term_reserve_months": 12,
+        "annual_family_contribution": 0.0,
+        "wealth_transfer_priority": "balanced",
+    }
+    current_inputs = {**defaults, **_current_legacy_plan_inputs()}
+    with st.form("legacy_engine_form", clear_on_submit=False):
+        cols = st.columns([1, 1, 1, 1])
+        children_fund_target = cols[0].number_input("Children / legacy fund target", min_value=0.0, value=float(current_inputs.get("children_fund_target", 0.0)), step=1000.0)
+        long_term_reserve_months = int(cols[1].selectbox("Long-term reserve target", options=[6, 12, 18, 24, 36], index=_option_index(["6", "12", "18", "24", "36"], str(current_inputs.get("long_term_reserve_months", 12)), 1)))
+        annual_family_contribution = cols[2].number_input("Annual family contribution", min_value=0.0, value=float(current_inputs.get("annual_family_contribution", 0.0)), step=500.0)
+        wealth_transfer_priority = cols[3].selectbox("Wealth transfer priority", options=["balanced", "high", "very high"], index=_option_index(["balanced", "high", "very high"], str(current_inputs.get("wealth_transfer_priority", "balanced")), 0))
+        saved = st.form_submit_button("Save legacy plan", type="primary", use_container_width=True)
+        if saved:
+            st.session_state.legacy_plan_inputs = {
+                "children_fund_target": float(children_fund_target),
+                "long_term_reserve_months": int(long_term_reserve_months),
+                "annual_family_contribution": float(annual_family_contribution),
+                "wealth_transfer_priority": str(wealth_transfer_priority),
+            }
+            save_family_wealth_state(
+                profile=profile,
+                balance_sheet=st.session_state.get("family_balance_sheet_inputs", {}),
+                legacy_plan=st.session_state.legacy_plan_inputs,
+                real_estate_registry=st.session_state.get("real_estate_registry", []),
+            )
+            st.success("Legacy plan saved.")
+            st.rerun()
+
+    legacy_plan = _current_legacy_plan()
+    if not legacy_plan:
+        st.info("Legacy planning will appear after the first save.")
+        return
+
+    top_cols = st.columns([1, 1, 1])
+    _glass_card(top_cols[0], "Legacy posture", str(legacy_plan["posture"]), str(legacy_plan["recommendation"]))
+    _glass_card(top_cols[1], "Reserve target", f"${float(legacy_plan['reserve_target']):,.0f}", f"Reserve gap: ${float(legacy_plan['reserve_gap']):,.0f}")
+    _glass_card(top_cols[2], "Children target gap", f"${float(legacy_plan['children_target_gap']):,.0f}", f"Confidence: {legacy_plan['confidence']}")
+
+    lower_cols = st.columns([1, 1])
+    _glass_card(lower_cols[0], "Why", "<br>".join(legacy_plan["why"]), f"Wealth for: {profile['wealth_for'].replace('-', ' ').title()}")
+    _glass_card(lower_cols[1], "Risks", "<br>".join(legacy_plan["risks"]), str(legacy_plan["safer_option"]))
 
 
 def main() -> None:
@@ -273,29 +813,45 @@ def main() -> None:
     if _flags.telaj_prep:
         st.session_state["telaj_prep_enabled"] = True
 
-    st.markdown("<div class='hero-kicker'>GURU'S SUPERBRAIN</div>", unsafe_allow_html=True)
-    st.markdown("<div class='hero-title'>Your AI market brain, trade desk, and portfolio doctor</div>", unsafe_allow_html=True)
-    st.markdown(
-        "<div class='hero-copy'>See what Guru's Superbrain wants to buy, what it wants to avoid, and how it diagnoses your account before you press sync.</div>",
-        unsafe_allow_html=True,
-    )
+    if _product_shell_enabled():
+        st.markdown("<div class='hero-kicker'>TELAJ</div>", unsafe_allow_html=True)
+        st.markdown("<div class='hero-title'>A calm operating system for family wealth</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='hero-copy'>Start with what the family owns, what it owes, what is productive, and where the next dollar should go. Markets and signals stay in the system, but they no longer get the first seat.</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown("<div class='hero-kicker'>GURU'S SUPERBRAIN</div>", unsafe_allow_html=True)
+        st.markdown("<div class='hero-title'>Your AI market brain, trade desk, and portfolio doctor</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='hero-copy'>See what Guru's Superbrain wants to buy, what it wants to avoid, and how it diagnoses your account before you press sync.</div>",
+            unsafe_allow_html=True,
+        )
     st.markdown(_render_broker_status_badge(), unsafe_allow_html=True)
     shell_section: str | None = None
     user_path: str = "Trade"
     if _product_shell_enabled():
+        user_path = "Shell Only"
         shell_section = _render_product_shell()
-        if shell_section == "Plan":
-            user_path = "Plan My Money"
-        elif shell_section == "Signals":
+        if shell_section == "Balance Sheet":
+            user_path = "Balance Sheet"
+        elif shell_section == "Allocation":
+            user_path = "Allocation"
+        elif shell_section == "Market":
             signal_mode = st.segmented_control(
-                "Signal view",
-                options=["Trade Desk", "Core Investing"],
-                default="Trade Desk",
+                "Market layer",
+                options=["Morning Brief", "Market Brief", "Signal Desk", "Core Investing"],
+                default="Morning Brief",
                 selection_mode="single",
             )
-            user_path = "Invest" if signal_mode == "Core Investing" else "Trade"
-        elif shell_section == "Market":
-            user_path = "Read the Market"
+            if signal_mode == "Core Investing":
+                user_path = "Invest"
+            elif signal_mode == "Signal Desk":
+                user_path = "Trade"
+            elif signal_mode == "Morning Brief":
+                user_path = "Morning Brief"
+            else:
+                user_path = "Read the Market"
     else:
         _render_quick_start()
         user_path = _render_intent_hub()
@@ -397,57 +953,82 @@ def main() -> None:
     media_brief = get_media_says(selected_tickers)
     internals = MarketInternalsFactory().build()
     credit = CreditLiquidityFactor().build()
-    event_risk = EventRiskFilter().evaluate(get_economic_calendar())
+    calendar = get_economic_calendar()
+    event_risk = EventRiskFilter().evaluate(calendar)
 
-    pulse_col, sentiment_col = st.columns([1, 1])
-    pulse_col.markdown(_render_superbrain_score_card(sovereign_score), unsafe_allow_html=True)
     sentiment_score = _mock_retail_sentiment(selected_bundle)
-    sentiment_col.plotly_chart(
-        _build_sentiment_gauge(sentiment_score),
-        use_container_width=True,
-        config={"displayModeBar": False},
-        key="hero_sentiment_gauge",
-    )
     hype_copy = _hype_meter_copy(sentiment_score, pulse)
-    st.markdown(
-        f"""
-        <div class="glass-card">
-            <div class="card-label">Hype Meter</div>
-            <div class="card-copy">{hype_copy}</div>
-            <div class="card-meta">Retail Noise: {sentiment_score}/100 | Macro Pulse: {pulse['label']}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
     latest_signal = latest_state_payload()
-    if latest_signal is not None:
+
+    if shell_section is None or shell_section == "Market":
+        pulse_col, sentiment_col = st.columns([1, 1])
+        pulse_col.markdown(_render_superbrain_score_card(sovereign_score), unsafe_allow_html=True)
+        sentiment_col.plotly_chart(
+            _build_sentiment_gauge(sentiment_score),
+            use_container_width=True,
+            config={"displayModeBar": False},
+            key="hero_sentiment_gauge",
+        )
+        top_action = "Stay liquid" if pulse["mode"] == "capital_preservation" else "Build positions slowly" if pulse["mode"] == "tactical_accumulation" else "Lean into quality assets"
         st.markdown(
             f"""
-            <div class="glass-card">
-                <div class="card-label">Guru's Superbrain Stance</div>
-                <div class="card-copy">{latest_signal['label']}</div>
-                <div class="card-meta">{latest_signal['message']}</div>
+            <div class="signal-strip">
+                <div class="signal-strip-block">
+                    <div class="card-label">Morning signal</div>
+                    <div class="signal-strip-value">{pulse['label']}</div>
+                    <div class="signal-strip-note">{top_action}</div>
+                </div>
+                <div class="signal-strip-block">
+                    <div class="card-label">Hype meter</div>
+                    <div class="signal-strip-value">{sentiment_score}/100</div>
+                    <div class="signal-strip-note">{hype_copy}</div>
+                </div>
+                <div class="signal-strip-block">
+                    <div class="card-label">Machine mode</div>
+                    <div class="signal-strip-value">{latest_signal['label'] if latest_signal is not None else pulse['label']}</div>
+                    <div class="signal-strip-note">{latest_signal['message'] if latest_signal is not None else pulse['message']}</div>
+                </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-    editorial_cols = st.columns([1.15, 0.85])
-    editorial_cols[0].markdown(
-        f"""
-        <div class="brief-lead">
-            <div class="card-label">Morning Edition</div>
-            <div class="brief-title">Today's Briefing</div>
-            <div class="brief-copy">{_guru_briefing(regime_snapshot, pulse, selected_bundle)}</div>
-            <div class="brief-meta">Yield Curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f} | Inflation YoY: {float(regime_snapshot['inflation_yoy']):.2f}%</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    _render_media_brief(editorial_cols[1], media_brief)
+        editorial_cols = st.columns([1.15, 0.85])
+        editorial_cols[0].markdown(
+            f"""
+            <div class="brief-lead">
+                <div class="card-label">Morning Edition</div>
+                <div class="brief-title">Today's Briefing</div>
+                <div class="brief-copy">{_guru_briefing(regime_snapshot, pulse, selected_bundle)}</div>
+                <div class="brief-meta">Yield Curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f} | Inflation YoY: {float(regime_snapshot['inflation_yoy']):.2f}%</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        _render_media_brief(editorial_cols[1], media_brief)
+    elif shell_section == "Balance Sheet":
+        profile = _current_family_profile()
+        if profile:
+            top_cols = st.columns([1, 1, 1])
+            _glass_card(top_cols[0], "TELAJ profile", profile["archetype"], profile["operating_posture"])
+            _glass_card(top_cols[1], "Primary goal", profile["primary_goal"].title(), f"Wealth for: {profile['wealth_for'].replace('-', ' ').title()}")
+            _glass_card(top_cols[2], "Risk posture", profile["risk_level"], f"Drawdown response: {profile['drawdown_response']}")
+    elif shell_section == "Allocation":
+        recommendation = _current_allocation_recommendation()
+        if recommendation:
+            top_cols = st.columns([1, 1])
+            _glass_card(top_cols[0], "Next-dollar recommendation", str(recommendation["recommendation"]), f"Confidence: {recommendation['confidence']}")
+            _glass_card(top_cols[1], "Why now", "<br>".join(recommendation["why"]), str(recommendation["safer_option"]))
 
-    if user_path == "Trade":
+    if user_path == "Shell Only":
+        pass
+    elif user_path == "Balance Sheet":
+        _render_family_capital_dashboard()
+        _render_family_balance_sheet()
+        _render_legacy_engine()
+    elif user_path == "Allocation":
+        _render_capital_allocation_engine(superbrain_board)
+    elif user_path == "Trade":
         _render_trade_view(
             pipeline=pipeline,
             pulse=pulse,
@@ -467,6 +1048,15 @@ def main() -> None:
         )
     elif user_path == "Plan My Money":
         _render_money_planner_view(superbrain_board)
+    elif user_path == "Morning Brief":
+        _render_morning_command_center(
+            pulse=pulse,
+            regime_snapshot=regime_snapshot,
+            selected_bundle=selected_bundle,
+            latest_signal=latest_signal,
+            media_brief=media_brief,
+            calendar=calendar,
+        )
     else:
         _render_market_view(
             pulse=pulse,
@@ -477,8 +1067,6 @@ def main() -> None:
             event_risk=event_risk,
             latest_signal=latest_signal,
         )
-
-    calendar = get_economic_calendar()
 
     if shell_section is None:
         _render_everyday_guide(superbrain_board, media_brief, latest_signal)
@@ -537,53 +1125,66 @@ def main() -> None:
                 """
             )
     else:
-        if shell_section == "Plan":
+        if shell_section == "Balance Sheet":
+            pass
+        elif shell_section == "Allocation":
             _render_everyday_guide(superbrain_board, media_brief, latest_signal)
-            _render_superbrain_board(superbrain_board)
-        elif shell_section == "Signals":
-            _render_superbrain_board(superbrain_board)
-            _render_copilot(
-                pulse=pulse,
-                sovereign_score=sovereign_score,
-                regime_snapshot=regime_snapshot,
-                internals=internals,
-                credit=credit,
-                event_risk=event_risk,
-                latest_signal=latest_signal,
-            )
         elif shell_section == "Portfolio":
             _render_portfolio_doctor(superbrain_board)
             _render_portfolio_panel()
             _render_ledger_panels()
         elif shell_section == "Market":
-            _render_machine_feed()
-            event_cols = st.columns([1, 1, 1])
-            _glass_card(event_cols[0], "Macro Backdrop", regime_snapshot["narrative"], f"Yield curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f}")
-            _glass_card(event_cols[1], "Important Events", _calendar_body(calendar), _calendar_footer(calendar))
-            _glass_card(event_cols[2], "Positioning Note", _rebalance_message(pipeline), "A quick read on whether leadership is balanced or lopsided.")
-            with st.expander("Why the AI feels cautious or confident", expanded=False):
-                intelligence_cols = st.columns([1, 1])
-                _glass_card(
-                    intelligence_cols[0],
-                    "Market Internals",
-                    internals.summary,
-                    f"VIX {internals.vix_level:.1f} | TLT 20D {internals.tlt_return_20d:.1f}% | SOXX above 50DMA: {'Yes' if internals.soxx_above_50dma else 'No'}",
+            if user_path == "Morning Brief":
+                _render_superbrain_board(superbrain_board)
+                _render_copilot(
+                    pulse=pulse,
+                    sovereign_score=sovereign_score,
+                    regime_snapshot=regime_snapshot,
+                    internals=internals,
+                    credit=credit,
+                    event_risk=event_risk,
+                    latest_signal=latest_signal,
                 )
-                _glass_card(
-                    intelligence_cols[1],
-                    "Event Risk",
-                    event_risk.summary,
-                    f"Next event: {event_risk.next_event} | Hours: {event_risk.hours_to_event:.1f} | Size multiplier: {event_risk.size_multiplier:.2f}",
+                _render_machine_feed()
+            else:
+                _render_superbrain_board(superbrain_board)
+                _render_copilot(
+                    pulse=pulse,
+                    sovereign_score=sovereign_score,
+                    regime_snapshot=regime_snapshot,
+                    internals=internals,
+                    credit=credit,
+                    event_risk=event_risk,
+                    latest_signal=latest_signal,
                 )
-                factor_cols = st.columns([1, 1])
-                _glass_card(
-                    factor_cols[0],
-                    "Credit & Liquidity",
-                    credit.summary,
-                    f"HYG 20D {credit.hyg_return_20d:.1f}% | LQD 20D {credit.lqd_return_20d:.1f}% | IWM vs SPY {credit.iwm_vs_spy_momentum:+.1f}%",
-                )
-                _render_media_headlines(media_brief)
-                _render_experiment_panel()
+                _render_machine_feed()
+                event_cols = st.columns([1, 1, 1])
+                _glass_card(event_cols[0], "Macro Backdrop", regime_snapshot["narrative"], f"Yield curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f}")
+                _glass_card(event_cols[1], "Important Events", _calendar_body(calendar), _calendar_footer(calendar))
+                _glass_card(event_cols[2], "Positioning Note", _rebalance_message(pipeline), "A quick read on whether leadership is balanced or lopsided.")
+                with st.expander("Why the AI feels cautious or confident", expanded=False):
+                    intelligence_cols = st.columns([1, 1])
+                    _glass_card(
+                        intelligence_cols[0],
+                        "Market Internals",
+                        internals.summary,
+                        f"VIX {internals.vix_level:.1f} | TLT 20D {internals.tlt_return_20d:.1f}% | SOXX above 50DMA: {'Yes' if internals.soxx_above_50dma else 'No'}",
+                    )
+                    _glass_card(
+                        intelligence_cols[1],
+                        "Event Risk",
+                        event_risk.summary,
+                        f"Next event: {event_risk.next_event} | Hours: {event_risk.hours_to_event:.1f} | Size multiplier: {event_risk.size_multiplier:.2f}",
+                    )
+                    factor_cols = st.columns([1, 1])
+                    _glass_card(
+                        factor_cols[0],
+                        "Credit & Liquidity",
+                        credit.summary,
+                        f"HYG 20D {credit.hyg_return_20d:.1f}% | LQD 20D {credit.lqd_return_20d:.1f}% | IWM vs SPY {credit.iwm_vs_spy_momentum:+.1f}%",
+                    )
+                    _render_media_headlines(media_brief)
+                    _render_experiment_panel()
         elif shell_section == "Real Estate":
             _render_real_estate_lab()
         elif shell_section == "Scenario Lab":
@@ -858,70 +1459,151 @@ def _render_scenario_lab(board: pd.DataFrame) -> None:
         return
 
     engine = ScenarioEngine()
-    snapshot = _safe_portfolio_snapshot()
-    wealth_map = engine.wealth_map_from_snapshot(snapshot)
-    selected = st.selectbox(
-        "Choose a stress case",
-        options=[
-            ("rates_up", "Rates Up"),
-            ("recession", "Recession"),
-            ("inflation_spike", "Inflation Spike"),
-            ("crypto_crash", "Crypto Crash"),
-            ("tech_selloff", "Tech Selloff"),
-            ("rental_vacancy", "Rental Vacancy"),
-        ],
-        format_func=lambda item: item[1],
-        key="scenario_lab_select",
-    )
-    result = engine.run_scenario(scenario_name=selected[0], wealth_map=wealth_map)
-
-    top_cols = st.columns([1, 1, 1])
-    _glass_card(
-        top_cols[0],
-        "Scenario impact",
-        result["narrative"],
-        f"Portfolio effect: {result['portfolio_impact_pct']:.1f}%",
-    )
-    _glass_card(
-        top_cols[1],
-        "Best holding bucket",
-        result["best_bucket"].replace("_", " ").title(),
-        result["shock_description"],
-    )
-    _glass_card(
-        top_cols[2],
-        "Weakest holding bucket",
-        result["worst_bucket"].replace("_", " ").title(),
-        "Educational only. This is a stress map, not a forecast.",
+    mode = st.segmented_control(
+        "Scenario mode",
+        options=["Household", "Portfolio"],
+        default="Household",
+        selection_mode="single",
     )
 
-    impact_rows = pd.DataFrame(
-        [
-            {"Bucket": "Cash", "Stress %": result["cash_impact_pct"]},
-            {"Bucket": "Stocks", "Stress %": result["stocks_impact_pct"]},
-            {"Bucket": "Bonds", "Stress %": result["bonds_impact_pct"]},
-            {"Bucket": "Crypto", "Stress %": result["crypto_impact_pct"]},
-            {"Bucket": "Real Estate", "Stress %": result["real_estate_impact_pct"]},
-        ]
-    )
-    st.dataframe(impact_rows, use_container_width=True, hide_index=True)
+    if mode == "Household":
+        profile = _current_family_profile()
+        balance_sheet_inputs = _current_balance_sheet_inputs()
+        has_balance_sheet = any(float(value) > 0 for value in balance_sheet_inputs.values())
+        if not profile or not has_balance_sheet:
+            st.info("Complete TELAJ onboarding and save the family balance sheet to unlock Household Scenario Lab.")
+            return
 
-    lower_cols = st.columns([1, 1])
-    _glass_card(
-        lower_cols[0],
-        "Your current wealth map",
-        (
-            f"Cash {wealth_map.cash_pct:.1f}% | Stocks {wealth_map.stocks_pct:.1f}% | Bonds {wealth_map.bonds_pct:.1f}%<br>"
-            f"Crypto {wealth_map.crypto_pct:.1f}% | Real Estate {wealth_map.real_estate_pct:.1f}%"
-        ),
-        f"Diversification {wealth_map.diversification_score}/100 | Risk {wealth_map.risk_score}/100",
-    )
-    _glass_card(
-        lower_cols[1],
-        "What to watch",
-        "<br>".join(result["guidance"]),
-        "The purpose is to make risk understandable before the market forces the lesson.",
-    )
+        selected = st.selectbox(
+            "Choose a household stress case",
+            options=[
+                ("income_drop", "Income Drop"),
+                ("job_loss", "Job Loss"),
+                ("rate_spike", "Rate Spike"),
+                ("property_vacancy", "Property Vacancy"),
+                ("market_drawdown", "Market Drawdown"),
+                ("business_slowdown", "Business Slowdown"),
+            ],
+            format_func=lambda item: item[1],
+            key="household_scenario_lab_select",
+        )
+        result = engine.run_household_scenario(
+            scenario_name=selected[0],
+            profile=profile,
+            balance_sheet_inputs=balance_sheet_inputs,
+        )
+
+        top_cols = st.columns([1, 1, 1])
+        _glass_card(
+            top_cols[0],
+            "Household impact",
+            result["narrative"],
+            f"Net worth effect: {result['net_worth_impact_pct']:.1f}%",
+        )
+        _glass_card(
+            top_cols[1],
+            "Reserve gap",
+            f"{result['reserve_gap_months']:.1f} months",
+            result["shock_description"],
+        )
+        _glass_card(
+            top_cols[2],
+            "Safer move",
+            result["safer_move"],
+            "The goal is to stay functional before chasing optimization.",
+        )
+
+        impact_rows = pd.DataFrame(
+            [
+                {"Category": "Monthly income change", "Impact": f"${result['monthly_income_change']:,.0f}"},
+                {"Category": "Monthly expense change", "Impact": f"${result['monthly_expense_change']:,.0f}"},
+                {"Category": "Monthly liability change", "Impact": f"${result['monthly_liability_change']:,.0f}"},
+            ]
+        )
+        st.dataframe(impact_rows, use_container_width=True, hide_index=True)
+
+        lower_cols = st.columns([1, 1])
+        _glass_card(
+            lower_cols[0],
+            "Pressure points",
+            "<br>".join(result["pressure_points"]),
+            (
+                f"Income ${float(balance_sheet_inputs.get('monthly_household_income', 0.0)):,.0f} | "
+                f"Expenses ${float(balance_sheet_inputs.get('monthly_household_expenses', 0.0)):,.0f} | "
+                f"Liability payments ${float(balance_sheet_inputs.get('monthly_liability_payment', 0.0)):,.0f}"
+            ),
+        )
+        _glass_card(
+            lower_cols[1],
+            "Who this plan protects",
+            profile["wealth_for"].replace("-", " ").title(),
+            f"Primary goal: {profile['primary_goal'].title()} | Archetype: {profile['archetype']}",
+        )
+    else:
+        snapshot = _safe_portfolio_snapshot()
+        wealth_map = engine.wealth_map_from_snapshot(snapshot)
+        selected = st.selectbox(
+            "Choose a portfolio stress case",
+            options=[
+                ("rates_up", "Rates Up"),
+                ("recession", "Recession"),
+                ("inflation_spike", "Inflation Spike"),
+                ("crypto_crash", "Crypto Crash"),
+                ("tech_selloff", "Tech Selloff"),
+                ("rental_vacancy", "Rental Vacancy"),
+            ],
+            format_func=lambda item: item[1],
+            key="portfolio_scenario_lab_select",
+        )
+        result = engine.run_scenario(scenario_name=selected[0], wealth_map=wealth_map)
+
+        top_cols = st.columns([1, 1, 1])
+        _glass_card(
+            top_cols[0],
+            "Scenario impact",
+            result["narrative"],
+            f"Portfolio effect: {result['portfolio_impact_pct']:.1f}%",
+        )
+        _glass_card(
+            top_cols[1],
+            "Best holding bucket",
+            result["best_bucket"].replace("_", " ").title(),
+            result["shock_description"],
+        )
+        _glass_card(
+            top_cols[2],
+            "Weakest holding bucket",
+            result["worst_bucket"].replace("_", " ").title(),
+            "Educational only. This is a stress map, not a forecast.",
+        )
+
+        impact_rows = pd.DataFrame(
+            [
+                {"Bucket": "Cash", "Stress %": result["cash_impact_pct"]},
+                {"Bucket": "Stocks", "Stress %": result["stocks_impact_pct"]},
+                {"Bucket": "Bonds", "Stress %": result["bonds_impact_pct"]},
+                {"Bucket": "Crypto", "Stress %": result["crypto_impact_pct"]},
+                {"Bucket": "Real Estate", "Stress %": result["real_estate_impact_pct"]},
+            ]
+        )
+        st.dataframe(impact_rows, use_container_width=True, hide_index=True)
+
+        lower_cols = st.columns([1, 1])
+        _glass_card(
+            lower_cols[0],
+            "Your current wealth map",
+            (
+                f"Cash {wealth_map.cash_pct:.1f}% | Stocks {wealth_map.stocks_pct:.1f}% | Bonds {wealth_map.bonds_pct:.1f}%<br>"
+                f"Crypto {wealth_map.crypto_pct:.1f}% | Real Estate {wealth_map.real_estate_pct:.1f}%"
+            ),
+            f"Diversification {wealth_map.diversification_score}/100 | Risk {wealth_map.risk_score}/100",
+        )
+        _glass_card(
+            lower_cols[1],
+            "What to watch",
+            "<br>".join(result["guidance"]),
+            "The purpose is to make risk understandable before the market forces the lesson.",
+        )
 
 
 def _render_real_estate_lab() -> None:
@@ -934,6 +1616,79 @@ def _render_real_estate_lab() -> None:
         )
         return
 
+    with st.form("real_estate_registry_form", clear_on_submit=False):
+        reg_cols = st.columns([1, 1, 1, 1])
+        property_name = reg_cols[0].text_input("Property name", value="")
+        property_type = reg_cols[1].selectbox("Type", options=["Residential", "Multi-family", "Commercial", "Vacation", "Other"], index=0)
+        estimated_value = reg_cols[2].number_input("Estimated value", min_value=0.0, max_value=20000000.0, value=350000.0, step=10000.0)
+        mortgage_balance = reg_cols[3].number_input("Mortgage balance", min_value=0.0, max_value=20000000.0, value=200000.0, step=10000.0)
+        reg_cols_2 = st.columns([1, 1, 1, 1])
+        registry_rent = reg_cols_2[0].number_input("Monthly rent", min_value=0.0, max_value=100000.0, value=1800.0, step=50.0)
+        registry_expenses = reg_cols_2[1].number_input("Monthly expenses", min_value=0.0, max_value=50000.0, value=500.0, step=25.0)
+        registry_rate = reg_cols_2[2].number_input("Interest rate %", min_value=0.0, max_value=20.0, value=4.5, step=0.1)
+        occupancy_status = reg_cols_2[3].selectbox("Occupancy", options=["occupied", "vacant", "owner occupied"], index=0)
+        add_property = st.form_submit_button("Add property", type="primary", use_container_width=True)
+        if add_property:
+            st.session_state.real_estate_registry.append(
+                {
+                    "property_name": property_name or f"Property {len(st.session_state.real_estate_registry) + 1}",
+                    "property_type": property_type,
+                    "estimated_value": float(estimated_value),
+                    "mortgage_balance": float(mortgage_balance),
+                    "monthly_rent": float(registry_rent),
+                    "monthly_expenses": float(registry_expenses),
+                    "interest_rate_pct": float(registry_rate),
+                    "occupancy_status": occupancy_status,
+                }
+            )
+            save_family_wealth_state(
+                profile=_current_family_profile(),
+                balance_sheet=st.session_state.get("family_balance_sheet_inputs", {}),
+                legacy_plan=st.session_state.get("legacy_plan_inputs", {}),
+                real_estate_registry=st.session_state.real_estate_registry,
+            )
+            st.success("Property added to TELAJ registry.")
+            st.rerun()
+
+    portfolio = _current_real_estate_portfolio()
+    summary = dict(portfolio.get("summary", {}))
+    properties = list(portfolio.get("properties", []))
+    if summary:
+        top_cols = st.columns([1, 1, 1, 1, 1])
+        _glass_card(top_cols[0], "Portfolio posture", str(summary["posture"]), "TELAJ reads property as part of family capital, not as a standalone hobby.")
+        _glass_card(top_cols[1], "Property value", f"${float(summary['total_property_value']):,.0f}", f"Equity ${float(summary['total_equity']):,.0f}")
+        _glass_card(top_cols[2], "Mortgage balance", f"${float(summary['total_mortgage_balance']):,.0f}", f"Avg rate {float(summary['average_interest_rate_pct']):.2f}%")
+        _glass_card(top_cols[3], "Monthly cash flow", f"${float(summary['total_monthly_cash_flow']):,.0f}", "Across all saved properties.")
+        _glass_card(top_cols[4], "Properties", str(len(properties)), "Registry count")
+
+    if properties:
+        rows = []
+        for property_row in properties:
+            rows.append(
+                {
+                    "Property": property_row["property_name"],
+                    "Type": property_row["property_type"],
+                    "Value": property_row["estimated_value"],
+                    "Debt": property_row["mortgage_balance"],
+                    "Equity": property_row["equity"],
+                    "Cash Flow": property_row["analysis"]["monthly_cash_flow"],
+                    "Decision": property_row["decision"]["decision"],
+                }
+            )
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+        selected_name = st.selectbox(
+            "Review a saved property",
+            options=[property_row["property_name"] for property_row in properties],
+            key="real_estate_registry_select",
+        )
+        selected_property = next((property_row for property_row in properties if property_row["property_name"] == selected_name), properties[0])
+        detail_cols = st.columns([1, 1, 1])
+        _glass_card(detail_cols[0], "Decision", selected_property["decision"]["decision"], f"Confidence: {selected_property['decision']['confidence']}")
+        _glass_card(detail_cols[1], "Why", "<br>".join(selected_property["decision"]["why"]), selected_property["analysis"]["summary"])
+        _glass_card(detail_cols[2], "Risks", "<br>".join(selected_property["decision"]["risks"]), selected_property["decision"]["safer_option"])
+
+    st.markdown("### Property Analysis Lab")
     controls = st.columns([1, 1, 1, 1])
     purchase_price = controls[0].number_input("Purchase price", min_value=50000.0, max_value=5000000.0, value=250000.0, step=10000.0)
     down_payment_pct = controls[1].slider("Down payment %", min_value=5, max_value=100, value=20, step=5)
@@ -953,6 +1708,7 @@ def _render_real_estate_lab() -> None:
         expected_appreciation_pct=float(expected_appreciation_pct),
         holding_period_years=holding_period_years,
     )
+    decision = RealEstateDecisionEngine().decide(analysis) if RealEstateDecisionEngine is not None else None
 
     metric_cols = st.columns(4)
     metric_cols[0].metric("Monthly Cash Flow", f"${analysis['monthly_cash_flow']:,.0f}")
@@ -973,6 +1729,11 @@ def _render_real_estate_lab() -> None:
         analysis["downside_summary"],
         "Stress case assumes softer rent and hotter expenses.",
     )
+    if decision is not None:
+        decision_cols = st.columns([1, 1, 1])
+        _glass_card(decision_cols[0], "Real Estate Decision Engine", decision["decision"], f"Confidence: {decision['confidence']}")
+        _glass_card(decision_cols[1], "Why", "<br>".join(decision["why"]), analysis["summary"])
+        _glass_card(decision_cols[2], "Risks", "<br>".join(decision["risks"]), decision["safer_option"])
     with st.expander("Educational tax framing", expanded=False):
         st.info(analysis["tax_note"])
         st.caption("This is educational only and not tax, legal, or accounting advice.")
@@ -2548,34 +3309,84 @@ def _init_broker_state() -> None:
         st.session_state.copilot_pending_prompt = None
     if "onboarding_state" not in st.session_state:
         st.session_state.onboarding_state = asdict(OnboardingState())
+    if "family_balance_sheet_inputs" not in st.session_state:
+        st.session_state.family_balance_sheet_inputs = {}
+    if "legacy_plan_inputs" not in st.session_state:
+        st.session_state.legacy_plan_inputs = {}
+    if "real_estate_registry" not in st.session_state:
+        st.session_state.real_estate_registry = []
+
+    saved_family_state = load_family_wealth_state()
+    if saved_family_state:
+        saved_profile = saved_family_state.get("profile", {})
+        saved_balance_sheet = saved_family_state.get("balance_sheet", {})
+        saved_legacy_plan = saved_family_state.get("legacy_plan", {})
+        saved_real_estate_registry = saved_family_state.get("real_estate_registry", [])
+        if saved_profile and not st.session_state.onboarding_state.get("profile"):
+            st.session_state.onboarding_state["profile"] = saved_profile
+            st.session_state.onboarding_state["completed"] = True
+        if saved_balance_sheet and not st.session_state.family_balance_sheet_inputs:
+            st.session_state.family_balance_sheet_inputs = saved_balance_sheet
+        if saved_legacy_plan and not st.session_state.legacy_plan_inputs:
+            st.session_state.legacy_plan_inputs = saved_legacy_plan
+        if saved_real_estate_registry and not st.session_state.real_estate_registry:
+            st.session_state.real_estate_registry = saved_real_estate_registry
 
 
 def _onboarding_questions() -> list[dict[str, object]]:
     return [
         {
-            "key": "investment_ready",
-            "question": "How much money are you ready to invest right now?",
-            "options": ["Under $500", "$500 to $2,000", "$2,000 to $10,000", "$10,000 to $50,000", "$50,000+"],
+            "key": "owned_assets",
+            "question": "What assets do you currently own?",
+            "options": [
+                "Mostly cash and savings",
+                "Stocks, ETFs, or retirement accounts",
+                "Real estate or property",
+                "Business ownership or private assets",
+                "A mix of several asset types",
+            ],
         },
         {
-            "key": "time_horizon",
-            "question": "When will you likely need this money?",
-            "options": ["Less than 1 year", "1 to 3 years", "3 to 7 years", "7+ years", "I do not know"],
+            "key": "liabilities",
+            "question": "What liabilities do you currently have?",
+            "options": [
+                "No meaningful debt",
+                "A mortgage only",
+                "Mortgage plus some loans",
+                "Consumer or credit card debt",
+                "A heavy mix of liabilities",
+            ],
         },
         {
-            "key": "drawdown_reaction",
-            "question": "If your portfolio drops 20%, what would you do?",
-            "options": ["Sell quickly", "Wait and watch", "Hold steady", "Buy more", "I do not know"],
+            "key": "liquidity_profile",
+            "question": "How much of your wealth is liquid?",
+            "options": [
+                "Most of it is liquid",
+                "About half is liquid",
+                "A smaller share is liquid",
+                "Very little is liquid",
+                "I am not sure",
+            ],
         },
         {
             "key": "primary_goal",
-            "question": "What matters most for this money?",
-            "options": ["Protect it", "Grow it steadily", "Build long-term wealth", "Generate extra income", "I am not sure yet"],
+            "question": "What are you trying to build?",
+            "options": ["safety", "income", "growth", "legacy"],
         },
         {
-            "key": "existing_assets",
-            "question": "Do you already invest or own assets?",
-            "options": ["No, not really", "I have savings only", "I own some stocks or ETFs", "I own crypto too", "I own a mix of assets"],
+            "key": "wealth_for",
+            "question": "Who is this wealth for?",
+            "options": ["me", "spouse", "children", "multi-generational"],
+        },
+        {
+            "key": "drawdown_response",
+            "question": "If your portfolio drops 20%, what do you do?",
+            "options": ["Sell quickly", "Wait and watch", "Hold steady", "Buy more", "I do not know"],
+        },
+        {
+            "key": "invested_assets",
+            "question": "What assets do you already invest in?",
+            "options": ["None yet", "Stocks or ETFs", "Crypto", "Real estate", "A mix of assets"],
         },
     ]
 
@@ -2593,7 +3404,7 @@ def _render_onboarding_gate() -> None:
     st.markdown(
         f"""
         <div class="onboarding-shell">
-            <div class="onboarding-progress">{step + 1}/5</div>
+            <div class="onboarding-progress">{step + 1}/7</div>
             <div class="onboarding-kicker">TELAJ START</div>
             <div class="onboarding-question">{current_question}</div>
         </div>
@@ -2622,6 +3433,14 @@ def _render_onboarding_gate() -> None:
         state["answers"][current_key] = choice
         if step >= len(questions) - 1:
             state["completed"] = True
+            if OnboardingEngine is not None:
+                state["profile"] = OnboardingEngine().build_family_profile(state["answers"])
+                save_family_wealth_state(
+                    profile=state["profile"],
+                    balance_sheet=st.session_state.get("family_balance_sheet_inputs", {}),
+                    legacy_plan=st.session_state.get("legacy_plan_inputs", {}),
+                    real_estate_registry=st.session_state.get("real_estate_registry", []),
+                )
         else:
             state["current_step"] = step + 1
         st.session_state.onboarding_state = state
@@ -2634,13 +3453,13 @@ def _inject_onboarding_styles() -> None:
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap');
             :root {
-                --ob-bg: #F6F7FB;
-                --ob-panel: #FFFFFF;
-                --ob-border: #111111;
-                --ob-text: #0A0A0B;
-                --ob-muted: #5D6472;
+                --ob-bg: #0A0A0B;
+                --ob-panel: #111113;
+                --ob-border: #2A2A2E;
+                --ob-text: #F4F6FB;
+                --ob-muted: #A5ACB8;
                 --ob-accent: #1F6BFF;
-                --ob-accent-soft: #EAF1FF;
+                --ob-accent-soft: rgba(31, 107, 255, 0.14);
             }
             .stApp {
                 background: var(--ob-bg);
@@ -2653,15 +3472,15 @@ def _inject_onboarding_styles() -> None:
                 display: none;
             }
             .block-container {
-                max-width: 760px;
-                padding-top: 3.5rem;
+                max-width: 860px;
+                padding-top: 5rem;
                 padding-bottom: 3rem;
             }
             .onboarding-shell {
                 border: 2px solid var(--ob-border);
                 background: var(--ob-panel);
-                padding: 1.25rem 1.25rem 1.5rem 1.25rem;
-                margin-bottom: 1.25rem;
+                padding: 1.5rem 1.5rem 2rem 1.5rem;
+                margin-bottom: 1.4rem;
             }
             .onboarding-progress {
                 font-family: "JetBrains Mono", ui-monospace, monospace;
@@ -2678,27 +3497,33 @@ def _inject_onboarding_styles() -> None:
                 margin-bottom: 0.8rem;
             }
             .onboarding-question {
-                font-size: clamp(1.7rem, 3vw, 2.5rem);
+                font-size: clamp(2.1rem, 4vw, 4.4rem);
                 font-weight: 700;
-                line-height: 1.05;
+                line-height: 0.98;
                 color: var(--ob-text);
-                max-width: 16ch;
+                max-width: 13ch;
             }
             div[role="radiogroup"] > label {
                 border: 2px solid var(--ob-border);
                 background: var(--ob-panel);
-                padding: 0.85rem 0.95rem;
-                margin-bottom: 0.8rem;
+                padding: 1rem 1.05rem;
+                margin-bottom: 0.85rem;
             }
             div[role="radiogroup"] > label:hover {
                 border-color: var(--ob-accent);
                 background: var(--ob-accent-soft);
+            }
+            div[role="radiogroup"] label p {
+                color: var(--ob-text) !important;
+                font-weight: 500;
             }
             .stButton > button {
                 border: 2px solid var(--ob-border);
                 border-radius: 0;
                 font-weight: 700;
                 min-height: 3rem;
+                background: var(--ob-panel);
+                color: var(--ob-text);
             }
         </style>
         """,
@@ -2812,6 +3637,31 @@ def _inject_styles() -> None:
                 line-height: 1.5;
                 max-width: 72ch;
             }
+            .shell-strip {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 0.75rem;
+                margin-top: 1rem;
+            }
+            .shell-strip-block {
+                border: 1px solid var(--border);
+                border-radius: 4px;
+                padding: 0.8rem 0.85rem;
+                background: rgba(31, 107, 255, 0.05);
+            }
+            .shell-strip-label {
+                color: var(--accent-soft);
+                text-transform: uppercase;
+                letter-spacing: 0.12rem;
+                font-size: 0.7rem;
+                font-family: "JetBrains Mono", ui-monospace, monospace;
+                margin-bottom: 0.35rem;
+            }
+            .shell-strip-value {
+                color: var(--text);
+                font-size: 1rem;
+                font-weight: 700;
+            }
             .shell-card {
                 background: var(--panel);
                 border: 1.5px solid var(--border);
@@ -2819,6 +3669,26 @@ def _inject_styles() -> None:
                 padding: 0.85rem 0.9rem;
                 min-height: 7.4rem;
                 margin-bottom: 0.8rem;
+                position: relative;
+                overflow: hidden;
+            }
+            .shell-card::after {
+                content: "";
+                position: absolute;
+                left: 0;
+                bottom: 0;
+                width: 100%;
+                height: 3px;
+                background: linear-gradient(90deg, var(--accent), transparent);
+                opacity: 0.7;
+            }
+            .shell-card-code {
+                color: rgba(111, 168, 255, 0.24);
+                font-family: "JetBrains Mono", ui-monospace, monospace;
+                font-size: 2rem;
+                font-weight: 700;
+                line-height: 1;
+                margin-bottom: 0.45rem;
             }
             .shell-card-label {
                 color: var(--accent-soft);
@@ -2832,6 +3702,81 @@ def _inject_styles() -> None:
                 color: var(--muted);
                 font-size: 0.83rem;
                 line-height: 1.4;
+            }
+            .shell-card-footer {
+                color: var(--text);
+                font-size: 0.72rem;
+                text-transform: uppercase;
+                letter-spacing: 0.12rem;
+                margin-top: 0.65rem;
+                font-family: "JetBrains Mono", ui-monospace, monospace;
+            }
+            .mission-grid {
+                display: grid;
+                grid-template-columns: repeat(5, minmax(0, 1fr));
+                gap: 0.85rem;
+                margin-bottom: 1rem;
+            }
+            .mission-card {
+                background: var(--panel);
+                border: 1.5px solid var(--border);
+                border-radius: 6px;
+                padding: 0.95rem 1rem;
+                min-height: 10rem;
+            }
+            .mission-title {
+                color: var(--text);
+                font-size: 1.35rem;
+                line-height: 1.1;
+                font-weight: 700;
+                margin-bottom: 0.35rem;
+            }
+            .mission-copy {
+                color: var(--muted);
+                font-size: 0.83rem;
+                line-height: 1.45;
+                min-height: 2.8rem;
+                margin-bottom: 0.75rem;
+            }
+            .meter-track {
+                width: 100%;
+                height: 8px;
+                background: #1C1D21;
+                border: 1px solid var(--border);
+                border-radius: 999px;
+                overflow: hidden;
+            }
+            .meter-fill {
+                height: 100%;
+                background: linear-gradient(90deg, var(--accent), var(--accent-soft));
+            }
+            .meter-track.danger .meter-fill.danger {
+                background: linear-gradient(90deg, #FF6B6B, var(--red));
+            }
+            .signal-strip {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 0.85rem;
+                margin-bottom: 1rem;
+            }
+            .signal-strip-block {
+                background: var(--panel);
+                border: 1.5px solid var(--border);
+                border-radius: 6px;
+                padding: 1rem 1.05rem;
+                min-height: 8rem;
+            }
+            .signal-strip-value {
+                color: var(--text);
+                font-size: 1.3rem;
+                font-weight: 700;
+                line-height: 1.15;
+                margin-bottom: 0.35rem;
+            }
+            .signal-strip-note {
+                color: var(--muted);
+                font-size: 0.86rem;
+                line-height: 1.45;
             }
             .brief-lead, .media-brief {
                 background: var(--panel);
@@ -2953,6 +3898,7 @@ def _inject_styles() -> None:
                 .hero-flex { flex-direction: column; align-items: flex-start; }
                 .hero-title { font-size: 2.2rem; }
                 .intent-grid { grid-template-columns: 1fr; }
+                .shell-strip, .signal-strip, .mission-grid { grid-template-columns: 1fr; }
                 .brief-title { font-size: 1.45rem; }
             }
         </style>

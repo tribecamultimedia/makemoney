@@ -25,3 +25,33 @@ class RealEstateAnalysis:
     downside_summary: str
     tax_note: str
 
+
+@dataclass(frozen=True, slots=True)
+class RealEstateDecision:
+    decision: str
+    why: tuple[str, ...]
+    risks: tuple[str, ...]
+    safer_option: str
+    confidence: str
+
+
+@dataclass(frozen=True, slots=True)
+class PropertyRecord:
+    property_name: str
+    property_type: str
+    estimated_value: float
+    mortgage_balance: float
+    monthly_rent: float
+    monthly_expenses: float
+    interest_rate_pct: float
+    occupancy_status: str
+
+
+@dataclass(frozen=True, slots=True)
+class RealEstatePortfolioSummary:
+    total_property_value: float
+    total_mortgage_balance: float
+    total_equity: float
+    total_monthly_cash_flow: float
+    average_interest_rate_pct: float
+    posture: str

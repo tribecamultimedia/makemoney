@@ -1,0 +1,32 @@
+{
+  "history": [
+    {
+      "date": "Mar 21",
+      "title": "Avoid adding risk before event volatility",
+      "action": "Skipped",
+      "outcome": "Avoided drawdown",
+      "impact": "+1.4% protected",
+      "quality": "good",
+      "spark": [18, 20, 17, 15, 12, 10, 8]
+    },
+    {
+      "date": "Mar 18",
+      "title": "Shift 10% to gold and cash",
+      "action": "Executed",
+      "outcome": "Reduced pressure",
+      "impact": "Buffer improved",
+      "quality": "good",
+      "spark": [4, 6, 8, 9, 10, 11, 12]
+    },
+    {
+      "date": "Mar 14",
+      "title": "Wait before entering real estate",
+      "action": "Observed",
+      "outcome": "Patience preserved options",
+      "impact": "No forced move",
+      "quality": "warn",
+      "spark": [11, 10, 10, 9, 8, 8, 8]
+    }
+  ],
+  "source": "mock-api/signals.json"
+}

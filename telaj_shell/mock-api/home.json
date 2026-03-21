@@ -1,0 +1,46 @@
+{
+  "morningSignal": {
+    "live": true,
+    "confidence": 78,
+    "move": "Increase liquidity buffer before adding more risk",
+    "rationale": "Volatility is elevated, your cash reserve is still below target, and the model would rather strengthen the household than stretch into another position too early.",
+    "risk": "medium",
+    "whoFor": "Family cash stability",
+    "confidenceLabel": "AI confidence",
+    "rationaleShort": "Protect the system first, invest second."
+  },
+  "systemHealth": {
+    "discipline": 82,
+    "liquidity": 61,
+    "allocation": 74,
+    "resilience": 68
+  },
+  "profile": {
+    "level": "Allocator",
+    "xp": 2480,
+    "nextLevelXp": 3000,
+    "streak": 18,
+    "rank": "Builder -> Strategist"
+  },
+  "stats": {
+    "ytd": "+8.4%",
+    "benchmark": "+6.9%",
+    "cashReserve": "4.3 months",
+    "signalsTaken": 19,
+    "winRate": "68%"
+  },
+  "allocation": [
+    { "label": "ETFs", "weight": 42, "note": "Core wealth engine" },
+    { "label": "Cash", "weight": 18, "note": "Shock absorber" },
+    { "label": "Gold", "weight": 10, "note": "Defensive ballast" },
+    { "label": "Real Estate", "weight": 20, "note": "Long-duration asset" },
+    { "label": "Equities", "weight": 10, "note": "Higher-beta sleeve" }
+  ],
+  "watchlist": [
+    { "ticker": "SPY", "move": "+0.8%", "signal": "Watch", "trend": "up" },
+    { "ticker": "GLD", "move": "+1.3%", "signal": "Add slowly", "trend": "up" },
+    { "ticker": "VNQ", "move": "-0.4%", "signal": "Prepare", "trend": "down" },
+    { "ticker": "SGOV", "move": "+0.1%", "signal": "Hold reserve", "trend": "up" }
+  ],
+  "source": "mock-api/home.json"
+}

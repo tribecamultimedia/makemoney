@@ -33,9 +33,19 @@ create table if not exists public.latest_signal (
   updated_at timestamptz
 );
 
+create table if not exists public.family_wealth_state (
+  id text primary key,
+  profile jsonb not null default '{}'::jsonb,
+  balance_sheet jsonb not null default '{}'::jsonb,
+  legacy_plan jsonb not null default '{}'::jsonb,
+  real_estate_registry jsonb not null default '[]'::jsonb,
+  updated_at timestamptz
+);
+
 alter table public.trade_ledger enable row level security;
 alter table public.equity_curve enable row level security;
 alter table public.latest_signal enable row level security;
+alter table public.family_wealth_state enable row level security;
 
 create policy "service role full access trade_ledger"
 on public.trade_ledger
@@ -51,6 +61,12 @@ with check (auth.role() = 'service_role');
 
 create policy "service role full access latest_signal"
 on public.latest_signal
+for all
+using (auth.role() = 'service_role')
+with check (auth.role() = 'service_role');
+
+create policy "service role full access family_wealth_state"
+on public.family_wealth_state
 for all
 using (auth.role() = 'service_role')
 with check (auth.role() = 'service_role');

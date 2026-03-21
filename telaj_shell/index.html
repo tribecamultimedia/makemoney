@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TELAJ | Wealth Operating System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="rail">
+        <div class="brand-block">
+          <div class="eyebrow">TELAJ</div>
+          <div class="brand-title">Family Wealth Operating System</div>
+          <p class="brand-copy">
+            A visual, disciplined personal finance engine for morning decisions, capital allocation, and long-term family wealth.
+          </p>
+        </div>
+
+        <div class="rail-status">
+          <div class="status-chip live"><span class="live-dot"></span> Morning signal live</div>
+          <div class="status-chip">Level <strong id="rail-level">Allocator</strong></div>
+          <div class="status-chip">Streak <strong id="rail-streak">18 days</strong></div>
+        </div>
+
+        <nav class="nav-stack" id="section-nav">
+          <button class="nav-item is-active" data-section="home">Home</button>
+          <button class="nav-item" data-section="allocation">Allocation</button>
+          <button class="nav-item" data-section="signals">Signal History</button>
+          <button class="nav-item" data-section="progress">Tasks & Progress</button>
+          <button class="nav-item" data-section="real-estate">Real Estate</button>
+        </nav>
+
+        <div class="rail-footer">
+          <div class="pill">PREVIEW MODE</div>
+          <div class="meta-line">Theme <span>Grey / Electric Blue</span></div>
+          <div class="meta-line">Prototype <span>Static Netlify</span></div>
+          <div class="meta-line">Data <span>Mock-ready API</span></div>
+        </div>
+      </aside>
+
+      <main class="stage">
+        <header class="hero-shell">
+          <div>
+            <div class="eyebrow">MORNING OPERATING VIEW</div>
+            <h1>TELAJ makes one disciplined call every morning.</h1>
+            <p class="hero-copy">
+              The game is not speculation. The game is protecting liquidity, allocating capital well, and compounding with discipline.
+            </p>
+          </div>
+          <div class="hero-actions">
+            <button class="cta-button primary" id="hero-execute">Execute move</button>
+            <button class="cta-button" id="hero-simulate">Simulate first</button>
+          </div>
+        </header>
+
+        <section class="view is-active" data-view="home">
+          <div class="bento-grid home-grid">
+            <article class="panel morning-hero" id="morning-hero"></article>
+            <article class="panel health-panel" id="system-health"></article>
+            <article class="panel xp-panel" id="xp-level"></article>
+            <article class="panel allocation-panel" id="allocation-snapshot"></article>
+            <article class="panel reserve-panel" id="cash-status"></article>
+            <article class="panel tasks-panel" id="daily-tasks"></article>
+            <article class="panel watchlist-panel" id="watchlist"></article>
+            <article class="panel history-panel" id="signal-history-preview"></article>
+            <article class="panel badges-panel" id="achievements"></article>
+            <article class="panel leaderboard-panel" id="leaderboard"></article>
+          </div>
+        </section>
+
+        <section class="view" data-view="allocation">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">CAPITAL ALLOCATION</div>
+              <h2>Where the next dollar should go</h2>
+            </div>
+            <div class="section-tag">Portfolio view</div>
+          </div>
+          <div class="bento-grid allocation-grid">
+            <article class="panel" id="allocation-main"></article>
+            <article class="panel" id="allocation-bars"></article>
+            <article class="panel" id="allocation-rules"></article>
+            <article class="panel" id="allocation-watchouts"></article>
+          </div>
+        </section>
+
+        <section class="view" data-view="signals">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">SIGNAL HISTORY</div>
+              <h2>How disciplined calls played out</h2>
+            </div>
+            <div class="section-tag">Outcome log</div>
+          </div>
+          <div class="bento-grid signal-grid">
+            <article class="panel" id="signal-stats"></article>
+            <article class="panel" id="signal-history-list"></article>
+            <article class="panel" id="signal-outcomes"></article>
+          </div>
+        </section>
+
+        <section class="view" data-view="progress">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">DISCIPLINE SYSTEM</div>
+              <h2>Tasks, XP, streaks, and badges</h2>
+            </div>
+            <div class="section-tag">Progression</div>
+          </div>
+          <div class="bento-grid progress-grid">
+            <article class="panel" id="progress-summary"></article>
+            <article class="panel" id="quest-board"></article>
+            <article class="panel" id="badge-case"></article>
+            <article class="panel" id="level-roadmap"></article>
+          </div>
+        </section>
+
+        <section class="view" data-view="real-estate">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">REAL ESTATE READINESS</div>
+              <h2>Know when to prepare, buy, wait, or optimize</h2>
+            </div>
+            <div class="section-tag">Property module</div>
+          </div>
+          <div class="bento-grid real-estate-grid">
+            <article class="panel" id="property-signal"></article>
+            <article class="panel" id="property-metrics"></article>
+            <article class="panel" id="property-checklist"></article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

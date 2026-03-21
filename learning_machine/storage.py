@@ -13,6 +13,7 @@ STATE_DIR = Path(".state")
 LEDGER_PATH = STATE_DIR / "trade_ledger.jsonl"
 EQUITY_PATH = STATE_DIR / "equity_curve.jsonl"
 SIGNAL_PATH = STATE_DIR / "latest_signal.json"
+FAMILY_WEALTH_PATH = STATE_DIR / "family_wealth_state.json"
 
 
 LEDGER_COLUMNS = ["timestamp", "symbol", "mode", "action", "status", "reason", "notional", "equity", "cash"]
@@ -158,3 +159,53 @@ def load_signal_payload() -> dict[str, object] | None:
     if not SIGNAL_PATH.exists():
         return None
     return json.loads(SIGNAL_PATH.read_text(encoding="utf-8"))
+
+
+def save_family_wealth_state(
+    *,
+    profile: dict[str, object],
+    balance_sheet: dict[str, object],
+    legacy_plan: dict[str, object] | None = None,
+    real_estate_registry: list[dict[str, object]] | None = None,
+) -> None:
+    payload = {
+        "id": "current",
+        "profile": profile,
+        "balance_sheet": balance_sheet,
+        "legacy_plan": legacy_plan or {},
+        "real_estate_registry": real_estate_registry or [],
+        "updated_at": pd.Timestamp.utcnow().isoformat(),
+    }
+    if shared_storage_enabled():
+        try:
+            response = requests.post(
+                f"{_supabase_base()}/family_wealth_state?on_conflict=id",
+                headers={**_supabase_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
+                json=payload,
+                timeout=15,
+            )
+            response.raise_for_status()
+            return
+        except Exception:
+            pass
+    _ensure_state_dir()
+    FAMILY_WEALTH_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def load_family_wealth_state() -> dict[str, object] | None:
+    if shared_storage_enabled():
+        try:
+            response = requests.get(
+                f"{_supabase_base()}/family_wealth_state?select=profile,balance_sheet,legacy_plan,real_estate_registry,updated_at&id=eq.current",
+                headers=_supabase_headers(),
+                timeout=15,
+            )
+            response.raise_for_status()
+            rows = response.json()
+            if rows:
+                return rows[0]
+        except Exception:
+            pass
+    if not FAMILY_WEALTH_PATH.exists():
+        return None
+    return json.loads(FAMILY_WEALTH_PATH.read_text(encoding="utf-8"))

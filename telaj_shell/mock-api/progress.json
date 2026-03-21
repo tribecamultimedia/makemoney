@@ -1,0 +1,21 @@
+{
+  "tasks": [
+    { "id": "signal", "title": "Review the morning signal", "xp": 50, "done": true },
+    { "id": "cash", "title": "Confirm emergency reserve target", "xp": 70, "done": false },
+    { "id": "rebalance", "title": "Review allocation drift", "xp": 60, "done": false },
+    { "id": "asset", "title": "Audit one asset for productivity", "xp": 45, "done": true },
+    { "id": "discipline", "title": "Choose patience over noise", "xp": 40, "done": true }
+  ],
+  "badges": [
+    { "name": "Balanced Allocator", "note": "Kept core allocations within target bands.", "earned": true },
+    { "name": "Cash Buffer Built", "note": "Reached minimum reserve threshold.", "earned": false },
+    { "name": "Gold Defender", "note": "Added defense before stress escalated.", "earned": true },
+    { "name": "Real Estate Ready", "note": "Built reserves before property exposure.", "earned": false }
+  ],
+  "leaderboard": [
+    { "name": "You", "score": "82 discipline", "rank": 1 },
+    { "name": "Allocator cohort", "score": "79 discipline", "rank": 2 },
+    { "name": "Builder cohort", "score": "73 discipline", "rank": 3 }
+  ],
+  "source": "mock-api/progress.json"
+}

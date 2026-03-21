@@ -186,6 +186,78 @@ const ONBOARDING_STORAGE_KEY = "telaj-onboarding-v1";
 const WEALTH_INPUTS_STORAGE_KEY = "telaj-wealth-inputs-v1";
 const questionBank = [
   {
+    id: "netWorthBand",
+    category: "Balance sheet",
+    prompt: "Roughly how much are you worth today?",
+    helper: "TELAJ starts with a rough net-worth band so the advice fits the real scale of the household.",
+    options: [
+      { value: "under-50k", title: "Under 50k", note: "Early-stage or still building the base." },
+      { value: "50k-250k", title: "50k-250k", note: "The household has started to build real capital." },
+      { value: "250k-1m", title: "250k-1m", note: "Meaningful capital allocation decisions matter now." },
+      { value: "1m-plus", title: "1m+", note: "Preservation, optimization, and structure matter more." },
+    ],
+  },
+  {
+    id: "liquidity",
+    category: "Balance sheet",
+    prompt: "How much of your wealth is actually liquid?",
+    helper: "Liquidity matters because the household needs flexibility, not just headline net worth.",
+    options: [
+      { value: "very-low", title: "Very low", note: "Most wealth is tied up or hard to access." },
+      { value: "moderate", title: "Moderate", note: "Some flexibility, but still somewhat constrained." },
+      { value: "healthy", title: "Healthy", note: "Enough liquidity to handle shocks and choices." },
+      { value: "very-strong", title: "Very strong", note: "A large share of wealth is liquid and deployable." },
+    ],
+  },
+  {
+    id: "assetLocation",
+    category: "Balance sheet",
+    prompt: "Where does most of your money or asset value sit today?",
+    helper: "TELAJ needs to know what is really driving your balance sheet.",
+    options: [
+      { value: "cash", title: "Cash and reserves", note: "Most value sits in cash or savings." },
+      { value: "markets", title: "Markets", note: "ETFs, stocks, retirement, or brokerage assets dominate." },
+      { value: "primary-home", title: "Primary home", note: "A large share of wealth is in the family home." },
+      { value: "investment-property", title: "Investment property or business", note: "Wealth is concentrated in operating or illiquid assets." },
+    ],
+  },
+  {
+    id: "primaryResidenceStatus",
+    category: "Balance sheet",
+    prompt: "What best describes your primary household property situation?",
+    helper: "TELAJ should separate the family home from investment properties because they play different roles.",
+    options: [
+      { value: "rent", title: "I rent", note: "No owned primary residence." },
+      { value: "own-mortgage", title: "I own with a mortgage", note: "The home exists, but debt still shapes it." },
+      { value: "own-outright", title: "I own outright", note: "The home is owned free and clear." },
+      { value: "other", title: "Other setup", note: "Family arrangement or mixed housing setup." },
+    ],
+  },
+  {
+    id: "primaryHomeEquity",
+    category: "Balance sheet",
+    prompt: "How much equity do you have in your primary home?",
+    helper: "TELAJ needs the rough equity position, not a perfect valuation model.",
+    options: [
+      { value: "low", title: "Low equity", note: "You still owe most of the value." },
+      { value: "medium", title: "Moderate equity", note: "A meaningful but not dominant equity cushion." },
+      { value: "high", title: "High equity", note: "Most of the home value is already yours." },
+      { value: "full", title: "Fully owned", note: "No meaningful debt remains on the home." },
+    ],
+  },
+  {
+    id: "primaryHomeDebtRate",
+    category: "Balance sheet",
+    prompt: "What best describes the mortgage rate on your primary home?",
+    helper: "A low fixed mortgage and an expensive mortgage create very different household decisions.",
+    options: [
+      { value: "low", title: "Low rate", note: "Cheap debt, usually not urgent to attack." },
+      { value: "mid", title: "Mid rate", note: "Worth watching, but not necessarily urgent." },
+      { value: "high", title: "High rate", note: "This debt may be slowing wealth building." },
+      { value: "unknown", title: "Not sure", note: "TELAJ will stay cautious until this is clearer." },
+    ],
+  },
+  {
     id: "ageBand",
     category: "Identity",
     prompt: "What age range are you in?",
@@ -236,25 +308,25 @@ const questionBank = [
   {
     id: "propertyCount",
     category: "Household",
-    prompt: "How many properties do you currently own?",
-    helper: "TELAJ should understand whether property is absent, emerging, or a major part of the family balance sheet.",
+    prompt: "How many investment properties do you own beyond your primary home?",
+    helper: "TELAJ should separate the family home from income or investment properties.",
     options: [
-      { value: "0", title: "None", note: "No current property ownership." },
-      { value: "1", title: "1 property", note: "Usually a first home or one property exposure." },
-      { value: "2-3", title: "2-3 properties", note: "Property is a meaningful family capital bucket." },
-      { value: "4plus", title: "4+", note: "Property is a major part of the system." },
+      { value: "0", title: "None", note: "No investment property exposure yet." },
+      { value: "1", title: "1 property", note: "A first rental or single investment property." },
+      { value: "2-3", title: "2-3 properties", note: "Investment property is now a real allocation sleeve." },
+      { value: "4plus", title: "4+", note: "Property investing is a major part of the system." },
     ],
   },
   {
     id: "propertyType",
     category: "Household",
-    prompt: "What type of properties best describes what you own?",
-    helper: "Broad property type matters because a primary home, rentals, and commercial exposure behave very differently.",
+    prompt: "What type of investment properties best describes what you own?",
+    helper: "Rental residential and commercial or land exposure should not be treated the same way.",
     options: [
-      { value: "primary-home", title: "Primary home", note: "Mostly owner-occupied housing." },
-      { value: "rental", title: "Rental property", note: "Residential income-producing property." },
-      { value: "mixed-residential", title: "Mixed residential", note: "Primary plus rental or multiple homes." },
-      { value: "commercial-land", title: "Commercial or land", note: "Land, mixed-use, or commercial exposure." },
+      { value: "rental", title: "Long-term rental", note: "Residential income-producing property." },
+      { value: "short-term", title: "Short-term rental", note: "Higher operating intensity and variability." },
+      { value: "mixed-residential", title: "Mixed residential", note: "A mix of rental styles or several residential assets." },
+      { value: "commercial-land", title: "Commercial or land", note: "Commercial, mixed-use, or raw land exposure." },
     ],
   },
   {
@@ -545,12 +617,18 @@ function getLifeMatrixQuestions() {
     if (question.id === "dependents" && answers.householdRole === "single") {
       return false;
     }
+    if (question.id === "primaryHomeEquity") {
+      return ["own-mortgage", "own-outright"].includes(answers.primaryResidenceStatus);
+    }
+    if (question.id === "primaryHomeDebtRate") {
+      return answers.primaryResidenceStatus === "own-mortgage";
+    }
     if (question.id === "propertyCount") {
-      return ["property", "mixed"].includes(answers.ownedAssets) || answers.propertyIntent === "existing";
+      return ["property", "mixed"].includes(answers.ownedAssets) || ["existing", "active"].includes(answers.propertyIntent);
     }
     if (question.id === "propertyType") {
       return (
-        (["property", "mixed"].includes(answers.ownedAssets) || answers.propertyIntent === "existing") &&
+        (["property", "mixed"].includes(answers.ownedAssets) || ["existing", "active"].includes(answers.propertyIntent)) &&
         Boolean(answers.propertyCount) &&
         answers.propertyCount !== "0"
       );
@@ -569,7 +647,11 @@ function getFirstMissingQuestionIndex() {
 
 function deriveHouseholdProfile(answers) {
   const assetBase =
-    answers.ownedAssets === "mixed"
+    answers.assetLocation === "investment-property"
+      ? "Business and investment property household"
+      : answers.assetLocation === "primary-home"
+        ? "Home-equity-led household"
+      : answers.ownedAssets === "mixed"
       ? "Multi-asset household"
       : answers.ownedAssets === "property"
         ? "Property-centered household"
@@ -592,9 +674,14 @@ function deriveHouseholdProfile(answers) {
     incomeBand: answers.incomeBand ?? "unknown",
     incomeStability: answers.incomeStability ?? "unknown",
     healthConstraint: answers.healthConstraint ?? "prefer-not",
+    netWorthBand: answers.netWorthBand ?? "unknown",
+    assetLocation: answers.assetLocation ?? "unknown",
     assetBase,
     liabilityPressure: answers.liabilities ?? "unknown",
     liquidityProfile: answers.liquidity ?? "unknown",
+    primaryResidenceStatus: answers.primaryResidenceStatus ?? "unknown",
+    primaryHomeEquity: answers.primaryHomeEquity ?? "unknown",
+    primaryHomeDebtRate: answers.primaryHomeDebtRate ?? "unknown",
     propertyCount: answers.propertyCount ?? "0",
     propertyType: answers.propertyType ?? "none",
     propertyExposure,
@@ -733,6 +820,14 @@ function applyProfilesToNarrative() {
       "TELAJ treats income-producing property as an operating asset, so cash flow discipline and stress testing matter more than headline valuations.";
   }
 
+  if (householdProfile.primaryResidenceStatus === "own-mortgage" && householdProfile.primaryHomeDebtRate === "high") {
+    state.morningSignal.move = "Review expensive home debt before stretching into new risk";
+    state.morningSignal.rationale =
+      "TELAJ sees a primary household with a higher-cost mortgage, which can matter more than chasing another asset too early.";
+    state.recommendation.primaryAction = "Review mortgage pressure and household liquidity";
+    state.recommendation.secondaryAction = "Delay optional risk until the home balance sheet is stronger";
+  }
+
   if (behaviorProfile.weakness === "overspending") {
     state.recommendation.avoid = "Lifestyle inflation and emotional spending";
   } else if (behaviorProfile.weakness === "fomo") {
@@ -764,8 +859,8 @@ function renderOnboarding() {
       <div class="onboarding-head">
         <div>
           <div class="eyebrow">TELAJ LIFE MATRIX</div>
-          <h1 class="onboarding-title">Build the family wealth profile before anything else.</h1>
-          <p class="onboarding-copy">Progressive, adaptive, category-based. TELAJ should understand the person, the household, and the real constraints before it gives financial advice.</p>
+          <h1 class="onboarding-title">Map the family balance sheet before anything else.</h1>
+          <p class="onboarding-copy">TELAJ should understand what the household owns, where the capital sits, how much is owed, and only then how the person behaves under stress.</p>
         </div>
         <div class="onboarding-step">${question.category} | ${step + 1}/${questions.length}</div>
       </div>
@@ -993,8 +1088,9 @@ function renderProfileMatrix() {
       <div class="profile-chip">
         <div class="micro-label">HouseholdProfile</div>
         <div class="profile-chip-title">${profiles.householdProfile.archetype}</div>
-        <div class="panel-copy">Age ${profiles.householdProfile.ageBand} | ${profiles.householdProfile.assetBase} | Liquidity ${profiles.householdProfile.liquidityProfile}</div>
-        <div class="panel-copy">Property ${profiles.householdProfile.propertyCount} | Type ${profiles.householdProfile.propertyType}</div>
+        <div class="panel-copy">Worth ${profiles.householdProfile.netWorthBand} | Liquidity ${profiles.householdProfile.liquidityProfile} | Core ${profiles.householdProfile.assetLocation}</div>
+        <div class="panel-copy">Primary home ${profiles.householdProfile.primaryResidenceStatus} | Equity ${profiles.householdProfile.primaryHomeEquity}</div>
+        <div class="panel-copy">Investment property ${profiles.householdProfile.propertyCount} | Type ${profiles.householdProfile.propertyType}</div>
       </div>
       <div class="profile-chip">
         <div class="micro-label">BehaviorProfile</div>

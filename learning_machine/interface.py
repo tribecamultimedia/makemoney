@@ -9,7 +9,7 @@ import requests
 import streamlit as st
 
 try:
-    from .data import DataConfig, DataPipeline, get_economic_calendar
+    from .data import DataConfig, DataPipeline, get_economic_calendar, get_media_says
     from .execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker, SovereignAgent
     from .experiment_tracker import read_experiment_runs
     from .intelligence import CreditLiquidityFactor, EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory, PortfolioAllocator
@@ -19,7 +19,7 @@ try:
     from .storage import shared_storage_enabled
     from .trade_manager import TradeManager
 except ImportError:
-    from learning_machine.data import DataConfig, DataPipeline, get_economic_calendar
+    from learning_machine.data import DataConfig, DataPipeline, get_economic_calendar, get_media_says
     from learning_machine.execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker, SovereignAgent
     from learning_machine.experiment_tracker import read_experiment_runs
     from learning_machine.intelligence import CreditLiquidityFactor, EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory, PortfolioAllocator
@@ -202,6 +202,7 @@ def main() -> None:
     pulse = _build_pulse(regime_snapshot, stress_snapshot)
     sovereign_score = pipeline.generate_sovereign_score(selected_tickers[0])
     superbrain_board = _build_superbrain_board(pipeline, selected_tickers)
+    media_brief = get_media_says(selected_tickers)
     internals = MarketInternalsFactory().build()
     credit = CreditLiquidityFactor().build()
     event_risk = EventRiskFilter().evaluate(get_economic_calendar())
@@ -240,16 +241,19 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
-    st.markdown(
+    editorial_cols = st.columns([1.15, 0.85])
+    editorial_cols[0].markdown(
         f"""
-        <div class="glass-card">
-            <div class="card-label">Today's Briefing</div>
-            <div class="card-copy">{_guru_briefing(regime_snapshot, pulse, selected_bundle)}</div>
-            <div class="card-meta">Yield Curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f} | Inflation YoY: {float(regime_snapshot['inflation_yoy']):.2f}%</div>
+        <div class="brief-lead">
+            <div class="card-label">Morning Edition</div>
+            <div class="brief-title">Today's Briefing</div>
+            <div class="brief-copy">{_guru_briefing(regime_snapshot, pulse, selected_bundle)}</div>
+            <div class="brief-meta">Yield Curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f} | Inflation YoY: {float(regime_snapshot['inflation_yoy']):.2f}%</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+    _render_media_brief(editorial_cols[1], media_brief)
 
     if user_path == "Trade":
         _render_trade_view(
@@ -323,6 +327,7 @@ def main() -> None:
             credit.summary,
             f"HYG 20D {credit.hyg_return_20d:.1f}% | LQD 20D {credit.lqd_return_20d:.1f}% | IWM vs SPY {credit.iwm_vs_spy_momentum:+.1f}%",
         )
+        _render_media_headlines(media_brief)
         _render_experiment_panel()
 
     with st.expander("How the AI manages risk", expanded=False):
@@ -447,6 +452,39 @@ def _render_market_view(
     _glass_card(lower_cols[0], "Internals", internals.summary, f"VIX {internals.vix_level:.1f} | Cross-asset {internals.cross_asset_confirmation:+.2f}")
     _glass_card(lower_cols[1], "Credit", credit.summary, f"Liquidity score {credit.liquidity_score:+.2f}")
     _glass_card(lower_cols[2], "Event risk", event_risk.summary, f"Next event in {event_risk.hours_to_event:.1f} hours")
+
+
+def _render_media_brief(container, media_brief: dict[str, object]) -> None:
+    tone = str(media_brief["tone"])
+    tone_class = str(media_brief.get("tone_color", "neutral"))
+    container.markdown(
+        f"""
+        <div class="media-brief {tone_class}">
+            <div class="card-label">What the Media Says</div>
+            <div class="brief-title">{tone}</div>
+            <div class="brief-copy">{media_brief['summary']}</div>
+            <div class="brief-meta">{media_brief['commentary']}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_media_headlines(media_brief: dict[str, object]) -> None:
+    headlines = list(media_brief.get("headlines", []))
+    if not headlines:
+        st.info("No recent media headlines were available.")
+        return
+    rows = []
+    for row in headlines[:5]:
+        rows.append(
+            {
+                "source": row.get("source", ""),
+                "headline": row.get("title", ""),
+                "published": row.get("published", ""),
+            }
+        )
+    st.dataframe(pd.DataFrame(rows), use_container_width=True)
 
 
 def _render_copilot(
@@ -1695,15 +1733,15 @@ def _inject_styles() -> None:
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap');
             :root {
-                --bg: #FFFFFF;
+                --bg: #F7F1E8;
                 --panel: #FFFFFF;
-                --border: #D8D8D8;
+                --border: #CFC7BD;
                 --text: #111111;
                 --muted: #5F6368;
                 --accent: #111111;
                 --red: #D93025;
                 --green: #12A150;
-                --soft: #F7F7F7;
+                --soft: #EFE6D9;
             }
             @keyframes riseIn {
                 from { opacity: 0; transform: translateY(8px); }
@@ -1715,13 +1753,13 @@ def _inject_styles() -> None:
                 100% { transform: translateY(0px); }
             }
             .stApp {
-                background: #FFFFFF;
+                background: var(--bg);
                 color: var(--text);
                 font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
             }
-            [data-testid="stHeader"] { background: rgba(255, 255, 255, 0.95); border-bottom: 1px solid var(--border); }
+            [data-testid="stHeader"] { background: rgba(247, 241, 232, 0.96); border-bottom: 1px solid var(--border); }
             [data-testid="stToolbar"], [data-testid="stDecoration"] { background: transparent; }
-            [data-testid="stAppViewContainer"] { background: #FFFFFF; }
+            [data-testid="stAppViewContainer"] { background: var(--bg); }
             .block-container { max-width: 1180px; padding-top: 1.2rem; padding-bottom: 4rem; }
             .hero-kicker, .card-label {
                 color: var(--accent);
@@ -1733,7 +1771,7 @@ def _inject_styles() -> None:
             }
             .hero-title {
                 color: var(--text);
-                font-size: 2.6rem;
+                font-size: 3rem;
                 font-weight: 700;
                 line-height: 1.02;
                 margin-bottom: 0.5rem;
@@ -1748,12 +1786,44 @@ def _inject_styles() -> None:
             .hero-card, .glass-card, .signal-card, .bundle-card {
                 background: var(--panel);
                 border: 1px solid var(--border);
-                border-radius: 22px;
+                border-radius: 12px;
                 padding: 1rem 1.1rem;
                 margin-bottom: 1rem;
-                box-shadow: 0 14px 36px rgba(0, 0, 0, 0.06);
+                box-shadow: 0 10px 24px rgba(0, 0, 0, 0.04);
                 animation: riseIn 0.45s ease-out;
             }
+            .brief-lead, .media-brief {
+                background: var(--panel);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 1.1rem 1.15rem 1rem 1.15rem;
+                min-height: 100%;
+                box-shadow: 0 10px 24px rgba(0, 0, 0, 0.04);
+                animation: riseIn 0.45s ease-out;
+            }
+            .brief-title {
+                font-family: Georgia, "Times New Roman", serif;
+                font-size: 1.8rem;
+                line-height: 1.08;
+                color: var(--text);
+                margin-bottom: 0.45rem;
+            }
+            .brief-copy {
+                font-family: Georgia, "Times New Roman", serif;
+                font-size: 1.05rem;
+                line-height: 1.6;
+                color: #202124;
+                margin-bottom: 0.55rem;
+            }
+            .brief-meta {
+                color: var(--muted);
+                font-size: 0.92rem;
+                border-top: 1px solid var(--border);
+                padding-top: 0.65rem;
+            }
+            .media-brief.green { border-left: 4px solid var(--green); }
+            .media-brief.red { border-left: 4px solid var(--red); }
+            .media-brief.neutral { border-left: 4px solid #111111; }
             .intent-grid {
                 display: grid;
                 grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1763,7 +1833,7 @@ def _inject_styles() -> None:
             .intent-card {
                 background: var(--panel);
                 border: 1px solid var(--border);
-                border-radius: 22px;
+                border-radius: 12px;
                 padding: 1rem 1.1rem;
                 box-shadow: 0 14px 36px rgba(0, 0, 0, 0.05);
                 animation: riseIn 0.5s ease-out;
@@ -1800,7 +1870,7 @@ def _inject_styles() -> None:
                 background: #FFFFFF;
                 color: var(--text);
                 border: 1px solid #111111;
-                border-radius: 14px;
+                border-radius: 8px;
                 font-weight: 700;
                 transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease;
             }
@@ -1809,17 +1879,22 @@ def _inject_styles() -> None:
                 background: #111111;
                 color: #FFFFFF;
             }
-            [data-testid="stSidebar"] { background: var(--soft); }
+            [data-testid="stSidebar"] { background: var(--soft); border-right: 1px solid var(--border); }
             .stMetric {
                 background: #FFFFFF;
                 border: 1px solid var(--border);
-                border-radius: 18px;
+                border-radius: 10px;
                 padding: 0.5rem 0.75rem;
             }
             label, .stMarkdown, .stCaption, .stTextInput, .stNumberInput, .stSelectbox, .stSlider, .stRadio {
                 color: var(--text) !important;
             }
-            @media (max-width: 768px) { .hero-flex { flex-direction: column; align-items: flex-start; } .hero-title { font-size: 2rem; } .intent-grid { grid-template-columns: 1fr; } }
+            @media (max-width: 768px) {
+                .hero-flex { flex-direction: column; align-items: flex-start; }
+                .hero-title { font-size: 2.2rem; }
+                .intent-grid { grid-template-columns: 1fr; }
+                .brief-title { font-size: 1.45rem; }
+            }
         </style>
         """,
         unsafe_allow_html=True,

@@ -4,8 +4,10 @@ import ssl
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from xml.etree import ElementTree
 
 import pandas as pd
+import requests
 import yfinance as yf
 from fredapi import Fred
 
@@ -38,6 +40,107 @@ def get_economic_calendar() -> list[dict[str, object]]:
             "importance": "High",
         },
     ]
+
+
+def get_media_says(tickers: tuple[str, ...] = ("SPY", "QQQ")) -> dict[str, object]:
+    headlines = _fetch_financial_headlines()
+    if not headlines:
+        headlines = [
+            {
+                "source": "Fallback Desk",
+                "title": "Markets hold a cautious tone as traders wait for the next macro catalyst.",
+                "link": "",
+                "published": "",
+            },
+            {
+                "source": "Fallback Desk",
+                "title": "Risk appetite remains selective while rate expectations keep positioning tight.",
+                "link": "",
+                "published": "",
+            },
+            {
+                "source": "Fallback Desk",
+                "title": "Investors are leaning defensive rather than chasing every rebound.",
+                "link": "",
+                "published": "",
+            },
+        ]
+    scored = [_score_headline(row["title"]) for row in headlines]
+    average_score = sum(scored) / max(len(scored), 1)
+    if average_score >= 0.35:
+        tone = "Supportive"
+        color = "green"
+        summary = "Financial media is leaning constructive. The tone says risk can be taken, but not blindly."
+    elif average_score <= -0.35:
+        tone = "Defensive"
+        color = "red"
+        summary = "The media tape sounds defensive. Commentators are focused on stress, slowdown, and downside protection."
+    else:
+        tone = "Mixed"
+        color = "neutral"
+        summary = "The media is split. Some headlines want the rebound, others want the bunker. That usually means conviction is thin."
+    ticker_line = ", ".join(tickers)
+    commentary = (
+        f"What the media says about {ticker_line}: {summary} "
+        "This is the narrative layer, not the final decision maker."
+    )
+    return {
+        "tone": tone,
+        "tone_color": color,
+        "summary": summary,
+        "commentary": commentary,
+        "headlines": headlines[:5],
+        "score": average_score,
+    }
+
+
+def _fetch_financial_headlines() -> list[dict[str, str]]:
+    feeds = [
+        ("CNBC Markets", "https://www.cnbc.com/id/100003114/device/rss/rss.html"),
+        ("MarketWatch Top Stories", "https://feeds.content.dowjones.io/public/rss/mw_topstories"),
+        ("Investing.com News", "https://www.investing.com/rss/news_25.rss"),
+    ]
+    rows: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for source, url in feeds:
+        try:
+            response = requests.get(url, timeout=6, headers={"User-Agent": "Mozilla/5.0"})
+            response.raise_for_status()
+            root = ElementTree.fromstring(response.content)
+        except Exception:
+            continue
+        for item in root.findall(".//item"):
+            title = (item.findtext("title") or "").strip()
+            link = (item.findtext("link") or "").strip()
+            published = (item.findtext("pubDate") or "").strip()
+            if not title or title in seen:
+                continue
+            seen.add(title)
+            rows.append(
+                {
+                    "source": source,
+                    "title": title,
+                    "link": link,
+                    "published": published,
+                }
+            )
+            if len(rows) >= 12:
+                return rows
+    return rows
+
+
+def _score_headline(title: str) -> float:
+    text = title.lower()
+    positive = ["gain", "rally", "beat", "surge", "jump", "expand", "bull", "strength", "upside", "optimism"]
+    negative = ["fall", "drop", "slump", "fear", "risk", "recession", "selloff", "loss", "warn", "slowdown"]
+    score = 0.0
+    for word in positive:
+        if word in text:
+            score += 0.4
+    for word in negative:
+        if word in text:
+            score -= 0.4
+    return score
 
 
 @dataclass(slots=True)

@@ -1,0 +1,31 @@
+{
+  "householdProfile": {
+    "ageBand": "40s",
+    "householdRole": "parent",
+    "dependents": "1-2",
+    "incomeBand": "middle",
+    "incomeStability": "mostly-stable",
+    "healthConstraint": "mild",
+    "assetBase": "Multi-asset household",
+    "liabilityPressure": "moderate",
+    "liquidityProfile": "balanced",
+    "propertyExposure": true,
+    "archetype": "Family Stabilizer"
+  },
+  "behaviorProfile": {
+    "spendingStyle": "balanced",
+    "savingDiscipline": "mostly",
+    "drawdownResponse": "hold",
+    "weakness": "consistency",
+    "riskBehavior": "Stable under stress",
+    "disciplineScore": 72
+  },
+  "goalProfile": {
+    "primaryGoal": "growth",
+    "wealthFor": "children",
+    "propertyIntent": "prepare",
+    "investedAssets": "property-and-market",
+    "goalArchetype": "Compounder",
+    "recommendedPosture": "Measured growth"
+  }
+}

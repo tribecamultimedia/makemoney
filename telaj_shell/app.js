@@ -1,6 +1,16 @@
 const defaultState = {
   activeView: "home",
   dataSource: "Embedded fallback",
+  onboarding: {
+    completed: false,
+    currentStep: 0,
+    answers: {},
+    profiles: {
+      householdProfile: null,
+      behaviorProfile: null,
+      goalProfile: null,
+    },
+  },
   morningSignal: {
     live: true,
     confidence: 78,
@@ -127,15 +137,227 @@ const defaultState = {
       "Only buy if cash flow still works under stress",
     ],
   },
+  liquidityDetails: {
+    liquidAssets: 18000,
+    monthlyNeed: 4200,
+  },
+  propertyAppraisal: {
+    address: "",
+    size: 90,
+    unit: "sqm",
+    estimatedValue: 0,
+    valueLow: 0,
+    valueHigh: 0,
+    pricePerSqm: 0,
+    note: "Enter an address and size to get a quick educational appraisal.",
+  },
 };
 
 const state = structuredClone(defaultState);
+const ONBOARDING_STORAGE_KEY = "telaj-onboarding-v1";
+const WEALTH_INPUTS_STORAGE_KEY = "telaj-wealth-inputs-v1";
+const questionBank = [
+  {
+    id: "ageBand",
+    category: "Identity",
+    prompt: "What age range are you in?",
+    helper: "Life stage changes the right balance between safety, growth, and flexibility.",
+    options: [
+      { value: "20s", title: "20s", note: "Early builder stage." },
+      { value: "30s", title: "30s", note: "Growth and family-building stage." },
+      { value: "40s", title: "40s", note: "Peak responsibility and allocation stage." },
+      { value: "50plus", title: "50+", note: "Preservation, transition, and legacy matter more." },
+    ],
+  },
+  {
+    id: "householdRole",
+    category: "Identity",
+    prompt: "Which best describes your household?",
+    helper: "TELAJ needs to know whether it is advising one person or a family system.",
+    options: [
+      { value: "single", title: "Single", note: "Mostly my own financial system." },
+      { value: "couple", title: "Couple", note: "Shared household planning matters." },
+      { value: "parent", title: "Parent household", note: "Children or dependents affect the plan." },
+      { value: "multi", title: "Multi-generational", note: "This is a family capital structure." },
+    ],
+  },
+  {
+    id: "dependents",
+    category: "Household",
+    prompt: "How many people depend on this money besides you?",
+    helper: "More dependents usually mean TELAJ should protect stability first.",
+    options: [
+      { value: "0", title: "None", note: "The system is mostly self-directed." },
+      { value: "1-2", title: "1-2", note: "A few people rely on this capital." },
+      { value: "3-4", title: "3-4", note: "The household has multiple dependents." },
+      { value: "5plus", title: "5+", note: "A large family system depends on it." },
+    ],
+  },
+  {
+    id: "ownedAssets",
+    category: "Household",
+    prompt: "What assets do you currently own?",
+    helper: "Start with broad categories, not perfect accounting.",
+    options: [
+      { value: "mostly-cash", title: "Mostly cash", note: "Savings, cash, and little else." },
+      { value: "investments", title: "Investments", note: "ETFs, retirement accounts, or funds." },
+      { value: "property", title: "Property-heavy", note: "Home, rental property, or land." },
+      { value: "mixed", title: "A mix of assets", note: "Cash, investments, property, or business assets." },
+    ],
+  },
+  {
+    id: "liabilities",
+    category: "Household",
+    prompt: "What liabilities do you currently have?",
+    helper: "Debt changes how much freedom your capital really has.",
+    options: [
+      { value: "none", title: "Almost none", note: "No meaningful debt burden." },
+      { value: "light", title: "Light debt", note: "A manageable mortgage or small recurring debt." },
+      { value: "moderate", title: "Moderate debt", note: "Monthly payments matter and need attention." },
+      { value: "heavy", title: "Heavy debt", note: "Debt is actively shaping most decisions." },
+    ],
+  },
+  {
+    id: "incomeBand",
+    category: "Money",
+    prompt: "How would you describe your income level?",
+    helper: "TELAJ should adapt recommendations to your real earning power, not pretend every household has the same capacity.",
+    options: [
+      { value: "low", title: "Tight budget", note: "Every buffer matters." },
+      { value: "middle", title: "Middle income", note: "There is room to build, but tradeoffs matter." },
+      { value: "high", title: "High income", note: "Strong earning power, but still needs discipline." },
+      { value: "very-high", title: "Very high income", note: "High capacity, potentially high leakage too." },
+    ],
+  },
+  {
+    id: "incomeStability",
+    category: "Money",
+    prompt: "How stable is your income?",
+    helper: "Unstable income should shift TELAJ toward resilience and reserve building.",
+    options: [
+      { value: "stable", title: "Very stable", note: "Predictable income and lower surprise risk." },
+      { value: "mostly-stable", title: "Mostly stable", note: "Some variability, but manageable." },
+      { value: "variable", title: "Variable", note: "Income can change meaningfully month to month." },
+      { value: "fragile", title: "Fragile", note: "The household needs more protection first." },
+    ],
+  },
+  {
+    id: "spendingStyle",
+    category: "Behavior",
+    prompt: "Which best describes your money behavior?",
+    helper: "TELAJ should know whether it is building around impulse control or long-term consistency.",
+    options: [
+      { value: "saver", title: "Mostly a saver", note: "I naturally hold back and protect capital." },
+      { value: "balanced", title: "Balanced", note: "I spend and save with some structure." },
+      { value: "spender", title: "Big spender", note: "Lifestyle can eat capital quickly." },
+      { value: "chaotic", title: "Chaotic", note: "Money decisions are inconsistent or reactive." },
+    ],
+  },
+  {
+    id: "savingDiscipline",
+    category: "Behavior",
+    prompt: "How consistent are you at saving or investing?",
+    helper: "TELAJ can design around inconsistency, but it needs to know it is there.",
+    options: [
+      { value: "automatic", title: "Very consistent", note: "I already automate and follow through." },
+      { value: "mostly", title: "Mostly consistent", note: "Good habits, but not perfect." },
+      { value: "sporadic", title: "Sporadic", note: "I do it sometimes, not reliably." },
+      { value: "rare", title: "Rarely consistent", note: "The system needs stronger behavioral support." },
+    ],
+  },
+  {
+    id: "weakness",
+    category: "Behavior",
+    prompt: "What weakness hurts your finances the most?",
+    helper: "TELAJ needs the real friction point, not the idealized version of you.",
+    options: [
+      { value: "overspending", title: "Overspending", note: "Lifestyle pressure or impulse purchases." },
+      { value: "procrastination", title: "Avoiding decisions", note: "I postpone financial moves too long." },
+      { value: "fomo", title: "FOMO / chasing", note: "I am tempted by hype or sudden trends." },
+      { value: "consistency", title: "Inconsistency", note: "I know what to do, but I do not stick to it." },
+    ],
+  },
+  {
+    id: "drawdown",
+    category: "Behavior",
+    prompt: "If your portfolio drops 20%, what do you do?",
+    helper: "This tells TELAJ how much emotional risk the plan can survive.",
+    options: [
+      { value: "sell", title: "Sell quickly", note: "I would reduce risk fast." },
+      { value: "pause", title: "Wait and watch", note: "I would stop and look for clarity." },
+      { value: "hold", title: "Hold steady", note: "I would stay disciplined." },
+      { value: "buy", title: "Buy more", note: "I would add if the plan still makes sense." },
+    ],
+  },
+  {
+    id: "healthConstraint",
+    category: "Life factors",
+    prompt: "Are there any health or caregiving factors that should make TELAJ more conservative?",
+    helper: "This is optional, but it matters because fragile life situations require stronger reserves.",
+    options: [
+      { value: "none", title: "No major issue", note: "No obvious health or caregiving constraint." },
+      { value: "mild", title: "Some constraints", note: "There is some uncertainty or family burden." },
+      { value: "significant", title: "Significant", note: "Health or caregiving meaningfully affects planning." },
+      { value: "prefer-not", title: "Prefer not to say", note: "TELAJ will stay neutral on this factor." },
+    ],
+  },
+  {
+    id: "goal",
+    category: "Goals",
+    prompt: "What are you trying to build first?",
+    helper: "TELAJ should optimize for the mission, not generic financial advice.",
+    options: [
+      { value: "safety", title: "Safety", note: "Stability, reserves, and lower stress." },
+      { value: "income", title: "Income", note: "Cash flow and durable monthly support." },
+      { value: "growth", title: "Growth", note: "Long-term compounding and asset expansion." },
+      { value: "legacy", title: "Legacy", note: "Multi-decade wealth and family continuity." },
+    ],
+  },
+  {
+    id: "wealthFor",
+    category: "Goals",
+    prompt: "Who is this wealth for?",
+    helper: "TELAJ should understand whether this is personal, household, or family capital.",
+    options: [
+      { value: "me", title: "Me", note: "Primarily my own financial operating system." },
+      { value: "spouse", title: "Me and spouse", note: "Shared stability and long-term planning." },
+      { value: "children", title: "My children", note: "The next generation matters directly." },
+      { value: "multi", title: "Multi-generational", note: "This is a family capital system." },
+    ],
+  },
+  {
+    id: "propertyIntent",
+    category: "Goals",
+    prompt: "How do you think about real estate right now?",
+    helper: "TELAJ should know whether real estate is already part of the plan or only a future option.",
+    options: [
+      { value: "none", title: "Not a priority", note: "Property is not a current target." },
+      { value: "prepare", title: "Preparing", note: "I want to be ready, but not rush." },
+      { value: "active", title: "Actively interested", note: "I want TELAJ to help me move toward it." },
+      { value: "existing", title: "Already involved", note: "I already own or invest in property." },
+    ],
+  },
+  {
+    id: "investedAssets",
+    category: "Goals",
+    prompt: "What assets do you already invest in?",
+    helper: "This helps TELAJ understand your current habits and concentration.",
+    options: [
+      { value: "cash-and-etf", title: "Cash and ETFs", note: "Simple, broad, disciplined exposure." },
+      { value: "stocks", title: "Stocks and ETFs", note: "Mostly market-based holdings." },
+      { value: "property-and-market", title: "Property and markets", note: "Real estate plus investment assets." },
+      { value: "mixed-risk", title: "A mixed risk stack", note: "Some combination of equities, gold, crypto, or property." },
+    ],
+  },
+];
 
 const navItems = document.querySelectorAll(".nav-item");
 const views = document.querySelectorAll(".view");
+const appShell = document.getElementById("app-shell");
+const onboardingShell = document.getElementById("onboarding-shell");
 
 const mockEndpoints = {
-  home: "./mock-api/home.json",
+  familyDashboard: "./mock-api/family-dashboard.json",
   allocation: "./mock-api/allocation.json",
   signals: "./mock-api/signals.json",
   progress: "./mock-api/progress.json",
@@ -144,6 +366,67 @@ const mockEndpoints = {
 
 function mergeState(payload) {
   Object.assign(state, payload);
+}
+
+function loadOnboardingState() {
+  try {
+    const raw = window.localStorage.getItem(ONBOARDING_STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+    const parsed = JSON.parse(raw);
+    state.onboarding = {
+      completed: Boolean(parsed.completed),
+      currentStep: Number(parsed.currentStep ?? 0),
+      answers: typeof parsed.answers === "object" && parsed.answers ? parsed.answers : {},
+      profiles:
+        typeof parsed.profiles === "object" && parsed.profiles
+          ? parsed.profiles
+          : structuredClone(defaultState.onboarding.profiles),
+    };
+  } catch (error) {
+    console.warn("TELAJ onboarding state could not be restored.", error);
+  }
+}
+
+function persistOnboardingState() {
+  window.localStorage.setItem(
+    ONBOARDING_STORAGE_KEY,
+    JSON.stringify({
+      completed: state.onboarding.completed,
+      currentStep: state.onboarding.currentStep,
+      answers: state.onboarding.answers,
+      profiles: state.onboarding.profiles,
+    })
+  );
+}
+
+function loadWealthInputs() {
+  try {
+    const raw = window.localStorage.getItem(WEALTH_INPUTS_STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+    const parsed = JSON.parse(raw);
+    if (parsed.liquidityDetails) {
+      state.liquidityDetails = { ...state.liquidityDetails, ...parsed.liquidityDetails };
+    }
+    if (parsed.propertyAppraisal) {
+      state.propertyAppraisal = { ...state.propertyAppraisal, ...parsed.propertyAppraisal };
+    }
+  } catch (error) {
+    console.warn("TELAJ wealth inputs could not be restored.", error);
+  }
+}
+
+function persistWealthInputs() {
+  window.localStorage.setItem(
+    WEALTH_INPUTS_STORAGE_KEY,
+    JSON.stringify({
+      liquidityDetails: state.liquidityDetails,
+      propertyAppraisal: state.propertyAppraisal,
+    })
+  );
 }
 
 async function fetchJson(url) {
@@ -156,8 +439,8 @@ async function fetchJson(url) {
 
 async function loadMockApiState() {
   try {
-    const [home, allocation, signals, progress, realEstate] = await Promise.all([
-      fetchJson(mockEndpoints.home),
+    const [familyDashboard, allocation, signals, progress, realEstate] = await Promise.all([
+      fetchJson(mockEndpoints.familyDashboard),
       fetchJson(mockEndpoints.allocation),
       fetchJson(mockEndpoints.signals),
       fetchJson(mockEndpoints.progress),
@@ -165,12 +448,12 @@ async function loadMockApiState() {
     ]);
 
     mergeState({
-      morningSignal: home.morningSignal ?? state.morningSignal,
-      systemHealth: home.systemHealth ?? state.systemHealth,
-      profile: home.profile ?? state.profile,
-      stats: home.stats ?? state.stats,
-      allocation: home.allocation ?? state.allocation,
-      watchlist: home.watchlist ?? state.watchlist,
+      morningSignal: familyDashboard.morningSignal ?? state.morningSignal,
+      systemHealth: familyDashboard.systemHealth ?? state.systemHealth,
+      profile: familyDashboard.profile ?? state.profile,
+      stats: familyDashboard.stats ?? state.stats,
+      allocation: familyDashboard.allocation ?? state.allocation,
+      watchlist: familyDashboard.watchlist ?? state.watchlist,
       recommendation: allocation.recommendation ?? state.recommendation,
       rules: allocation.rules ?? state.rules,
       watchouts: allocation.watchouts ?? state.watchouts,
@@ -193,6 +476,282 @@ function setView(view) {
   views.forEach((panel) => panel.classList.toggle("is-active", panel.dataset.view === view));
 }
 
+function getSelectedOption(questionId) {
+  return state.onboarding.answers[questionId] ?? null;
+}
+
+function getLifeMatrixQuestions() {
+  const answers = state.onboarding.answers;
+  return questionBank.filter((question) => {
+    if (question.id === "dependents" && answers.householdRole === "single") {
+      return false;
+    }
+    if (question.id === "propertyIntent" && answers.ownedAssets === "mostly-cash" && answers.goal === "safety") {
+      return false;
+    }
+    return true;
+  });
+}
+
+function deriveHouseholdProfile(answers) {
+  const assetBase =
+    answers.ownedAssets === "mixed"
+      ? "Multi-asset household"
+      : answers.ownedAssets === "property"
+        ? "Property-centered household"
+        : answers.ownedAssets === "investments"
+          ? "Investment-led household"
+          : "Liquidity-led household";
+  const propertyExposure = ["property", "mixed"].includes(answers.ownedAssets) || ["existing", "active"].includes(answers.propertyIntent);
+  const archetype =
+    answers.householdRole === "parent" || answers.householdRole === "multi"
+      ? "Family Stabilizer"
+      : answers.incomeBand === "very-high" && answers.spendingStyle === "spender"
+        ? "High Earner, Low Friction Control"
+        : answers.goal === "legacy"
+          ? "Legacy Builder"
+          : "Independent Builder";
+  return {
+    ageBand: answers.ageBand ?? "unknown",
+    householdRole: answers.householdRole ?? "unknown",
+    dependents: answers.dependents ?? "0",
+    incomeBand: answers.incomeBand ?? "unknown",
+    incomeStability: answers.incomeStability ?? "unknown",
+    healthConstraint: answers.healthConstraint ?? "prefer-not",
+    assetBase,
+    liabilityPressure: answers.liabilities ?? "unknown",
+    liquidityProfile: answers.liquidity ?? "unknown",
+    propertyExposure,
+    archetype,
+  };
+}
+
+function deriveBehaviorProfile(answers) {
+  const disciplineScoreMap = {
+    automatic: 86,
+    mostly: 72,
+    sporadic: 54,
+    rare: 38,
+  };
+  const riskBehavior =
+    answers.drawdown === "buy"
+      ? "Aggressive under stress"
+      : answers.drawdown === "hold"
+        ? "Stable under stress"
+        : answers.drawdown === "pause"
+          ? "Cautious under stress"
+          : "Fragile under stress";
+  return {
+    spendingStyle: answers.spendingStyle ?? "balanced",
+    savingDiscipline: answers.savingDiscipline ?? "mostly",
+    drawdownResponse: answers.drawdown ?? "pause",
+    weakness: answers.weakness ?? "consistency",
+    riskBehavior,
+    disciplineScore: disciplineScoreMap[answers.savingDiscipline] ?? 60,
+  };
+}
+
+function deriveGoalProfile(answers) {
+  const goalArchetype =
+    answers.goal === "legacy"
+      ? "Long-duration family builder"
+      : answers.goal === "safety"
+        ? "Capital protector"
+        : answers.goal === "income"
+          ? "Cash-flow builder"
+          : "Compounder";
+  const recommendedPosture =
+    answers.goal === "safety" || answers.liabilities === "heavy" || answers.liquidity === "very-low"
+      ? "Reserves first"
+      : answers.goal === "legacy"
+        ? "Long-horizon family allocation"
+        : answers.goal === "income"
+          ? "Cash flow and defense"
+          : "Measured growth";
+  return {
+    primaryGoal: answers.goal ?? "growth",
+    wealthFor: answers.wealthFor ?? "me",
+    propertyIntent: answers.propertyIntent ?? "none",
+    investedAssets: answers.investedAssets ?? "cash-and-etf",
+    goalArchetype,
+    recommendedPosture,
+  };
+}
+
+function deriveLifeMatrixProfiles() {
+  const answers = state.onboarding.answers;
+  return {
+    householdProfile: deriveHouseholdProfile(answers),
+    behaviorProfile: deriveBehaviorProfile(answers),
+    goalProfile: deriveGoalProfile(answers),
+  };
+}
+
+function applyProfilesToNarrative() {
+  const { householdProfile, behaviorProfile, goalProfile } = state.onboarding.profiles;
+  if (!householdProfile || !behaviorProfile || !goalProfile) {
+    return;
+  }
+  state.morningSignal = structuredClone(defaultState.morningSignal);
+  state.recommendation = structuredClone(defaultState.recommendation);
+  state.tasks = structuredClone(defaultState.tasks);
+  state.property = structuredClone(defaultState.property);
+
+  if (
+    householdProfile.liquidityProfile === "very-low" ||
+    householdProfile.liabilityPressure === "heavy" ||
+    goalProfile.recommendedPosture === "Reserves first"
+  ) {
+    state.morningSignal.move = "Strengthen liquidity before adding new risk";
+    state.morningSignal.rationale =
+      "TELAJ sees a household that needs more room to absorb life, debt, or income pressure before taking on more exposure.";
+    state.recommendation.headline = "Build reserve strength before stretching for returns";
+    state.recommendation.primaryAction = "Increase cash buffer";
+    state.tasks = [
+      { id: "reserve", title: "Strengthen the emergency reserve", xp: 70, done: false },
+      { id: "debt", title: "Reduce debt pressure or payments", xp: 60, done: false },
+      { id: "signal", title: "Review the morning signal", xp: 50, done: true },
+      { id: "discipline", title: "Avoid adding risk emotionally", xp: 45, done: false },
+      { id: "asset", title: "Audit one expense leak", xp: 40, done: false },
+    ];
+  } else if (goalProfile.primaryGoal === "growth" && behaviorProfile.disciplineScore >= 70) {
+    state.morningSignal.move = "Build a disciplined ETF core and add defense slowly";
+    state.morningSignal.rationale =
+      "TELAJ sees enough consistency to let growth matter, but still wants diversification and protection around it.";
+    state.recommendation.headline = "Use broad ETFs as the base and keep gold as defense";
+    state.recommendation.primaryAction = "Allocate to broad ETF basket";
+    state.tasks = [
+      { id: "signal", title: "Review the ETF allocation signal", xp: 50, done: true },
+      { id: "rebalance", title: "Review allocation drift", xp: 60, done: false },
+      { id: "gold", title: "Keep a defensive sleeve in place", xp: 45, done: false },
+      { id: "asset", title: "Audit one holding for concentration", xp: 40, done: false },
+      { id: "discipline", title: "Ignore hype and stay broad", xp: 35, done: true },
+    ];
+  } else if (goalProfile.propertyIntent === "active" || householdProfile.propertyExposure) {
+    state.morningSignal.move = "Prepare the household before forcing the next property move";
+    state.morningSignal.rationale =
+      "TELAJ sees real estate in the picture, but wants liquidity, debt pressure, and resilience checked before momentum decisions.";
+    state.recommendation.secondaryAction = "Prepare for real estate deliberately";
+    state.tasks = [
+      { id: "signal", title: "Review the property readiness signal", xp: 50, done: true },
+      { id: "cash", title: "Check down payment liquidity", xp: 65, done: false },
+      { id: "vacancy", title: "Run a vacancy stress test", xp: 55, done: false },
+      { id: "debt", title: "Check financing pressure", xp: 50, done: false },
+      { id: "discipline", title: "Do not force the property move", xp: 40, done: true },
+    ];
+    state.property.signal = "Prepare before expanding real-estate exposure";
+    state.property.note = "TELAJ sees property relevance, but it wants stronger household resilience before a bigger move.";
+  }
+
+  if (householdProfile.propertyExposure && goalProfile.propertyIntent !== "none") {
+    state.property.signal = "Real estate matters, but only if liquidity and stress still work";
+    state.property.note = "The property decision should serve the household system, not become the system.";
+  }
+
+  if (behaviorProfile.weakness === "overspending") {
+    state.recommendation.avoid = "Lifestyle inflation and emotional spending";
+  } else if (behaviorProfile.weakness === "fomo") {
+    state.recommendation.avoid = "Hype-driven entries and chasing fast narratives";
+  } else if (behaviorProfile.weakness === "procrastination") {
+    state.recommendation.avoid = "Waiting forever instead of acting on good enough decisions";
+  }
+}
+
+function renderOnboarding() {
+  if (state.onboarding.completed) {
+    onboardingShell.classList.remove("is-active");
+    appShell.classList.remove("is-hidden");
+    return;
+  }
+
+  const questions = getLifeMatrixQuestions();
+  const step = Math.max(0, Math.min(state.onboarding.currentStep, questions.length - 1));
+  const question = questions[step];
+  const selected = getSelectedOption(question.id);
+  const progress = ((step + 1) / questions.length) * 100;
+
+  onboardingShell.classList.add("is-active");
+  appShell.classList.add("is-hidden");
+
+  const isLast = step === questions.length - 1;
+  onboardingShell.innerHTML = `
+    <div class="onboarding-card">
+      <div class="onboarding-head">
+        <div>
+          <div class="eyebrow">TELAJ LIFE MATRIX</div>
+          <h1 class="onboarding-title">Build the family wealth profile before anything else.</h1>
+          <p class="onboarding-copy">Progressive, adaptive, category-based. TELAJ should understand the person, the household, and the real constraints before it gives financial advice.</p>
+        </div>
+        <div class="onboarding-step">${question.category} | ${step + 1}/${questions.length}</div>
+      </div>
+      <div class="onboarding-progress">
+        <div class="progress-meta-row">
+          <div class="task-pill">Category: ${question.category}</div>
+          <div class="task-pill">${Math.round(progress)}% mapped</div>
+        </div>
+        <div class="bar-track"><div class="bar-fill" style="width:${progress}%"></div></div>
+      </div>
+      <div class="question-stage">
+        <div class="micro-label">Current question</div>
+        <h2 class="question-prompt">${question.prompt}</h2>
+        <div class="onboarding-copy">${question.helper}</div>
+        <div class="answer-grid">
+          ${question.options
+            .map(
+              (option) => `
+                <button class="answer-button ${selected === option.value ? "is-selected" : ""}" data-answer="${option.value}">
+                  <div class="answer-title">${option.title}</div>
+                  <div class="answer-note">${option.note}</div>
+                </button>
+              `
+            )
+            .join("")}
+        </div>
+      </div>
+      <div class="onboarding-actions">
+        <button class="ghost-button" id="onboarding-back" ${step === 0 ? "disabled" : ""}>Back</button>
+        <div class="task-pill">${selected ? "Answer captured" : "Choose one answer"}</div>
+        <button class="action-button primary" id="onboarding-next" ${selected ? "" : "disabled"}>${isLast ? "Enter TELAJ" : "Continue"}</button>
+      </div>
+    </div>
+  `;
+
+  onboardingShell.querySelectorAll(".answer-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.onboarding.answers[question.id] = button.dataset.answer;
+      persistOnboardingState();
+      renderOnboarding();
+    });
+  });
+
+  const backButton = document.getElementById("onboarding-back");
+  const nextButton = document.getElementById("onboarding-next");
+  backButton?.addEventListener("click", () => {
+    if (state.onboarding.currentStep > 0) {
+      state.onboarding.currentStep -= 1;
+      persistOnboardingState();
+      renderOnboarding();
+    }
+  });
+  nextButton?.addEventListener("click", () => {
+    if (!selected) {
+      return;
+    }
+    if (isLast) {
+      state.onboarding.profiles = deriveLifeMatrixProfiles();
+      state.onboarding.completed = true;
+      persistOnboardingState();
+      applyProfilesToNarrative();
+      renderOnboarding();
+      renderAll();
+      return;
+    }
+    state.onboarding.currentStep += 1;
+    persistOnboardingState();
+    renderOnboarding();
+  });
+}
+
 function sparkline(points, stroke = "#4d91ff") {
   const max = Math.max(...points);
   const min = Math.min(...points);
@@ -208,6 +767,55 @@ function sparkline(points, stroke = "#4d91ff") {
       <polyline fill="none" stroke="${stroke}" stroke-width="3" points="${scaled.join(" ")}"></polyline>
     </svg>
   `;
+}
+
+function estimatedPricePerSqm(address) {
+  const text = String(address || "").toLowerCase();
+  const rules = [
+    { match: ["milan", "milano"], price: 6200, note: "Milan-style premium urban pricing." },
+    { match: ["rome", "roma"], price: 4800, note: "Rome-style major city pricing." },
+    { match: ["florence", "firenze"], price: 5200, note: "Florence-style historic city pricing." },
+    { match: ["turin", "torino"], price: 3300, note: "Turin-style established city pricing." },
+    { match: ["naples", "napoli"], price: 3100, note: "Naples-style dense city pricing." },
+    { match: ["bologna"], price: 4200, note: "Bologna-style strong regional pricing." },
+    { match: ["london"], price: 11000, note: "London-style premium international pricing." },
+    { match: ["new york", "nyc"], price: 13500, note: "New York-style prime urban pricing." },
+    { match: ["miami"], price: 7000, note: "Miami-style high-demand pricing." },
+  ];
+  for (const rule of rules) {
+    if (rule.match.some((token) => text.includes(token))) {
+      return { price: rule.price, note: rule.note };
+    }
+  }
+  return { price: 2800, note: "Fallback pricing based on a generic secondary-market estimate." };
+}
+
+function calculateLiquidityMonths() {
+  const liquidAssets = Number(state.liquidityDetails.liquidAssets || 0);
+  const monthlyNeed = Number(state.liquidityDetails.monthlyNeed || 0);
+  if (monthlyNeed <= 0) {
+    return 0;
+  }
+  return liquidAssets / monthlyNeed;
+}
+
+function calculatePropertyAppraisal() {
+  const size = Number(state.propertyAppraisal.size || 0);
+  const unit = state.propertyAppraisal.unit || "sqm";
+  const address = state.propertyAppraisal.address || "";
+  const normalizedSqm = unit === "sqft" ? size / 10.7639 : size;
+  const base = estimatedPricePerSqm(address);
+  const estimatedValue = normalizedSqm * base.price;
+  const range = estimatedValue * 0.12;
+  state.propertyAppraisal = {
+    ...state.propertyAppraisal,
+    estimatedValue,
+    valueLow: Math.max(estimatedValue - range, 0),
+    valueHigh: estimatedValue + range,
+    pricePerSqm: base.price,
+    note: base.note,
+  };
+  persistWealthInputs();
 }
 
 function renderMorningHero() {
@@ -282,6 +890,40 @@ function renderSystemHealth() {
   `;
 }
 
+function renderProfileMatrix() {
+  const panel = document.getElementById("profile-matrix");
+  const profiles = state.onboarding.profiles;
+  if (!profiles?.householdProfile || !profiles?.behaviorProfile || !profiles?.goalProfile) {
+    panel.innerHTML = `
+      <div class="eyebrow">Life matrix</div>
+      <h3>Profile not built yet</h3>
+      <p class="body-copy">Finish onboarding to let TELAJ describe the household, the behavior pattern, and the real goal structure.</p>
+    `;
+    return;
+  }
+  panel.innerHTML = `
+    <div class="eyebrow">Life matrix</div>
+    <h3>TELAJ profile engine</h3>
+    <div class="profile-grid">
+      <div class="profile-chip">
+        <div class="micro-label">HouseholdProfile</div>
+        <div class="profile-chip-title">${profiles.householdProfile.archetype}</div>
+        <div class="panel-copy">Age ${profiles.householdProfile.ageBand} | ${profiles.householdProfile.assetBase} | Liquidity ${profiles.householdProfile.liquidityProfile}</div>
+      </div>
+      <div class="profile-chip">
+        <div class="micro-label">BehaviorProfile</div>
+        <div class="profile-chip-title">${profiles.behaviorProfile.riskBehavior}</div>
+        <div class="panel-copy">Spending ${profiles.behaviorProfile.spendingStyle} | Weakness ${profiles.behaviorProfile.weakness} | Discipline ${profiles.behaviorProfile.disciplineScore}/100</div>
+      </div>
+      <div class="profile-chip">
+        <div class="micro-label">GoalProfile</div>
+        <div class="profile-chip-title">${profiles.goalProfile.goalArchetype}</div>
+        <div class="panel-copy">Goal ${profiles.goalProfile.primaryGoal} | Wealth for ${profiles.goalProfile.wealthFor} | Posture ${profiles.goalProfile.recommendedPosture}</div>
+      </div>
+    </div>
+  `;
+}
+
 function renderXpLevel() {
   const panel = document.getElementById("xp-level");
   const progress = Math.min((state.profile.xp / state.profile.nextLevelXp) * 100, 100);
@@ -320,11 +962,15 @@ function renderAllocationSnapshot() {
 
 function renderCashStatus() {
   const panel = document.getElementById("cash-status");
+  const reserveMonths = calculateLiquidityMonths();
+  const reserveTargetGap = Math.max(6 - reserveMonths, 0);
+  const reserveStatus =
+    reserveMonths >= 6 ? "Reserve target met" : `${reserveTargetGap.toFixed(1)} more months of reserves needed`;
   panel.innerHTML = `
     <div class="eyebrow">Reserve status</div>
     <h3>Cash buffer</h3>
-    <div class="stat-value">${state.stats.cashReserve}</div>
-    <p class="body-copy">TELAJ would like this closer to 6 months before you add more stress or real-estate exposure.</p>
+    <div class="stat-value">${reserveMonths.toFixed(1)} months</div>
+    <p class="body-copy">${reserveStatus}. TELAJ wants to know your actual liquid assets, not just a generic reserve label.</p>
     <div class="insight-grid">
       <div class="insight-card">
         <div class="micro-label">Recommendation</div>
@@ -332,10 +978,31 @@ function renderCashStatus() {
       </div>
       <div class="insight-card">
         <div class="micro-label">Stress score</div>
-        <div class="panel-copy">Moderate</div>
+        <div class="panel-copy">${reserveMonths >= 6 ? "Resilient" : reserveMonths >= 3 ? "Moderate" : "Thin"}</div>
+      </div>
+    </div>
+    <div class="input-stack">
+      <label class="input-field">
+        <span class="micro-label">Liquid assets</span>
+        <input id="liquid-assets-input" type="number" min="0" step="500" value="${state.liquidityDetails.liquidAssets}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Monthly household need</span>
+        <input id="monthly-need-input" type="number" min="0" step="100" value="${state.liquidityDetails.monthlyNeed}" />
+      </label>
+      <div class="action-row">
+        <button class="action-button primary" id="save-liquidity">Update liquidity</button>
+        <button class="ghost-button" id="go-allocation">Use this in allocation</button>
       </div>
     </div>
   `;
+  document.getElementById("save-liquidity").addEventListener("click", () => {
+    state.liquidityDetails.liquidAssets = Number(document.getElementById("liquid-assets-input").value || 0);
+    state.liquidityDetails.monthlyNeed = Number(document.getElementById("monthly-need-input").value || 0);
+    persistWealthInputs();
+    renderCashStatus();
+  });
+  document.getElementById("go-allocation").addEventListener("click", () => setView("allocation"));
 }
 
 function renderTasks() {
@@ -548,6 +1215,7 @@ function renderProgress() {
 }
 
 function renderRealEstate() {
+  calculatePropertyAppraisal();
   document.getElementById("property-signal").innerHTML = `
     <div class="eyebrow">Property signal</div>
     <h3>${state.property.signal}</h3>
@@ -562,6 +1230,10 @@ function renderRealEstate() {
     <div class="eyebrow">Readiness metrics</div>
     <h3>What TELAJ sees</h3>
     <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-label">Quick appraisal</div>
+        <div class="stat-value">€${Math.round(state.propertyAppraisal.estimatedValue).toLocaleString()}</div>
+      </div>
       ${state.property.metrics
         .map(
           (item) => `
@@ -575,12 +1247,62 @@ function renderRealEstate() {
     </div>
   `;
   document.getElementById("property-checklist").innerHTML = `
-    <div class="eyebrow">Checklist</div>
-    <h3>Before real estate</h3>
-    <ul class="clean-list">
-      ${state.property.checklist.map((item) => `<li>${item}</li>`).join("")}
-    </ul>
+    <div class="eyebrow">Quick appraisal</div>
+    <h3>Estimate property value by address and size</h3>
+    <p class="body-copy">Educational only. This is a rough heuristic, not a formal valuation or professional appraisal.</p>
+    <div class="input-stack">
+      <label class="input-field input-span-2">
+        <span class="micro-label">Address / city</span>
+        <input id="property-address" type="text" value="${state.propertyAppraisal.address}" placeholder="Via Roma 10, Milano or London, UK" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Size</span>
+        <input id="property-size" type="number" min="0" step="1" value="${state.propertyAppraisal.size}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Unit</span>
+        <select id="property-unit">
+          <option value="sqm" ${state.propertyAppraisal.unit === "sqm" ? "selected" : ""}>sq m</option>
+          <option value="sqft" ${state.propertyAppraisal.unit === "sqft" ? "selected" : ""}>sq ft</option>
+        </select>
+      </label>
+      <div class="action-row input-span-2">
+        <button class="action-button primary" id="run-appraisal">Run appraisal</button>
+        <button class="ghost-button" id="property-checklist-toggle">Show readiness checklist</button>
+      </div>
+    </div>
+    <div class="insight-grid">
+      <div class="insight-card">
+        <div class="micro-label">Estimated range</div>
+        <div class="panel-copy">€${Math.round(state.propertyAppraisal.valueLow).toLocaleString()} to €${Math.round(state.propertyAppraisal.valueHigh).toLocaleString()}</div>
+      </div>
+      <div class="insight-card">
+        <div class="micro-label">Price per sq m</div>
+        <div class="panel-copy">€${Math.round(state.propertyAppraisal.pricePerSqm).toLocaleString()} / sq m</div>
+      </div>
+    </div>
+    <div class="onboarding-summary">
+      <div class="micro-label">Appraisal note</div>
+      <div class="panel-copy">${state.propertyAppraisal.note}</div>
+      <div class="micro-label">Before real estate</div>
+      <ul class="clean-list">
+        ${state.property.checklist.map((item) => `<li>${item}</li>`).join("")}
+      </ul>
+    </div>
   `;
+  document.getElementById("run-appraisal").addEventListener("click", () => {
+    state.propertyAppraisal.address = document.getElementById("property-address").value;
+    state.propertyAppraisal.size = Number(document.getElementById("property-size").value || 0);
+    state.propertyAppraisal.unit = document.getElementById("property-unit").value;
+    calculatePropertyAppraisal();
+    renderRealEstate();
+  });
+  document.getElementById("property-checklist-toggle").addEventListener("click", () => {
+    const target = document.querySelector("#property-checklist .clean-list");
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
 }
 
 function bindNav() {
@@ -590,9 +1312,11 @@ function bindNav() {
 }
 
 function renderAll() {
+  applyProfilesToNarrative();
   renderMorningHero();
   renderSystemHealth();
   renderXpLevel();
+  renderProfileMatrix();
   renderAllocationSnapshot();
   renderCashStatus();
   renderTasks();
@@ -609,8 +1333,17 @@ function renderAll() {
 }
 
 async function bootstrap() {
+  loadOnboardingState();
+  loadWealthInputs();
   await loadMockApiState();
-  renderAll();
+  if (state.onboarding.completed && (!state.onboarding.profiles?.householdProfile || !state.onboarding.profiles?.behaviorProfile || !state.onboarding.profiles?.goalProfile)) {
+    state.onboarding.profiles = deriveLifeMatrixProfiles();
+    persistOnboardingState();
+  }
+  if (state.onboarding.completed) {
+    renderAll();
+  }
+  renderOnboarding();
 }
 
 bootstrap();

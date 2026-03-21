@@ -42,5 +42,5 @@
     { "ticker": "VNQ", "move": "-0.4%", "signal": "Prepare", "trend": "down" },
     { "ticker": "SGOV", "move": "+0.1%", "signal": "Hold reserve", "trend": "up" }
   ],
-  "source": "mock-api/home.json"
+  "source": "mock-api/family-dashboard.json"
 }

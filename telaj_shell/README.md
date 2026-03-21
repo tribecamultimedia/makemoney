@@ -7,11 +7,12 @@ Static TELAJ product shell for drag-and-drop deployment on Netlify.
 - `index.html`
 - `styles.css`
 - `app.js`
-- `mock-api/home.json`
+- `mock-api/family-dashboard.json`
 - `mock-api/allocation.json`
 - `mock-api/signals.json`
 - `mock-api/progress.json`
 - `mock-api/real-estate.json`
+- `mock-api/family-profile.json`
 
 ## Deploy
 
@@ -26,3 +27,7 @@ Static TELAJ product shell for drag-and-drop deployment on Netlify.
 - It is meant to visualize the TELAJ product direction while the backend and API layers are still being extracted.
 - The shell now loads endpoint-shaped mock JSON files from `mock-api/`.
 - Later, those URLs can be replaced with real TELAJ API routes without changing the UI structure.
+- The TELAJ home screen now reads from a single dashboard payload:
+  - `mock-api/family-dashboard.json`
+- The Life Matrix onboarding currently derives `HouseholdProfile`, `BehaviorProfile`, and `GoalProfile` locally in the browser.
+- `mock-api/family-profile.json` documents the future API shape for that derived profile layer.

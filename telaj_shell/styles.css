@@ -39,10 +39,199 @@ select {
   font: inherit;
 }
 
+input,
+select {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+}
+
+input:focus,
+select:focus {
+  border-color: var(--accent);
+}
+
 .app-shell {
   min-height: 100vh;
   display: grid;
   grid-template-columns: 290px 1fr;
+}
+
+.app-shell.is-hidden {
+  display: none;
+}
+
+.onboarding-shell {
+  min-height: 100vh;
+  display: none;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top left, rgba(31, 107, 255, 0.12), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(77, 145, 255, 0.08), transparent 32%),
+    var(--bg);
+}
+
+.onboarding-shell.is-active {
+  display: grid;
+}
+
+.onboarding-card {
+  width: min(920px, 100%);
+  min-height: 72vh;
+  border: 2px solid var(--border-strong);
+  background: linear-gradient(180deg, rgba(31, 107, 255, 0.06), rgba(23, 24, 27, 1));
+  box-shadow: 14px 14px 0 rgba(0, 0, 0, 0.4);
+  padding: 28px;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 22px;
+}
+
+.onboarding-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+}
+
+.onboarding-step {
+  color: var(--accent-strong);
+  border: 2px solid var(--accent);
+  padding: 8px 12px;
+  background: var(--accent-faint);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.onboarding-title {
+  margin: 10px 0 8px;
+  font-size: clamp(34px, 5vw, 68px);
+  line-height: 0.92;
+  letter-spacing: -0.05em;
+  max-width: 12ch;
+}
+
+.onboarding-copy {
+  max-width: 60ch;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.onboarding-progress {
+  display: grid;
+  gap: 8px;
+}
+
+.progress-meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.progress-meta-row .task-pill {
+  background: var(--card);
+  border: 2px solid var(--border);
+  padding: 8px 10px;
+}
+
+.question-stage {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.question-prompt {
+  font-size: clamp(28px, 4vw, 52px);
+  line-height: 0.95;
+  max-width: 14ch;
+  margin: 0;
+}
+
+.answer-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.answer-button {
+  min-height: 92px;
+  border: 2px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  text-align: left;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  cursor: pointer;
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.answer-button:hover,
+.answer-button.is-selected {
+  transform: translate(-2px, -2px);
+  border-color: var(--accent);
+  background: var(--accent-faint);
+}
+
+.answer-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.answer-note {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.onboarding-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 2px solid var(--border);
+}
+
+.onboarding-summary {
+  border: 2px solid var(--border);
+  background: var(--card-strong);
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.summary-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.profile-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.profile-chip {
+  border: 2px solid var(--border);
+  background: var(--card-strong);
+  padding: 12px;
+}
+
+.profile-chip-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 8px 0 4px;
 }
 
 .rail {
@@ -304,8 +493,9 @@ select {
 }
 
 .health-panel,
-.xp-panel {
-  grid-column: span 3;
+.xp-panel,
+.profile-panel {
+  grid-column: span 4;
 }
 
 .allocation-panel,
@@ -378,7 +568,8 @@ select {
 .level-list,
 .watchlist-list,
 .leader-list,
-.property-list {
+.property-list,
+.input-stack {
   display: grid;
   gap: 12px;
 }
@@ -696,6 +887,20 @@ select {
   gap: 12px;
 }
 
+.input-stack {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.input-field {
+  display: grid;
+  gap: 8px;
+}
+
+.input-span-2 {
+  grid-column: span 2;
+}
+
 .section-spacer {
   height: 6px;
 }
@@ -737,7 +942,9 @@ select {
   .stats-grid,
   .action-row,
   .achievement-grid,
-  .insight-grid {
+  .insight-grid,
+  .answer-grid,
+  .summary-grid {
     grid-template-columns: 1fr;
   }
 }

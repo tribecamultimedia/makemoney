@@ -9,7 +9,8 @@ import requests
 import streamlit as st
 
 try:
-    from .data import DataConfig, DataPipeline, INVESTMENT_PROXY_MAP, get_economic_calendar, get_investment_proxy_history, get_media_says
+    from . import data as data_module
+    from .data import DataConfig, DataPipeline
     from .execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker, SovereignAgent
     from .experiment_tracker import read_experiment_runs
     from .intelligence import CreditLiquidityFactor, EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory, PortfolioAllocator
@@ -19,7 +20,8 @@ try:
     from .storage import shared_storage_enabled
     from .trade_manager import TradeManager
 except ImportError:
-    from learning_machine.data import DataConfig, DataPipeline, INVESTMENT_PROXY_MAP, get_economic_calendar, get_investment_proxy_history, get_media_says
+    import learning_machine.data as data_module
+    from learning_machine.data import DataConfig, DataPipeline
     from learning_machine.execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker, SovereignAgent
     from learning_machine.experiment_tracker import read_experiment_runs
     from learning_machine.intelligence import CreditLiquidityFactor, EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory, PortfolioAllocator
@@ -39,6 +41,44 @@ BUNDLES = {
     "Speculative": ("BITO", "NVDA"),
     "Crypto": ("BTC-USD", "ETH-USD", "SOL-USD"),
 }
+INVESTMENT_PROXY_MAP = getattr(
+    data_module,
+    "INVESTMENT_PROXY_MAP",
+    {
+        "US Stocks": "SPY",
+        "Tech Stocks": "QQQ",
+        "Treasury Bonds": "IEF",
+        "Real Estate": "VNQ",
+        "Gold": "GLD",
+        "Cash / T-Bills": "SGOV",
+        "Bitcoin": "BTC-USD",
+    },
+)
+
+
+def get_economic_calendar() -> list[dict[str, object]]:
+    return data_module.get_economic_calendar()
+
+
+def get_media_says(tickers: tuple[str, ...] = ("SPY", "QQQ")) -> dict[str, object]:
+    helper = getattr(data_module, "get_media_says", None)
+    if helper is None:
+        return {
+            "tone": "Mixed",
+            "tone_color": "neutral",
+            "summary": "Media reading is temporarily unavailable, so the app is falling back to the model-only view.",
+            "commentary": "This does not affect the core machine. It only removes the live media layer for now.",
+            "headlines": [],
+            "score": 0.0,
+        }
+    return helper(tickers)
+
+
+def get_investment_proxy_history(period: str = "2y") -> pd.DataFrame:
+    helper = getattr(data_module, "get_investment_proxy_history", None)
+    if helper is None:
+        return pd.DataFrame()
+    return helper(period)
 
 
 def _render_quick_start() -> None:

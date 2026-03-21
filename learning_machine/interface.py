@@ -30,7 +30,7 @@ except ImportError:
     from learning_machine.trade_manager import TradeManager
 
 
-APP_NAME = "Sovereign AI"
+APP_NAME = "Guru's Superbrain"
 DEFAULT_APP_URL = "https://makemoneywithtommy.streamlit.app"
 DEFAULT_OPENAI_MODEL = "gpt-5-mini"
 BUNDLES = {
@@ -98,10 +98,10 @@ def main() -> None:
     notifier = DiscordNotifier(webhook_url=discord_webhook, username="Sovereign AI", app_url=app_url)
     _init_broker_state()
 
-    st.markdown("<div class='hero-kicker'>SOVEREIGN AI</div>", unsafe_allow_html=True)
-    st.markdown("<div class='hero-title'>A simpler control room for your paper-trading machine</div>", unsafe_allow_html=True)
+    st.markdown("<div class='hero-kicker'>GURU'S SUPERBRAIN</div>", unsafe_allow_html=True)
+    st.markdown("<div class='hero-title'>Your AI market brain, trade desk, and portfolio doctor</div>", unsafe_allow_html=True)
     st.markdown(
-        "<div class='hero-copy'>See the current stance, understand why the AI is cautious or aggressive, and decide whether to sync your paper account.</div>",
+        "<div class='hero-copy'>See what Guru's Superbrain wants to buy, what it wants to avoid, and how it diagnoses your account before you press sync.</div>",
         unsafe_allow_html=True,
     )
     st.markdown(_render_broker_status_badge(), unsafe_allow_html=True)
@@ -201,12 +201,13 @@ def main() -> None:
     st.session_state.hourly_drawdown = float(stress_snapshot["hourly_drawdown"])
     pulse = _build_pulse(regime_snapshot, stress_snapshot)
     sovereign_score = pipeline.generate_sovereign_score(selected_tickers[0])
+    superbrain_board = _build_superbrain_board(pipeline, selected_tickers)
     internals = MarketInternalsFactory().build()
     credit = CreditLiquidityFactor().build()
     event_risk = EventRiskFilter().evaluate(get_economic_calendar())
 
     pulse_col, sentiment_col = st.columns([1, 1])
-    pulse_col.markdown(_render_sovereign_score_card(sovereign_score), unsafe_allow_html=True)
+    pulse_col.markdown(_render_superbrain_score_card(sovereign_score), unsafe_allow_html=True)
     sentiment_score = _mock_retail_sentiment(selected_bundle)
     sentiment_col.plotly_chart(
         _build_sentiment_gauge(sentiment_score),
@@ -231,7 +232,7 @@ def main() -> None:
         st.markdown(
             f"""
             <div class="glass-card">
-                <div class="card-label">Current AI Stance</div>
+                <div class="card-label">Guru's Superbrain Stance</div>
                 <div class="card-copy">{latest_signal['label']}</div>
                 <div class="card-meta">{latest_signal['message']}</div>
             </div>
@@ -279,6 +280,8 @@ def main() -> None:
             latest_signal=latest_signal,
         )
 
+    _render_superbrain_board(superbrain_board)
+    _render_portfolio_doctor(superbrain_board)
     _render_copilot(
         pulse=pulse,
         sovereign_score=sovereign_score,
@@ -371,7 +374,7 @@ def _render_trade_view(
 ) -> None:
     st.markdown("### Trading Setup")
     left, right = st.columns([1, 1])
-    left.markdown(_render_sovereign_score_card(sovereign_score), unsafe_allow_html=True)
+    left.markdown(_render_superbrain_score_card(sovereign_score), unsafe_allow_html=True)
     right.plotly_chart(
         _build_sentiment_gauge(sentiment_score),
         use_container_width=True,
@@ -409,7 +412,8 @@ def _render_invest_view(
 ) -> None:
     st.markdown("### Investment View")
     summary_cols = st.columns([1, 1, 1])
-    _glass_card(summary_cols[0], "Core rating", _invest_rating(pulse, sovereign_score), f"Bundle: {selected_bundle}")
+    rating = _superbrain_rating(float(sovereign_score["score"]))
+    _glass_card(summary_cols[0], "Guru's Superbrain rating", rating["label"], f"Bundle: {selected_bundle} | Action: {rating['action']}")
     _glass_card(summary_cols[1], "Macro backdrop", str(regime_snapshot["narrative"]), f"Yield curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f}")
     _glass_card(
         summary_cols[2],
@@ -455,13 +459,13 @@ def _render_copilot(
     event_risk,
     latest_signal: dict[str, object] | None,
 ) -> None:
-    st.markdown("### Sovereign Copilot")
+    st.markdown("### Guru's Superbrain Assistant")
     api_key, model = _resolve_openai_settings()
     left, right = st.columns([1.35, 0.9])
     with left:
         _glass_card(
             st,
-            "Ask the machine",
+            "Ask Guru's Superbrain",
             "Ask why it traded, why it stayed cautious, what the biggest risk is today, or whether the current stance makes sense in plain English.",
             "This copilot is grounded in the current dashboard context instead of acting like a generic finance chatbot.",
         )
@@ -484,13 +488,13 @@ def _render_copilot(
                 st.markdown(str(message["content"]))
 
         pending_prompt = st.session_state.pop("copilot_pending_prompt", None)
-        user_prompt = pending_prompt or st.chat_input("Ask the Sovereign Copilot")
+        user_prompt = pending_prompt or st.chat_input("Ask Guru's Superbrain")
         if user_prompt:
             st.session_state.copilot_messages.append({"role": "user", "content": user_prompt})
             with st.chat_message("user"):
                 st.markdown(user_prompt)
             with st.chat_message("assistant"):
-                with st.spinner("Sovereign Copilot is thinking..."):
+                with st.spinner("Guru's Superbrain is thinking..."):
                     reply = _ask_copilot(
                         api_key=api_key,
                         model=model,
@@ -511,7 +515,7 @@ def _render_copilot(
     with right:
         _glass_card(
             st,
-            "Copilot context",
+            "Superbrain context",
             _copilot_context_summary(pulse, sovereign_score, internals, credit, event_risk),
             f"Model: {model} | Mode: {'Enabled' if api_key else 'Disabled'}",
         )
@@ -625,7 +629,7 @@ def _copilot_context_summary(
 
 def _ask_copilot(*, api_key: str, model: str, user_prompt: str, context: dict[str, object]) -> str:
     system_prompt = (
-        "You are Sovereign Copilot, the in-app assistant for a cautious trading dashboard. "
+        "You are Guru's Superbrain, the in-app assistant for a cautious trading dashboard. "
         "Answer only using the supplied context. Be concise, plain-English, and practical. "
         "Do not invent prices, trades, or market data not present in context. "
         "If context is insufficient, say so directly. "
@@ -1077,15 +1081,12 @@ def _entry_mindset(regime_snapshot: dict[str, float | str], sovereign_score: dic
     return "Stand down unless you enjoy forcing trades that do not want to exist."
 
 
-def _invest_rating(pulse: dict[str, object], sovereign_score: dict[str, float | str]) -> str:
-    score = float(sovereign_score["score"])
-    if pulse["mode"] == "capital_preservation":
-        return "Protect capital"
+def _superbrain_rating(score: float) -> dict[str, str]:
     if score >= 75:
-        return "Own with confidence"
+        return {"label": "High-conviction setup", "action": "BUY"}
     if score >= 55:
-        return "Build slowly"
-    return "Hold off for now"
+        return {"label": "Respectable but selective", "action": "HOLD"}
+    return {"label": "Too weak to trust", "action": "PROTECT"}
 
 
 def _pulse_message(mode: str) -> str:
@@ -1096,14 +1097,15 @@ def _pulse_message(mode: str) -> str:
     return "The tape is finally acting rational enough to fund optimism."
 
 
-def _render_sovereign_score_card(score_payload: dict[str, float | str]) -> str:
+def _render_superbrain_score_card(score_payload: dict[str, float | str]) -> str:
     score = int(float(score_payload["score"]))
     circumference = 2 * 3.1416 * 52
     dash = circumference * (score / 100)
     color = "#12A150" if score >= 70 else "#111111" if score >= 45 else "#D93025"
+    rating = _superbrain_rating(float(score_payload["score"]))
     return f"""
     <div class="hero-card">
-        <div class="card-label">Sovereign Pulse | {score_payload['ticker']}</div>
+        <div class="card-label">Guru's Superbrain | {score_payload['ticker']}</div>
         <div class="hero-flex">
             <svg viewBox="0 0 140 140" class="donut">
                 <circle cx="70" cy="70" r="52" class="donut-track"></circle>
@@ -1114,10 +1116,101 @@ def _render_sovereign_score_card(score_payload: dict[str, float | str]) -> str:
             <div>
                 <div class="hero-mode">{score_payload['label']}</div>
                 <div class="hero-message">{score_payload['copy']}</div>
+                <div class="card-meta">Superbrain action: {rating['action']}</div>
             </div>
         </div>
     </div>
     """
+
+
+def _build_superbrain_board(pipeline: DataPipeline, tickers: tuple[str, ...]) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for ticker in tickers:
+        payload = pipeline.generate_sovereign_score(ticker)
+        rating = _superbrain_rating(float(payload["score"]))
+        rows.append(
+            {
+                "ticker": ticker,
+                "score": float(payload["score"]),
+                "action": rating["action"],
+                "rating": rating["label"],
+                "momentum_20d": float(payload["momentum_20d"]),
+                "drawdown_20d": float(payload["drawdown_20d"]),
+                "volatility_20d": float(payload["volatility_20d"]),
+                "copy": str(payload["copy"]),
+            }
+        )
+    return pd.DataFrame(rows).sort_values(["score", "ticker"], ascending=[False, True]).reset_index(drop=True)
+
+
+def _render_superbrain_board(board: pd.DataFrame) -> None:
+    st.markdown("### Guru's Superbrain Picks")
+    if board.empty:
+        st.info("No ranked ideas yet.")
+        return
+    top = board.iloc[0]
+    hero_cols = st.columns([1.2, 1, 1])
+    _glass_card(
+        hero_cols[0],
+        "Top pick right now",
+        f"{top['ticker']} | {top['action']}",
+        f"Score {top['score']:.1f} | {top['copy']}",
+    )
+    buy_count = int((board["action"] == "BUY").sum())
+    hold_count = int((board["action"] == "HOLD").sum())
+    protect_count = int((board["action"] == "PROTECT").sum())
+    _glass_card(hero_cols[1], "Signal mix", f"{buy_count} BUY | {hold_count} HOLD | {protect_count} PROTECT", "A quick read on how aggressive the board looks.")
+    _glass_card(hero_cols[2], "Average score", f"{board['score'].mean():.1f}", f"Best {board['score'].max():.1f} | Worst {board['score'].min():.1f}")
+    display = board[["ticker", "score", "action", "rating", "momentum_20d", "drawdown_20d", "volatility_20d"]].copy()
+    display["score"] = display["score"].round(1)
+    display["momentum_20d"] = display["momentum_20d"].round(1)
+    display["drawdown_20d"] = display["drawdown_20d"].round(1)
+    display["volatility_20d"] = display["volatility_20d"].round(1)
+    st.dataframe(display, use_container_width=True)
+
+
+def _render_portfolio_doctor(board: pd.DataFrame) -> None:
+    st.markdown("### Portfolio Doctor")
+    credentials = st.session_state.broker_credentials
+    if credentials is None:
+        st.info("Link a broker to let Guru's Superbrain diagnose concentration, cash, and whether your current holdings agree with the model.")
+        return
+    try:
+        snapshot = TradeManager(credentials).portfolio_snapshot()
+    except Exception as exc:
+        st.warning(f"Portfolio doctor unavailable: {exc}")
+        return
+    positions = snapshot.get("positions", [])
+    equity = float(snapshot.get("equity", 0.0))
+    cash = float(snapshot.get("cash", 0.0))
+    if not positions:
+        cash_pct = 0.0 if equity <= 0 else (cash / max(equity, 1e-9)) * 100.0
+        _glass_card(
+            st,
+            "Portfolio diagnosis",
+            "The account is mostly idle. That is acceptable if the board is defensive, but expensive if strong BUY scores are being ignored.",
+            f"Cash share: {cash_pct:.1f}% | Board top pick: {board.iloc[0]['ticker'] if not board.empty else 'n/a'}",
+        )
+        return
+    rows = pd.DataFrame(positions)
+    if "market_value" in rows:
+        rows["market_value"] = pd.to_numeric(rows["market_value"], errors="coerce").fillna(0.0)
+        total_position_value = float(rows["market_value"].abs().sum())
+    else:
+        total_position_value = 0.0
+    concentration = 0.0 if total_position_value <= 0 else float(rows["market_value"].abs().max() / total_position_value) * 100.0
+    symbols = {str(value).upper() for value in rows.get("symbol", pd.Series(dtype=str)).tolist()}
+    board_actions = {str(row.ticker).upper(): str(row.action) for row in board.itertuples()}
+    conflict_symbols = [symbol for symbol in symbols if board_actions.get(symbol) == "PROTECT"]
+    diagnosis = "Your holdings are reasonably aligned with the current board."
+    if concentration >= 60:
+        diagnosis = "Your account is highly concentrated. One asset is carrying too much emotional and financial weight."
+    elif conflict_symbols:
+        diagnosis = "Guru's Superbrain sees at least one live holding that it would rather protect than own."
+    foot = f"Largest position share: {concentration:.1f}% | Cash: ${cash:,.2f}"
+    if conflict_symbols:
+        foot += " | Conflict: " + ", ".join(conflict_symbols[:3])
+    _glass_card(st, "Portfolio diagnosis", diagnosis, foot)
 
 
 def _build_sentiment_gauge(score: int) -> go.Figure:

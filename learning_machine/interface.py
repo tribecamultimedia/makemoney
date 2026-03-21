@@ -9,7 +9,7 @@ import requests
 import streamlit as st
 
 try:
-    from .data import DataConfig, DataPipeline, get_economic_calendar, get_media_says
+    from .data import DataConfig, DataPipeline, INVESTMENT_PROXY_MAP, get_economic_calendar, get_investment_proxy_history, get_media_says
     from .execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker, SovereignAgent
     from .experiment_tracker import read_experiment_runs
     from .intelligence import CreditLiquidityFactor, EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory, PortfolioAllocator
@@ -19,7 +19,7 @@ try:
     from .storage import shared_storage_enabled
     from .trade_manager import TradeManager
 except ImportError:
-    from learning_machine.data import DataConfig, DataPipeline, get_economic_calendar, get_media_says
+    from learning_machine.data import DataConfig, DataPipeline, INVESTMENT_PROXY_MAP, get_economic_calendar, get_investment_proxy_history, get_media_says
     from learning_machine.execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker, SovereignAgent
     from learning_machine.experiment_tracker import read_experiment_runs
     from learning_machine.intelligence import CreditLiquidityFactor, EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory, PortfolioAllocator
@@ -74,13 +74,18 @@ def _render_intent_hub() -> str:
                 <div class="card-copy">Understand what the AI sees in macro, liquidity, sentiment, and event risk without needing to trade today.</div>
                 <div class="card-meta">Best for: market context and risk awareness</div>
             </div>
+            <div class="intent-card">
+                <div class="card-label">Plan My Money</div>
+                <div class="card-copy">Type in an amount, compare what it could have done across stocks, bonds, real estate, cash, and crypto, and get a simple next-step plan.</div>
+                <div class="card-meta">Best for: beginners deciding what to do with fresh money</div>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
     selected = st.segmented_control(
         "Choose a path",
-        options=["Trade", "Invest", "Read the Market"],
+        options=["Trade", "Invest", "Read the Market", "Plan My Money"],
         default="Trade",
         selection_mode="single",
     )
@@ -273,6 +278,8 @@ def main() -> None:
             selected_bundle=selected_bundle,
             latest_signal=latest_signal,
         )
+    elif user_path == "Plan My Money":
+        _render_money_planner_view(superbrain_board)
     else:
         _render_market_view(
             pulse=pulse,
@@ -284,6 +291,7 @@ def main() -> None:
             latest_signal=latest_signal,
         )
 
+    _render_everyday_guide(superbrain_board, media_brief, latest_signal)
     _render_superbrain_board(superbrain_board)
     _render_portfolio_doctor(superbrain_board)
     _render_copilot(
@@ -454,6 +462,72 @@ def _render_market_view(
     _glass_card(lower_cols[2], "Event risk", event_risk.summary, f"Next event in {event_risk.hours_to_event:.1f} hours")
 
 
+def _render_money_planner_view(board: pd.DataFrame) -> None:
+    st.markdown("### Plan My Money")
+    controls = st.columns([1, 1, 1, 1])
+    amount = controls[0].number_input("How much do you want to invest?", min_value=100.0, max_value=5_000_000.0, value=10_000.0, step=100.0)
+    horizon_years = int(controls[1].selectbox("How long can you leave it alone?", options=[1, 3, 5, 10, 20], index=2))
+    risk_profile = controls[2].selectbox("How much stress can you handle?", options=["Very low", "Balanced", "Growth"], index=1)
+    account_type = controls[3].selectbox("Where is this money going?", options=["Taxable account", "Roth IRA", "401(k)", "Not sure"], index=0)
+
+    history = load_planner_history()
+    if history.empty:
+        st.info("Planner data is not available yet.")
+        return
+
+    comparisons = _build_investment_comparison(history, amount)
+    plan = _build_money_genie_plan(amount=amount, horizon_years=horizon_years, risk_profile=risk_profile, account_type=account_type, board=board)
+
+    top_cols = st.columns([1, 1, 1])
+    best = comparisons.iloc[0]
+    worst = comparisons.iloc[-1]
+    _glass_card(
+        top_cols[0],
+        "If you had invested 12 months ago",
+        f"${amount:,.0f} in {best['Asset']} would be worth ${best['Value Today']:,.0f} today.",
+        f"Best 12-month result: {best['Return %']:.1f}%",
+    )
+    _glass_card(
+        top_cols[1],
+        "The slowest place for your money",
+        f"{worst['Asset']} would now be ${worst['Value Today']:,.0f}.",
+        f"Return: {worst['Return %']:.1f}% over the past year",
+    )
+    _glass_card(
+        top_cols[2],
+        "Money Genie says",
+        plan["summary"],
+        plan["footer"],
+    )
+
+    st.plotly_chart(_build_planner_growth_chart(history, amount), use_container_width=True, config={"displayModeBar": False})
+    st.dataframe(comparisons, use_container_width=True, hide_index=True)
+
+    alloc_cols = st.columns([1, 1])
+    _glass_card(
+        alloc_cols[0],
+        "How to spread the money",
+        "<br>".join([f"{item['label']}: {item['weight']}%" for item in plan["allocation"]]),
+        "This is a simple starter mix, not personal tax or legal advice.",
+    )
+    _glass_card(
+        alloc_cols[1],
+        "Account note",
+        plan["account_note"],
+        "Roth IRA and 401(k) are account wrappers. The investments inside them still need a sensible mix.",
+    )
+
+    with st.expander("Why the Money Genie picked this plan", expanded=False):
+        checklist = pd.DataFrame(
+            [
+                {"Question": "How much risk can you handle?", "Answer": risk_profile, "Why it matters": "This changes how much should go into stocks vs. bonds and cash."},
+                {"Question": "How long can you wait?", "Answer": f"{horizon_years} years", "Why it matters": "Longer timelines can usually carry more growth assets."},
+                {"Question": "What does the board like today?", "Answer": plan["board_note"], "Why it matters": "Guru's Superbrain should influence how aggressive you are right now."},
+            ]
+        )
+        st.dataframe(checklist, use_container_width=True, hide_index=True)
+
+
 def _render_media_brief(container, media_brief: dict[str, object]) -> None:
     tone = str(media_brief["tone"])
     tone_class = str(media_brief.get("tone_color", "neutral"))
@@ -485,6 +559,158 @@ def _render_media_headlines(media_brief: dict[str, object]) -> None:
             }
         )
     st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
+
+def _render_everyday_guide(
+    board: pd.DataFrame,
+    media_brief: dict[str, object],
+    latest_signal: dict[str, object] | None,
+) -> None:
+    st.markdown("### Your Everyday Guide")
+    if board.empty:
+        st.info("Guru's Superbrain needs a little more data before it can give you a simple daily guide.")
+        return
+    best = board.iloc[0]
+    worst = board.iloc[-1]
+    next_move = str(latest_signal["label"]) if latest_signal is not None else "No saved stance yet"
+    cols = st.columns([1, 1, 1])
+    _glass_card(
+        cols[0],
+        "Best idea today",
+        f"{best['ticker']} looks strongest right now.",
+        f"{best['action']} | Score {best['score']:.1f} | {best['copy']}",
+    )
+    _glass_card(
+        cols[1],
+        "Best thing to avoid",
+        f"{worst['ticker']} is the weakest setup on the board.",
+        f"{worst['action']} | Score {worst['score']:.1f} | Better to wait than force it.",
+    )
+    _glass_card(
+        cols[2],
+        "What to do next",
+        _simple_next_step(str(best["action"]), str(media_brief["tone"]), next_move),
+        f"Media tone: {media_brief['tone']} | Machine stance: {next_move}",
+    )
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_planner_history() -> pd.DataFrame:
+    return get_investment_proxy_history(period="2y")
+
+
+def _build_investment_comparison(history: pd.DataFrame, amount: float) -> pd.DataFrame:
+    trailing = history.dropna().tail(252)
+    if trailing.empty:
+        return pd.DataFrame(columns=["Asset", "Value Today", "Return %"])
+    rows = []
+    for label in trailing.columns:
+        start = float(trailing[label].iloc[0])
+        end = float(trailing[label].iloc[-1])
+        value_today = 0.0 if start <= 0 else amount * (end / start)
+        rows.append(
+            {
+                "Asset": label,
+                "Value Today": round(value_today, 2),
+                "Return %": round(((value_today / amount) - 1.0) * 100.0 if amount > 0 else 0.0, 1),
+            }
+        )
+    return pd.DataFrame(rows).sort_values("Value Today", ascending=False).reset_index(drop=True)
+
+
+def _build_planner_growth_chart(history: pd.DataFrame, amount: float) -> go.Figure:
+    trailing = history.dropna().tail(252)
+    figure = go.Figure()
+    for label in trailing.columns:
+        normalized = trailing[label] / float(trailing[label].iloc[0]) * amount
+        figure.add_trace(
+            go.Scatter(
+                x=normalized.index,
+                y=normalized.values,
+                mode="lines",
+                name=label,
+                line=dict(width=2),
+            )
+        )
+    figure.update_layout(
+        template="plotly_white",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="#FFFFFF",
+        title="What your money would have done over the past 12 months",
+        margin=dict(l=10, r=10, t=40, b=10),
+        height=320,
+        legend=dict(orientation="h"),
+        xaxis=dict(showgrid=False, color="#111111"),
+        yaxis=dict(showgrid=False, color="#111111"),
+    )
+    return figure
+
+
+def _build_money_genie_plan(
+    *,
+    amount: float,
+    horizon_years: int,
+    risk_profile: str,
+    account_type: str,
+    board: pd.DataFrame,
+) -> dict[str, object]:
+    top_buy = board[board["action"] == "BUY"].iloc[0]["ticker"] if not board.empty and (board["action"] == "BUY").any() else None
+    if risk_profile == "Very low":
+        allocation = [
+            {"label": "Treasury bonds", "weight": 40},
+            {"label": "Cash / T-Bills", "weight": 25},
+            {"label": "US stocks ETF", "weight": 20},
+            {"label": "Real estate ETF", "weight": 10},
+            {"label": "Gold", "weight": 5},
+        ]
+    elif risk_profile == "Growth":
+        allocation = [
+            {"label": "US stocks ETF", "weight": 40},
+            {"label": "Tech stocks ETF", "weight": 20},
+            {"label": "Real estate ETF", "weight": 10},
+            {"label": "Treasury bonds", "weight": 15},
+            {"label": "Cash / T-Bills", "weight": 5},
+            {"label": "Bitcoin", "weight": 10},
+        ]
+    else:
+        allocation = [
+            {"label": "US stocks ETF", "weight": 35},
+            {"label": "Treasury bonds", "weight": 25},
+            {"label": "Tech stocks ETF", "weight": 10},
+            {"label": "Real estate ETF", "weight": 10},
+            {"label": "Cash / T-Bills", "weight": 15},
+            {"label": "Gold", "weight": 5},
+        ]
+
+    if horizon_years <= 3:
+        for item in allocation:
+            if item["label"] in {"Treasury bonds", "Cash / T-Bills"}:
+                item["weight"] += 5
+            if item["label"] in {"Tech stocks ETF", "Bitcoin"}:
+                item["weight"] = max(item["weight"] - 5, 0)
+
+    summary = (
+        f"With about ${amount:,.0f}, the safest smart move is to spread your money instead of betting it all on one story. "
+        f"{'Right now the board likes ' + str(top_buy) + ', but only as part of a mix.' if top_buy else 'Right now the board is not screaming for a big risk-on move.'}"
+    )
+    board_note = f"Best current board idea: {top_buy}" if top_buy else "The board is mostly cautious today."
+    account_note = (
+        "A Roth IRA usually makes sense for long-term tax-free growth if you qualify."
+        if account_type == "Roth IRA"
+        else "A 401(k) is often strongest when employer matching is available."
+        if account_type == "401(k)"
+        else "A normal taxable account gives flexibility, but taxes matter more."
+        if account_type == "Taxable account"
+        else "If you are not sure, start with the mix first and decide the account wrapper second."
+    )
+    footer = f"Risk style: {risk_profile} | Time horizon: {horizon_years} years"
+    return {
+        "allocation": allocation,
+        "summary": summary,
+        "footer": footer,
+        "account_note": account_note,
+        "board_note": board_note,
+    }
 
 
 def _render_copilot(
@@ -910,7 +1136,7 @@ def _render_ledger_panels() -> None:
 
 def _render_performance_dashboard(equity: pd.DataFrame, ledger: pd.DataFrame) -> None:
     stats = _build_performance_stats(equity, ledger)
-    st.markdown("#### Performance Summary")
+    st.markdown("#### How You Are Doing")
     metric_cols = st.columns(5)
     metric_cols[0].metric("Total Return", f"{stats['return_pct']:.2f}%")
     metric_cols[1].metric("Max Drawdown", f"{stats['max_drawdown_pct']:.2f}%")
@@ -1135,6 +1361,31 @@ def _pulse_message(mode: str) -> str:
     return "The tape is finally acting rational enough to fund optimism."
 
 
+def _plain_english_rating_explainer(row) -> str:
+    if row.action == "BUY":
+        return (
+            f"{row.ticker} is near the top because price strength is holding up and the machine sees fewer reasons to stay away. "
+            "That still means start small and stay disciplined."
+        )
+    if row.action == "HOLD":
+        return (
+            f"{row.ticker} is not weak enough to avoid, but not strong enough to chase. "
+            "The safe interpretation is: keep it on the watchlist, but do not rush."
+        )
+    return (
+        f"{row.ticker} ranks low because the setup looks fragile, noisy, or both. "
+        "For most people, waiting is better than hoping."
+    )
+
+
+def _simple_next_step(best_action: str, media_tone: str, next_move: str) -> str:
+    if best_action == "BUY" and media_tone != "Defensive":
+        return "Start small with the strongest idea, then let the machine earn the right to add more."
+    if "Capital Preservation" in next_move or best_action == "PROTECT":
+        return "Do less for now. Cash and patience are real positions when the market feels unstable."
+    return "Watch first, then move slowly. The machine is not seeing a clean all-clear yet."
+
+
 def _render_superbrain_score_card(score_payload: dict[str, float | str]) -> str:
     score = int(float(score_payload["score"]))
     circumference = 2 * 3.1416 * 52
@@ -1182,7 +1433,7 @@ def _build_superbrain_board(pipeline: DataPipeline, tickers: tuple[str, ...]) ->
 
 
 def _render_superbrain_board(board: pd.DataFrame) -> None:
-    st.markdown("### Guru's Superbrain Picks")
+    st.markdown("### Top Ideas Right Now")
     if board.empty:
         st.info("No ranked ideas yet.")
         return
@@ -1197,14 +1448,33 @@ def _render_superbrain_board(board: pd.DataFrame) -> None:
     buy_count = int((board["action"] == "BUY").sum())
     hold_count = int((board["action"] == "HOLD").sum())
     protect_count = int((board["action"] == "PROTECT").sum())
-    _glass_card(hero_cols[1], "Signal mix", f"{buy_count} BUY | {hold_count} HOLD | {protect_count} PROTECT", "A quick read on how aggressive the board looks.")
-    _glass_card(hero_cols[2], "Average score", f"{board['score'].mean():.1f}", f"Best {board['score'].max():.1f} | Worst {board['score'].min():.1f}")
+    _glass_card(hero_cols[1], "How brave the board feels", f"{buy_count} Buy | {hold_count} Hold | {protect_count} Protect", "This tells you whether the machine feels bold, patient, or defensive.")
+    _glass_card(hero_cols[2], "Average strength", f"{board['score'].mean():.1f}", f"Best {board['score'].max():.1f} | Worst {board['score'].min():.1f}")
     display = board[["ticker", "score", "action", "rating", "momentum_20d", "drawdown_20d", "volatility_20d"]].copy()
     display["score"] = display["score"].round(1)
     display["momentum_20d"] = display["momentum_20d"].round(1)
     display["drawdown_20d"] = display["drawdown_20d"].round(1)
     display["volatility_20d"] = display["volatility_20d"].round(1)
+    display = display.rename(
+        columns={
+            "ticker": "Asset",
+            "score": "Superbrain Score",
+            "action": "Simple Call",
+            "rating": "What it means",
+            "momentum_20d": "20-day move %",
+            "drawdown_20d": "Pullback %",
+            "volatility_20d": "Volatility %",
+        }
+    )
     st.dataframe(display, use_container_width=True)
+    with st.expander("Why each idea got its rating", expanded=False):
+        for row in board.itertuples():
+            _glass_card(
+                st,
+                f"{row.ticker} explained simply",
+                _plain_english_rating_explainer(row),
+                f"Score {row.score:.1f} | Call: {row.action}",
+            )
 
 
 def _render_portfolio_doctor(board: pd.DataFrame) -> None:
@@ -1229,6 +1499,7 @@ def _render_portfolio_doctor(board: pd.DataFrame) -> None:
             "The account is mostly idle. That is acceptable if the board is defensive, but expensive if strong BUY scores are being ignored.",
             f"Cash share: {cash_pct:.1f}% | Board top pick: {board.iloc[0]['ticker'] if not board.empty else 'n/a'}",
         )
+        _render_portfolio_checklist(cash_pct=cash_pct, concentration=0.0, conflict_symbols=[])
         return
     rows = pd.DataFrame(positions)
     if "market_value" in rows:
@@ -1249,6 +1520,34 @@ def _render_portfolio_doctor(board: pd.DataFrame) -> None:
     if conflict_symbols:
         foot += " | Conflict: " + ", ".join(conflict_symbols[:3])
     _glass_card(st, "Portfolio diagnosis", diagnosis, foot)
+    _render_portfolio_checklist(
+        cash_pct=0.0 if equity <= 0 else (cash / max(equity, 1e-9)) * 100.0,
+        concentration=concentration,
+        conflict_symbols=conflict_symbols,
+    )
+
+
+def _render_portfolio_checklist(*, cash_pct: float, concentration: float, conflict_symbols: list[str]) -> None:
+    checklist = pd.DataFrame(
+        [
+            {
+                "Simple check": "Do I have too much in one thing?",
+                "Answer": "Yes" if concentration >= 60 else "No",
+                "What it means": "One asset dominates the account." if concentration >= 60 else "Your money is not trapped in one bet.",
+            },
+            {
+                "Simple check": "Am I mostly sitting in cash?",
+                "Answer": "Yes" if cash_pct >= 70 else "No",
+                "What it means": "That is okay if the board is scared." if cash_pct >= 70 else "You already have some money at work.",
+            },
+            {
+                "Simple check": "Do my holdings fight the model?",
+                "Answer": "Yes" if conflict_symbols else "No",
+                "What it means": f"Conflicts: {', '.join(conflict_symbols[:3])}" if conflict_symbols else "Your holdings broadly agree with the current board.",
+            },
+        ]
+    )
+    st.dataframe(checklist, use_container_width=True, hide_index=True)
 
 
 def _build_sentiment_gauge(score: int) -> go.Figure:

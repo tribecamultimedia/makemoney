@@ -14,6 +14,15 @@ from fredapi import Fred
 ssl._create_default_https_context = ssl._create_unverified_context
 
 DEFAULT_FRED_API_KEY = "ecd3cca5a73f34459ae038422dfd970a"
+INVESTMENT_PROXY_MAP: dict[str, str] = {
+    "US Stocks": "SPY",
+    "Tech Stocks": "QQQ",
+    "Treasury Bonds": "IEF",
+    "Real Estate": "VNQ",
+    "Gold": "GLD",
+    "Cash / T-Bills": "SGOV",
+    "Bitcoin": "BTC-USD",
+}
 
 try:
     import streamlit as st
@@ -141,6 +150,32 @@ def _score_headline(title: str) -> float:
         if word in text:
             score -= 0.4
     return score
+
+
+def get_investment_proxy_history(period: str = "2y") -> pd.DataFrame:
+    rows: dict[str, pd.Series] = {}
+    for label, ticker in INVESTMENT_PROXY_MAP.items():
+        frame = yf.download(
+            ticker,
+            period=period,
+            auto_adjust=True,
+            progress=False,
+        )
+        if frame.empty:
+            continue
+        if isinstance(frame.columns, pd.MultiIndex):
+            close = frame["Close"] if "Close" in frame.columns.get_level_values(0) else frame.xs("close", axis=1, level=0, drop_level=False)
+            if isinstance(close, pd.DataFrame):
+                close = close.iloc[:, 0]
+        else:
+            frame = DataPipeline._normalize_yfinance_columns(frame)
+            close = frame["close"]
+        series = pd.Series(close, name=label).astype(float)
+        series.index = pd.to_datetime(series.index).tz_localize(None)
+        rows[label] = series
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows).sort_index().ffill().dropna(how="all")
 
 
 @dataclass(slots=True)

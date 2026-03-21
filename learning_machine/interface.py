@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import asdict
 from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
@@ -14,30 +15,64 @@ try:
     from .data import DataConfig, DataPipeline
     from .execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker, SovereignAgent
     from .experiment_tracker import read_experiment_runs
+    from .feature_flags import (
+        load_feature_flags,
+        new_theme_enabled,
+        onboarding_gate_enabled,
+        planning_service_enabled,
+        portfolio_doctor_service_enabled,
+        real_estate_lab_enabled,
+        scenario_sim_enabled,
+        telaj_prep_enabled,
+        wealth_map_enabled,
+    )
     from .intelligence import CreditLiquidityFactor, EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory, PortfolioAllocator
     from .ledger import LedgerEntry, append_equity_snapshot, append_ledger, read_equity_curve, read_ledger
     from .notifications import DiscordNotifier
     from .signal_worker import latest_state_payload
     from .storage import shared_storage_enabled
     from .trade_manager import TradeManager
+    from domain.user_profiles import OnboardingState
 except ImportError:
     import learning_machine.data as data_module
     from learning_machine.data import DataConfig, DataPipeline
     from learning_machine.execution import BrokerCredentials, ExecutionSignal, GlobalCircuitBreaker, SovereignAgent
     from learning_machine.experiment_tracker import read_experiment_runs
+    from learning_machine.feature_flags import (
+        load_feature_flags,
+        new_theme_enabled,
+        onboarding_gate_enabled,
+        planning_service_enabled,
+        portfolio_doctor_service_enabled,
+        real_estate_lab_enabled,
+        scenario_sim_enabled,
+        telaj_prep_enabled,
+        wealth_map_enabled,
+    )
     from learning_machine.intelligence import CreditLiquidityFactor, EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory, PortfolioAllocator
     from learning_machine.ledger import LedgerEntry, append_equity_snapshot, append_ledger, read_equity_curve, read_ledger
     from learning_machine.notifications import DiscordNotifier
     from learning_machine.signal_worker import latest_state_payload
     from learning_machine.storage import shared_storage_enabled
     from learning_machine.trade_manager import TradeManager
+    from domain.user_profiles import OnboardingState
 
 try:
+    from domain.signals import MarketPulseSummary
+    from services.briefing_engine import BriefingEngine
+    from services.market_brain import MarketBrainService
     from services.planning_engine import PlanningEngine
     from services.portfolio_doctor import PortfolioDoctorService
+    from services.real_estate_lab import RealEstateLab
+    from services.scenario_engine import ScenarioEngine
 except ImportError:  # pragma: no cover - fallback for mixed deploys
+    MarketPulseSummary = None
+    BriefingEngine = None
+    MarketBrainService = None
     PlanningEngine = None
     PortfolioDoctorService = None
+    RealEstateLab = None
+    ScenarioEngine = None
 
 
 APP_NAME = "Guru's Superbrain"
@@ -87,22 +122,6 @@ def get_investment_proxy_history(period: str = "2y") -> pd.DataFrame:
     if helper is None:
         return pd.DataFrame()
     return helper(period)
-
-
-def planner_service_enabled() -> bool:
-    try:
-        raw = str(st.secrets.get("FEATURE_PLANNING_SERVICE", "true")).strip().lower()
-    except Exception:
-        raw = os.getenv("FEATURE_PLANNING_SERVICE", "true").strip().lower()
-    return raw not in {"0", "false", "no", "off"}
-
-
-def portfolio_doctor_service_enabled() -> bool:
-    try:
-        raw = str(st.secrets.get("FEATURE_PORTFOLIO_DOCTOR_SERVICE", "true")).strip().lower()
-    except Exception:
-        raw = os.getenv("FEATURE_PORTFOLIO_DOCTOR_SERVICE", "true").strip().lower()
-    return raw not in {"0", "false", "no", "off"}
 
 
 def _render_quick_start() -> None:
@@ -156,8 +175,84 @@ def _render_intent_hub() -> str:
     return str(selected or "Trade")
 
 
+def _product_shell_enabled() -> bool:
+    return wealth_map_enabled() or telaj_prep_enabled()
+
+
+def _render_product_shell() -> str:
+    st.markdown(
+        """
+        <div class="shell-frame">
+            <div class="shell-kicker">TELAJ PREVIEW</div>
+            <div class="shell-title">A wealth operating system, not just a dashboard</div>
+            <div class="shell-copy">Move between planning, signals, portfolio diagnostics, market context, and account operations without losing access to the current machine.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    shell_cols = st.columns(7)
+    shell_labels = ["Plan", "Signals", "Portfolio", "Market", "Real Estate", "Scenario Lab", "Account"]
+    shell_notes = [
+        "Use the planner and starter allocation tools.",
+        "See trade ideas, investing calls, and sync controls.",
+        "Review account diagnostics, holdings, and track record.",
+        "Read the macro tape, media tone, and machine feed.",
+        "Explore property-oriented planning as TELAJ grows.",
+        "Test future shock and what-if flows.",
+        "Manage broker connection and machine status.",
+    ]
+    for col, label, note in zip(shell_cols, shell_labels, shell_notes, strict=True):
+        col.markdown(
+            f"""
+            <div class="shell-card">
+                <div class="shell-card-label">{label}</div>
+                <div class="shell-card-note">{note}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    selected = st.segmented_control(
+        "Choose a section",
+        options=shell_labels,
+        default="Signals",
+        selection_mode="single",
+    )
+    return str(selected or "Signals")
+
+
+def _render_placeholder_module(*, title: str, body: str, footer: str) -> None:
+    st.markdown(
+        f"""
+        <div class="glass-card">
+            <div class="card-label">{title}</div>
+            <div class="card-copy">{body}</div>
+            <div class="card-meta">{footer}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _safe_portfolio_snapshot() -> dict[str, object] | None:
+    credentials = st.session_state.broker_credentials
+    if credentials is None:
+        return None
+    try:
+        return TradeManager(credentials).portfolio_snapshot()
+    except Exception:
+        return None
+
+
 def main() -> None:
     st.set_page_config(page_title=APP_NAME, page_icon="◉", layout="wide", initial_sidebar_state="expanded")
+    _flags = load_feature_flags()
+    _init_broker_state()
+
+    if onboarding_gate_enabled() and not st.session_state.onboarding_state["completed"]:
+        _inject_onboarding_styles()
+        _render_onboarding_gate()
+        return
+
     _inject_styles()
     secrets = _require_secrets()
     if secrets is None:
@@ -165,7 +260,12 @@ def main() -> None:
 
     fred_api_key, discord_webhook, app_url = secrets
     notifier = DiscordNotifier(webhook_url=discord_webhook, username="Sovereign AI", app_url=app_url)
-    _init_broker_state()
+
+    # Current TELAJ prep check point.
+    # These flags are intentionally loaded centrally even when they do not yet change behavior,
+    # so future view routing can be added without re-scattering config reads through the UI.
+    if _flags.telaj_prep:
+        st.session_state["telaj_prep_enabled"] = True
 
     st.markdown("<div class='hero-kicker'>GURU'S SUPERBRAIN</div>", unsafe_allow_html=True)
     st.markdown("<div class='hero-title'>Your AI market brain, trade desk, and portfolio doctor</div>", unsafe_allow_html=True)
@@ -174,8 +274,25 @@ def main() -> None:
         unsafe_allow_html=True,
     )
     st.markdown(_render_broker_status_badge(), unsafe_allow_html=True)
-    _render_quick_start()
-    user_path = _render_intent_hub()
+    shell_section: str | None = None
+    user_path: str = "Trade"
+    if _product_shell_enabled():
+        shell_section = _render_product_shell()
+        if shell_section == "Plan":
+            user_path = "Plan My Money"
+        elif shell_section == "Signals":
+            signal_mode = st.segmented_control(
+                "Signal view",
+                options=["Trade Desk", "Core Investing"],
+                default="Trade Desk",
+                selection_mode="single",
+            )
+            user_path = "Invest" if signal_mode == "Core Investing" else "Trade"
+        elif shell_section == "Market":
+            user_path = "Read the Market"
+    else:
+        _render_quick_start()
+        user_path = _render_intent_hub()
 
     selected_bundle = st.segmented_control(
         "Choose what to follow",
@@ -355,62 +472,130 @@ def main() -> None:
             latest_signal=latest_signal,
         )
 
-    _render_everyday_guide(superbrain_board, media_brief, latest_signal)
-    _render_superbrain_board(superbrain_board)
-    _render_portfolio_doctor(superbrain_board)
-    _render_copilot(
-        pulse=pulse,
-        sovereign_score=sovereign_score,
-        regime_snapshot=regime_snapshot,
-        internals=internals,
-        credit=credit,
-        event_risk=event_risk,
-        latest_signal=latest_signal,
-    )
-    _render_machine_feed()
-    _render_portfolio_panel()
-    _render_ledger_panels()
-    _render_shadow_portfolio_ticker(pipeline, selected_tickers)
-
     calendar = get_economic_calendar()
-    event_cols = st.columns([1, 1, 1])
-    _glass_card(event_cols[0], "Macro Backdrop", regime_snapshot["narrative"], f"Yield curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f}")
-    _glass_card(event_cols[1], "Important Events", _calendar_body(calendar), _calendar_footer(calendar))
-    _glass_card(event_cols[2], "Positioning Note", _rebalance_message(pipeline), "A quick read on whether leadership is balanced or lopsided.")
 
-    with st.expander("Why the AI feels cautious or confident", expanded=False):
-        intelligence_cols = st.columns([1, 1])
-        _glass_card(
-            intelligence_cols[0],
-            "Market Internals",
-            internals.summary,
-            f"VIX {internals.vix_level:.1f} | TLT 20D {internals.tlt_return_20d:.1f}% | SOXX above 50DMA: {'Yes' if internals.soxx_above_50dma else 'No'}",
+    if shell_section is None:
+        _render_everyday_guide(superbrain_board, media_brief, latest_signal)
+        _render_superbrain_board(superbrain_board)
+        _render_portfolio_doctor(superbrain_board)
+        _render_copilot(
+            pulse=pulse,
+            sovereign_score=sovereign_score,
+            regime_snapshot=regime_snapshot,
+            internals=internals,
+            credit=credit,
+            event_risk=event_risk,
+            latest_signal=latest_signal,
         )
-        _glass_card(
-            intelligence_cols[1],
-            "Event Risk",
-            event_risk.summary,
-            f"Next event: {event_risk.next_event} | Hours: {event_risk.hours_to_event:.1f} | Size multiplier: {event_risk.size_multiplier:.2f}",
-        )
-        factor_cols = st.columns([1, 1])
-        _glass_card(
-            factor_cols[0],
-            "Credit & Liquidity",
-            credit.summary,
-            f"HYG 20D {credit.hyg_return_20d:.1f}% | LQD 20D {credit.lqd_return_20d:.1f}% | IWM vs SPY {credit.iwm_vs_spy_momentum:+.1f}%",
-        )
-        _render_media_headlines(media_brief)
-        _render_experiment_panel()
+        _render_machine_feed()
+        _render_portfolio_panel()
+        _render_ledger_panels()
+        _render_shadow_portfolio_ticker(pipeline, selected_tickers)
 
-    with st.expander("How the AI manages risk", expanded=False):
-        st.markdown(
-            """
-            - `Capital Preservation Mode`: cash-first defense.
-            - `Tactical Accumulation`: scale in slowly.
-            - `Risk-On Expansion`: maintain full core positions.
-            - `Auto-Harvest`: trims 25% of a position after a 3% gain, if enabled in Broker Link.
-            """
-        )
+        event_cols = st.columns([1, 1, 1])
+        _glass_card(event_cols[0], "Macro Backdrop", regime_snapshot["narrative"], f"Yield curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f}")
+        _glass_card(event_cols[1], "Important Events", _calendar_body(calendar), _calendar_footer(calendar))
+        _glass_card(event_cols[2], "Positioning Note", _rebalance_message(pipeline), "A quick read on whether leadership is balanced or lopsided.")
+
+        with st.expander("Why the AI feels cautious or confident", expanded=False):
+            intelligence_cols = st.columns([1, 1])
+            _glass_card(
+                intelligence_cols[0],
+                "Market Internals",
+                internals.summary,
+                f"VIX {internals.vix_level:.1f} | TLT 20D {internals.tlt_return_20d:.1f}% | SOXX above 50DMA: {'Yes' if internals.soxx_above_50dma else 'No'}",
+            )
+            _glass_card(
+                intelligence_cols[1],
+                "Event Risk",
+                event_risk.summary,
+                f"Next event: {event_risk.next_event} | Hours: {event_risk.hours_to_event:.1f} | Size multiplier: {event_risk.size_multiplier:.2f}",
+            )
+            factor_cols = st.columns([1, 1])
+            _glass_card(
+                factor_cols[0],
+                "Credit & Liquidity",
+                credit.summary,
+                f"HYG 20D {credit.hyg_return_20d:.1f}% | LQD 20D {credit.lqd_return_20d:.1f}% | IWM vs SPY {credit.iwm_vs_spy_momentum:+.1f}%",
+            )
+            _render_media_headlines(media_brief)
+            _render_experiment_panel()
+
+        with st.expander("How the AI manages risk", expanded=False):
+            st.markdown(
+                """
+                - `Capital Preservation Mode`: cash-first defense.
+                - `Tactical Accumulation`: scale in slowly.
+                - `Risk-On Expansion`: maintain full core positions.
+                - `Auto-Harvest`: trims 25% of a position after a 3% gain, if enabled in Broker Link.
+                """
+            )
+    else:
+        if shell_section == "Plan":
+            _render_everyday_guide(superbrain_board, media_brief, latest_signal)
+            _render_superbrain_board(superbrain_board)
+        elif shell_section == "Signals":
+            _render_superbrain_board(superbrain_board)
+            _render_copilot(
+                pulse=pulse,
+                sovereign_score=sovereign_score,
+                regime_snapshot=regime_snapshot,
+                internals=internals,
+                credit=credit,
+                event_risk=event_risk,
+                latest_signal=latest_signal,
+            )
+        elif shell_section == "Portfolio":
+            _render_portfolio_doctor(superbrain_board)
+            _render_portfolio_panel()
+            _render_ledger_panels()
+        elif shell_section == "Market":
+            _render_machine_feed()
+            event_cols = st.columns([1, 1, 1])
+            _glass_card(event_cols[0], "Macro Backdrop", regime_snapshot["narrative"], f"Yield curve: {float(regime_snapshot['yield_curve_10y_2y']):.2f}")
+            _glass_card(event_cols[1], "Important Events", _calendar_body(calendar), _calendar_footer(calendar))
+            _glass_card(event_cols[2], "Positioning Note", _rebalance_message(pipeline), "A quick read on whether leadership is balanced or lopsided.")
+            with st.expander("Why the AI feels cautious or confident", expanded=False):
+                intelligence_cols = st.columns([1, 1])
+                _glass_card(
+                    intelligence_cols[0],
+                    "Market Internals",
+                    internals.summary,
+                    f"VIX {internals.vix_level:.1f} | TLT 20D {internals.tlt_return_20d:.1f}% | SOXX above 50DMA: {'Yes' if internals.soxx_above_50dma else 'No'}",
+                )
+                _glass_card(
+                    intelligence_cols[1],
+                    "Event Risk",
+                    event_risk.summary,
+                    f"Next event: {event_risk.next_event} | Hours: {event_risk.hours_to_event:.1f} | Size multiplier: {event_risk.size_multiplier:.2f}",
+                )
+                factor_cols = st.columns([1, 1])
+                _glass_card(
+                    factor_cols[0],
+                    "Credit & Liquidity",
+                    credit.summary,
+                    f"HYG 20D {credit.hyg_return_20d:.1f}% | LQD 20D {credit.lqd_return_20d:.1f}% | IWM vs SPY {credit.iwm_vs_spy_momentum:+.1f}%",
+                )
+                _render_media_headlines(media_brief)
+                _render_experiment_panel()
+        elif shell_section == "Real Estate":
+            _render_real_estate_lab()
+        elif shell_section == "Scenario Lab":
+            _render_scenario_lab(superbrain_board)
+        elif shell_section == "Account":
+            _render_machine_feed()
+            _render_portfolio_panel()
+            _render_last_execution_status()
+            _render_audit_log()
+            with st.expander("How the AI manages risk", expanded=False):
+                st.markdown(
+                    """
+                    - `Capital Preservation Mode`: cash-first defense.
+                    - `Tactical Accumulation`: scale in slowly.
+                    - `Risk-On Expansion`: maintain full core positions.
+                    - `Auto-Harvest`: trims 25% of a position after a 3% gain, if enabled in Broker Link.
+                    """
+                )
 
     if run_button:
         signals = generate_signal_map(
@@ -531,7 +716,7 @@ def _render_money_planner_view(board: pd.DataFrame) -> None:
     controls = st.columns([1, 1, 1, 1])
     amount = controls[0].number_input("How much do you want to invest?", min_value=100.0, max_value=5_000_000.0, value=10_000.0, step=100.0)
     horizon_years = int(controls[1].selectbox("How long can you leave it alone?", options=[1, 3, 5, 10, 20], index=2))
-    risk_profile = controls[2].selectbox("How much stress can you handle?", options=["Very low", "Balanced", "Growth"], index=1)
+    risk_profile = controls[2].selectbox("How much stress can you handle?", options=["Safe", "Balanced", "Aggressive"], index=1)
     account_type = controls[3].selectbox("Where is this money going?", options=["Taxable account", "Roth IRA", "401(k)", "Not sure"], index=0)
 
     history = load_planner_history()
@@ -566,7 +751,7 @@ def _render_money_planner_view(board: pd.DataFrame) -> None:
     _glass_card(
         top_cols[2],
         "Money Genie says",
-        plan["summary"],
+        f"{plan['plan_name']}. {plan['summary']}",
         plan["footer"],
     )
 
@@ -590,24 +775,49 @@ def _render_money_planner_view(board: pd.DataFrame) -> None:
     with st.expander("Why the Money Genie picked this plan", expanded=False):
         checklist = pd.DataFrame(
             [
+                {"Question": "Plan selected", "Answer": plan["plan_name"], "Why it matters": "This is the reusable plan output TELAJ can later expose through APIs and other frontends."},
                 {"Question": "How much risk can you handle?", "Answer": risk_profile, "Why it matters": "This changes how much should go into stocks vs. bonds and cash."},
                 {"Question": "How long can you wait?", "Answer": f"{horizon_years} years", "Why it matters": "Longer timelines can usually carry more growth assets."},
                 {"Question": "What does the board like today?", "Answer": plan["board_note"], "Why it matters": "Guru's Superbrain should influence how aggressive you are right now."},
+                {"Question": "Suitable horizon", "Answer": plan["suitable_time_horizon"], "Why it matters": "A plan only makes sense if the time horizon matches the emotional and financial reality."},
+                {"Question": "Safer alternative", "Answer": plan["safer_alternative"], "Why it matters": "TELAJ should always be able to explain the lower-stress version of the recommendation."},
             ]
         )
         st.dataframe(checklist, use_container_width=True, hide_index=True)
+        reason_cols = st.columns([1, 1])
+        _glass_card(
+            reason_cols[0],
+            "Why this plan fits",
+            "<br>".join(plan["reasons"]),
+            "Plain-English reasons for the recommendation.",
+        )
+        _glass_card(
+            reason_cols[1],
+            "Key risks",
+            "<br>".join(plan["key_risks"]),
+            plan["safer_alternative"],
+        )
 
 
 def _render_media_brief(container, media_brief: dict[str, object]) -> None:
-    tone = str(media_brief["tone"])
-    tone_class = str(media_brief.get("tone_color", "neutral"))
+    if BriefingEngine is not None:
+        media_tone = BriefingEngine().build_media_tone(media_brief)
+        tone = media_tone.tone
+        tone_class = media_tone.tone_color
+        summary = media_tone.summary
+        commentary = media_tone.commentary
+    else:
+        tone = str(media_brief["tone"])
+        tone_class = str(media_brief.get("tone_color", "neutral"))
+        summary = str(media_brief["summary"])
+        commentary = str(media_brief["commentary"])
     container.markdown(
         f"""
         <div class="media-brief {tone_class}">
             <div class="card-label">What the Media Says</div>
             <div class="brief-title">{tone}</div>
-            <div class="brief-copy">{media_brief['summary']}</div>
-            <div class="brief-meta">{media_brief['commentary']}</div>
+            <div class="brief-copy">{summary}</div>
+            <div class="brief-meta">{commentary}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -631,6 +841,137 @@ def _render_media_headlines(media_brief: dict[str, object]) -> None:
     st.dataframe(pd.DataFrame(rows), use_container_width=True)
 
 
+def _render_scenario_lab(board: pd.DataFrame) -> None:
+    st.markdown("### Scenario Lab")
+    if not scenario_sim_enabled() or ScenarioEngine is None:
+        _render_placeholder_module(
+            title="Scenario Lab",
+            body="Scenario Lab is reserved for macro shock tests, allocation stress, and what-if planning.",
+            footer="Enable FEATURE_SCENARIO_SIM to turn on the educational stress-test module.",
+        )
+        return
+
+    engine = ScenarioEngine()
+    snapshot = _safe_portfolio_snapshot()
+    wealth_map = engine.wealth_map_from_snapshot(snapshot)
+    selected = st.selectbox(
+        "Choose a stress case",
+        options=[
+            ("rates_up", "Rates Up"),
+            ("recession", "Recession"),
+            ("inflation_spike", "Inflation Spike"),
+            ("crypto_crash", "Crypto Crash"),
+            ("tech_selloff", "Tech Selloff"),
+            ("rental_vacancy", "Rental Vacancy"),
+        ],
+        format_func=lambda item: item[1],
+        key="scenario_lab_select",
+    )
+    result = engine.run_scenario(scenario_name=selected[0], wealth_map=wealth_map)
+
+    top_cols = st.columns([1, 1, 1])
+    _glass_card(
+        top_cols[0],
+        "Scenario impact",
+        result["narrative"],
+        f"Portfolio effect: {result['portfolio_impact_pct']:.1f}%",
+    )
+    _glass_card(
+        top_cols[1],
+        "Best holding bucket",
+        result["best_bucket"].replace("_", " ").title(),
+        result["shock_description"],
+    )
+    _glass_card(
+        top_cols[2],
+        "Weakest holding bucket",
+        result["worst_bucket"].replace("_", " ").title(),
+        "Educational only. This is a stress map, not a forecast.",
+    )
+
+    impact_rows = pd.DataFrame(
+        [
+            {"Bucket": "Cash", "Stress %": result["cash_impact_pct"]},
+            {"Bucket": "Stocks", "Stress %": result["stocks_impact_pct"]},
+            {"Bucket": "Bonds", "Stress %": result["bonds_impact_pct"]},
+            {"Bucket": "Crypto", "Stress %": result["crypto_impact_pct"]},
+            {"Bucket": "Real Estate", "Stress %": result["real_estate_impact_pct"]},
+        ]
+    )
+    st.dataframe(impact_rows, use_container_width=True, hide_index=True)
+
+    lower_cols = st.columns([1, 1])
+    _glass_card(
+        lower_cols[0],
+        "Your current wealth map",
+        (
+            f"Cash {wealth_map.cash_pct:.1f}% | Stocks {wealth_map.stocks_pct:.1f}% | Bonds {wealth_map.bonds_pct:.1f}%<br>"
+            f"Crypto {wealth_map.crypto_pct:.1f}% | Real Estate {wealth_map.real_estate_pct:.1f}%"
+        ),
+        f"Diversification {wealth_map.diversification_score}/100 | Risk {wealth_map.risk_score}/100",
+    )
+    _glass_card(
+        lower_cols[1],
+        "What to watch",
+        "<br>".join(result["guidance"]),
+        "The purpose is to make risk understandable before the market forces the lesson.",
+    )
+
+
+def _render_real_estate_lab() -> None:
+    st.markdown("### Real Estate Lab")
+    if not real_estate_lab_enabled() or RealEstateLab is None:
+        _render_placeholder_module(
+            title="Real Estate Lab",
+            body="This section is reserved for educational property analysis, simple cash-flow math, and downside framing.",
+            footer="Enable FEATURE_REAL_ESTATE_LAB to turn on the calculator module.",
+        )
+        return
+
+    controls = st.columns([1, 1, 1, 1])
+    purchase_price = controls[0].number_input("Purchase price", min_value=50000.0, max_value=5000000.0, value=250000.0, step=10000.0)
+    down_payment_pct = controls[1].slider("Down payment %", min_value=5, max_value=100, value=20, step=5)
+    monthly_rent = controls[2].number_input("Monthly rent", min_value=0.0, max_value=100000.0, value=1400.0, step=50.0)
+    rate_pct = controls[3].slider("Mortgage rate %", min_value=0.0, max_value=12.0, value=4.5, step=0.1)
+    lower_controls = st.columns([1, 1, 1])
+    monthly_expenses = lower_controls[0].number_input("Monthly expenses", min_value=0.0, max_value=50000.0, value=420.0, step=25.0)
+    expected_appreciation_pct = lower_controls[1].slider("Expected appreciation %", min_value=-5.0, max_value=15.0, value=3.0, step=0.5)
+    holding_period_years = int(lower_controls[2].selectbox("Holding period", options=[3, 5, 7, 10, 15, 20], index=2))
+
+    analysis = RealEstateLab().analyze(
+        purchase_price=float(purchase_price),
+        down_payment_pct=float(down_payment_pct),
+        monthly_rent=float(monthly_rent),
+        rate_pct=float(rate_pct),
+        monthly_expenses=float(monthly_expenses),
+        expected_appreciation_pct=float(expected_appreciation_pct),
+        holding_period_years=holding_period_years,
+    )
+
+    metric_cols = st.columns(4)
+    metric_cols[0].metric("Monthly Cash Flow", f"${analysis['monthly_cash_flow']:,.0f}")
+    metric_cols[1].metric("Cap Rate", f"{analysis['cap_rate_pct']:.2f}%")
+    metric_cols[2].metric("Cash-on-Cash", f"{analysis['cash_on_cash_pct']:.2f}%")
+    metric_cols[3].metric("Stress Cash Flow", f"${analysis['downside_cash_flow']:,.0f}")
+
+    lower_cols = st.columns([1, 1])
+    _glass_card(
+        lower_cols[0],
+        "Base case",
+        analysis["summary"],
+        f"Estimated appreciation gain over hold: ${analysis['estimated_equity_gain']:,.0f}",
+    )
+    _glass_card(
+        lower_cols[1],
+        "Downside case",
+        analysis["downside_summary"],
+        "Stress case assumes softer rent and hotter expenses.",
+    )
+    with st.expander("Educational tax framing", expanded=False):
+        st.info(analysis["tax_note"])
+        st.caption("This is educational only and not tax, legal, or accounting advice.")
+
+
 def _render_everyday_guide(
     board: pd.DataFrame,
     media_brief: dict[str, object],
@@ -640,27 +981,35 @@ def _render_everyday_guide(
     if board.empty:
         st.info("Guru's Superbrain needs a little more data before it can give you a simple daily guide.")
         return
+    next_move = str(latest_signal["label"]) if latest_signal is not None else "No saved stance yet"
+    guide = None
+    if BriefingEngine is not None:
+        media_tone = BriefingEngine().build_media_tone(media_brief)
+        guide = BriefingEngine().build_everyday_guide(
+            board=board,
+            media_tone=media_tone,
+            machine_stance_label=next_move,
+        )
     best = board.iloc[0]
     worst = board.iloc[-1]
-    next_move = str(latest_signal["label"]) if latest_signal is not None else "No saved stance yet"
     cols = st.columns([1, 1, 1])
     _glass_card(
         cols[0],
         "Best idea today",
-        f"{best['ticker']} looks strongest right now.",
-        f"{best['action']} | Score {best['score']:.1f} | {best['copy']}",
+        guide.best_idea_title if guide is not None else f"{best['ticker']} looks strongest right now.",
+        guide.best_idea_footer if guide is not None else f"{best['action']} | Score {best['score']:.1f} | {best['copy']}",
     )
     _glass_card(
         cols[1],
         "Best thing to avoid",
-        f"{worst['ticker']} is the weakest setup on the board.",
-        f"{worst['action']} | Score {worst['score']:.1f} | Better to wait than force it.",
+        guide.avoid_title if guide is not None else f"{worst['ticker']} is the weakest setup on the board.",
+        guide.avoid_footer if guide is not None else f"{worst['action']} | Score {worst['score']:.1f} | Better to wait than force it.",
     )
     _glass_card(
         cols[2],
         "What to do next",
-        _simple_next_step(str(best["action"]), str(media_brief["tone"]), next_move),
-        f"Media tone: {media_brief['tone']} | Machine stance: {next_move}",
+        guide.next_step_title if guide is not None else _simple_next_step(str(best["action"]), str(media_brief["tone"]), next_move),
+        guide.next_step_footer if guide is not None else f"Media tone: {media_brief['tone']} | Machine stance: {next_move}",
     )
 
 
@@ -1404,6 +1753,18 @@ def _cooldown_active() -> tuple[bool, str]:
 
 
 def _build_pulse(regime_snapshot: dict[str, float | str], stress_snapshot: dict[str, float | bool]) -> dict[str, object]:
+    if MarketBrainService is not None:
+        pulse = MarketBrainService().build_pulse_summary(
+            regime_snapshot=regime_snapshot,
+            stress_snapshot=stress_snapshot,
+        )
+        return {
+            "mode": pulse.mode,
+            "score": pulse.score,
+            "label": pulse.label,
+            "narrative": pulse.narrative,
+            "message": pulse.message,
+        }
     mode = "risk_on_expansion"
     score = 84
     label = "Risk-On Expansion"
@@ -1447,6 +1808,8 @@ def _entry_mindset(regime_snapshot: dict[str, float | str], sovereign_score: dic
 
 
 def _superbrain_rating(score: float) -> dict[str, str]:
+    if MarketBrainService is not None:
+        return MarketBrainService().superbrain_rating(score)
     if score >= 75:
         return {"label": "High-conviction setup", "action": "BUY"}
     if score >= 55:
@@ -1514,6 +1877,8 @@ def _render_superbrain_score_card(score_payload: dict[str, float | str]) -> str:
 
 
 def _build_superbrain_board(pipeline: DataPipeline, tickers: tuple[str, ...]) -> pd.DataFrame:
+    if MarketBrainService is not None:
+        return MarketBrainService().build_board_frame(pipeline=pipeline, tickers=tickers)
     rows: list[dict[str, object]] = []
     for ticker in tickers:
         payload = pipeline.generate_sovereign_score(ticker)
@@ -1723,6 +2088,11 @@ def _mock_retail_sentiment(bundle: str) -> int:
 
 
 def _hype_meter_copy(sentiment_score: int, pulse: dict[str, object]) -> str:
+    if BriefingEngine is not None and MarketPulseSummary is not None:
+        return BriefingEngine().build_hype_copy(
+            sentiment_score=sentiment_score,
+            pulse=MarketPulseSummary(**pulse),
+        )
     if sentiment_score >= 75 and pulse["mode"] == "capital_preservation":
         return "The internet is screaming 'To the Moon.' The Guru is looking at the actual interest rates. One of them is lying. Hint: It's the one with the rocket emoji."
     if sentiment_score >= 75:
@@ -1733,6 +2103,12 @@ def _hype_meter_copy(sentiment_score: int, pulse: dict[str, object]) -> str:
 
 
 def _guru_briefing(regime_snapshot: dict[str, float | str], pulse: dict[str, object], bundle: str) -> str:
+    if BriefingEngine is not None and MarketPulseSummary is not None:
+        return BriefingEngine().build_daily_briefing(
+            regime_snapshot=regime_snapshot,
+            pulse=MarketPulseSummary(**pulse),
+            bundle=bundle,
+        ).body
     curve = float(regime_snapshot["yield_curve_10y_2y"])
     if pulse["mode"] == "risk_on_expansion":
         return (
@@ -2164,9 +2540,171 @@ def _init_broker_state() -> None:
         st.session_state.copilot_messages = []
     if "copilot_pending_prompt" not in st.session_state:
         st.session_state.copilot_pending_prompt = None
+    if "onboarding_state" not in st.session_state:
+        st.session_state.onboarding_state = asdict(OnboardingState())
+
+
+def _onboarding_questions() -> list[dict[str, object]]:
+    return [
+        {
+            "key": "investment_ready",
+            "question": "How much money are you ready to invest right now?",
+            "options": ["Under $500", "$500 to $2,000", "$2,000 to $10,000", "$10,000 to $50,000", "$50,000+"],
+        },
+        {
+            "key": "time_horizon",
+            "question": "When will you likely need this money?",
+            "options": ["Less than 1 year", "1 to 3 years", "3 to 7 years", "7+ years", "I do not know"],
+        },
+        {
+            "key": "drawdown_reaction",
+            "question": "If your portfolio drops 20%, what would you do?",
+            "options": ["Sell quickly", "Wait and watch", "Hold steady", "Buy more", "I do not know"],
+        },
+        {
+            "key": "primary_goal",
+            "question": "What matters most for this money?",
+            "options": ["Protect it", "Grow it steadily", "Build long-term wealth", "Generate extra income", "I am not sure yet"],
+        },
+        {
+            "key": "existing_assets",
+            "question": "Do you already invest or own assets?",
+            "options": ["No, not really", "I have savings only", "I own some stocks or ETFs", "I own crypto too", "I own a mix of assets"],
+        },
+    ]
+
+
+def _render_onboarding_gate() -> None:
+    state = st.session_state.onboarding_state
+    questions = _onboarding_questions()
+    step = max(0, min(int(state["current_step"]), len(questions) - 1))
+    current = questions[step]
+    current_key = str(current["key"])
+    current_question = str(current["question"])
+    options = list(current["options"])
+    current_answer = str(state["answers"].get(current_key, options[0]))
+
+    st.markdown(
+        f"""
+        <div class="onboarding-shell">
+            <div class="onboarding-progress">{step + 1}/5</div>
+            <div class="onboarding-kicker">TELAJ START</div>
+            <div class="onboarding-question">{current_question}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    choice = st.radio(
+        "Choose one answer",
+        options=options,
+        index=options.index(current_answer) if current_answer in options else 0,
+        label_visibility="collapsed",
+    )
+
+    nav_cols = st.columns([1, 1])
+    back_disabled = step == 0
+    back_clicked = nav_cols[0].button("Back", use_container_width=True, disabled=back_disabled)
+    next_label = "Finish" if step == len(questions) - 1 else "Next"
+    next_clicked = nav_cols[1].button(next_label, use_container_width=True, type="primary")
+
+    if back_clicked:
+        state["current_step"] = max(step - 1, 0)
+        st.rerun()
+
+    if next_clicked:
+        state["answers"][current_key] = choice
+        if step >= len(questions) - 1:
+            state["completed"] = True
+        else:
+            state["current_step"] = step + 1
+        st.session_state.onboarding_state = state
+        st.rerun()
+
+
+def _inject_onboarding_styles() -> None:
+    st.markdown(
+        """
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap');
+            :root {
+                --ob-bg: #F6F7FB;
+                --ob-panel: #FFFFFF;
+                --ob-border: #111111;
+                --ob-text: #0A0A0B;
+                --ob-muted: #5D6472;
+                --ob-accent: #1F6BFF;
+                --ob-accent-soft: #EAF1FF;
+            }
+            .stApp {
+                background: var(--ob-bg);
+                color: var(--ob-text);
+                font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+            }
+            [data-testid="stSidebar"],
+            [data-testid="collapsedControl"],
+            [data-testid="stHeader"] {
+                display: none;
+            }
+            .block-container {
+                max-width: 760px;
+                padding-top: 3.5rem;
+                padding-bottom: 3rem;
+            }
+            .onboarding-shell {
+                border: 2px solid var(--ob-border);
+                background: var(--ob-panel);
+                padding: 1.25rem 1.25rem 1.5rem 1.25rem;
+                margin-bottom: 1.25rem;
+            }
+            .onboarding-progress {
+                font-family: "JetBrains Mono", ui-monospace, monospace;
+                font-size: 0.82rem;
+                color: var(--ob-muted);
+                margin-bottom: 0.75rem;
+            }
+            .onboarding-kicker {
+                font-family: "JetBrains Mono", ui-monospace, monospace;
+                font-size: 0.74rem;
+                letter-spacing: 0.16em;
+                text-transform: uppercase;
+                color: var(--ob-accent);
+                margin-bottom: 0.8rem;
+            }
+            .onboarding-question {
+                font-size: clamp(1.7rem, 3vw, 2.5rem);
+                font-weight: 700;
+                line-height: 1.05;
+                color: var(--ob-text);
+                max-width: 16ch;
+            }
+            div[role="radiogroup"] > label {
+                border: 2px solid var(--ob-border);
+                background: var(--ob-panel);
+                padding: 0.85rem 0.95rem;
+                margin-bottom: 0.8rem;
+            }
+            div[role="radiogroup"] > label:hover {
+                border-color: var(--ob-accent);
+                background: var(--ob-accent-soft);
+            }
+            .stButton > button {
+                border: 2px solid var(--ob-border);
+                border-radius: 0;
+                font-weight: 700;
+                min-height: 3rem;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _inject_styles() -> None:
+    # Current check point for FEATURE_NEW_THEME.
+    # Disabling the flag falls back to Streamlit defaults without changing the rest of the app.
+    if not new_theme_enabled():
+        return
     st.markdown(
         """
         <style>
@@ -2238,6 +2776,56 @@ def _inject_styles() -> None:
             .hero-card:hover, .glass-card:hover, .signal-card:hover, .bundle-card:hover, .intent-card:hover, .brief-lead:hover, .media-brief:hover {
                 border-color: var(--accent);
                 transform: translateY(-1px);
+            }
+            .shell-frame {
+                background: var(--surface);
+                border: 1.5px solid var(--border);
+                border-radius: 6px;
+                padding: 1rem 1.1rem;
+                margin-bottom: 1rem;
+                animation: riseIn 0.4s ease-out;
+            }
+            .shell-kicker {
+                color: var(--accent-soft);
+                text-transform: uppercase;
+                letter-spacing: 0.14rem;
+                font-size: 0.75rem;
+                margin-bottom: 0.45rem;
+                font-family: "JetBrains Mono", ui-monospace, monospace;
+            }
+            .shell-title {
+                color: var(--text);
+                font-size: 1.55rem;
+                font-weight: 700;
+                line-height: 1.08;
+                margin-bottom: 0.35rem;
+            }
+            .shell-copy {
+                color: var(--muted);
+                font-size: 0.95rem;
+                line-height: 1.5;
+                max-width: 72ch;
+            }
+            .shell-card {
+                background: var(--panel);
+                border: 1.5px solid var(--border);
+                border-radius: 6px;
+                padding: 0.85rem 0.9rem;
+                min-height: 7.4rem;
+                margin-bottom: 0.8rem;
+            }
+            .shell-card-label {
+                color: var(--accent-soft);
+                text-transform: uppercase;
+                letter-spacing: 0.1rem;
+                font-size: 0.76rem;
+                margin-bottom: 0.5rem;
+                font-family: "JetBrains Mono", ui-monospace, monospace;
+            }
+            .shell-card-note {
+                color: var(--muted);
+                font-size: 0.83rem;
+                line-height: 1.4;
             }
             .brief-lead, .media-brief {
                 background: var(--panel);

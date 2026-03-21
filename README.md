@@ -1,73 +1,175 @@
-# Learning Machine
+# TELAJ Wealth Adventure
 
-Modular reinforcement-learning research stack for trading `SPY` and `QQQ` with:
+This repository now contains two layers:
 
-- `yfinance` OHLCV ingestion
-- FRED macro data joins
-- Custom `FeatureFactory`
-- PPO-compatible `gymnasium` environment
-- Session-level drawdown circuit breaker
-- Slippage-aware backtest loop
+- a **live Streamlit wealth product shell** with broker connectivity, planning, market intelligence, and educational labs
+- a **legacy research stack** for RL/backtesting experimentation
 
-## Architecture
+The current end-user product is not the old research CLI. It is the Streamlit-based TELAJ prep application centered on [learning_machine/interface.py](/Users/tonysoprano/Documents/New%20project/learning_machine/interface.py).
 
-1. `learning_machine.data.DataPipeline`
-   - Pulls OHLCV from Yahoo Finance.
-   - Pulls macro series from FRED and forward-fills them to market dates.
-2. `learning_machine.features.FeatureFactory`
-   - Computes fractional differentiation, volatility-scaled RSI, Bollinger width, realized vol, and return features.
-3. `learning_machine.sentiment.SimulatedNewsFeed`
-   - Seeds a synthetic daily sentiment signal from a current macro/news snapshot.
-4. `learning_machine.risk.CircuitBreaker`
-   - Stops trading for the session if drawdown breaches 5%.
-5. `learning_machine.env.TradingEnvironment`
-   - Discrete-action PPO environment with portfolio accounting and risk hooks.
-6. `learning_machine.backtest.run_backtest`
-   - Replays the environment policy with 10 bps slippage.
+## Product Position
 
-## Quick start
+Current role:
+
+- Streamlit shell for a premium wealth product in transition
+- live home for:
+  - planning
+  - signals
+  - portfolio diagnostics
+  - market context
+  - scenario stress tests
+  - educational real-estate analysis
+
+Target role:
+
+- TELAJ.com becomes the primary frontend
+- Streamlit becomes the transitional shell and later the operator/research console
+
+## Current Feature Inventory
+
+### Core product shell
+
+- onboarding gate behind `FEATURE_ONBOARDING_GATE`
+- TELAJ-style section shell behind `FEATURE_WEALTH_MAP` or `FEATURE_TELAJ_PREP`
+- sections:
+  - `Plan`
+  - `Signals`
+  - `Portfolio`
+  - `Market`
+  - `Real Estate`
+  - `Scenario Lab`
+  - `Account`
+
+### Intelligence
+
+- `Guru's Superbrain` score and board
+- current AI stance
+- today's briefing
+- what the media says
+- hype meter
+- everyday guide
+
+### Planning and diagnostics
+
+- amount-based comparison planner
+- `Money Genie`
+- `Portfolio Doctor`
+- scenario stress testing
+- educational real-estate calculator
+
+### Broker and automation
+
+- Alpaca paper/live support
+- Coinbase live crypto support
+- Discord alerts
+- scheduled workers via GitHub Actions
+- shared ledger/equity/latest signal via Supabase
+
+## Current Architecture
+
+Primary files:
+
+- [learning_machine/interface.py](/Users/tonysoprano/Documents/New%20project/learning_machine/interface.py)
+  - current Streamlit shell
+- [learning_machine/data.py](/Users/tonysoprano/Documents/New%20project/learning_machine/data.py)
+  - market, macro, media, proxy history
+- [learning_machine/intelligence.py](/Users/tonysoprano/Documents/New%20project/learning_machine/intelligence.py)
+  - scoring, internals, credit/liquidity, event risk, allocation
+- [learning_machine/trade_manager.py](/Users/tonysoprano/Documents/New%20project/learning_machine/trade_manager.py)
+  - broker execution and snapshots
+- [learning_machine/storage.py](/Users/tonysoprano/Documents/New%20project/learning_machine/storage.py)
+  - Supabase/local storage
+- [learning_machine/signal_worker.py](/Users/tonysoprano/Documents/New%20project/learning_machine/signal_worker.py)
+- [learning_machine/execution_worker.py](/Users/tonysoprano/Documents/New%20project/learning_machine/execution_worker.py)
+- [learning_machine/report_worker.py](/Users/tonysoprano/Documents/New%20project/learning_machine/report_worker.py)
+
+Extracted service layer so far:
+
+- [services/planning_engine.py](/Users/tonysoprano/Documents/New%20project/services/planning_engine.py)
+- [services/portfolio_doctor.py](/Users/tonysoprano/Documents/New%20project/services/portfolio_doctor.py)
+- [services/market_brain.py](/Users/tonysoprano/Documents/New%20project/services/market_brain.py)
+- [services/briefing_engine.py](/Users/tonysoprano/Documents/New%20project/services/briefing_engine.py)
+- [services/scenario_engine.py](/Users/tonysoprano/Documents/New%20project/services/scenario_engine.py)
+- [services/real_estate_lab.py](/Users/tonysoprano/Documents/New%20project/services/real_estate_lab.py)
+- [services/tax_education.py](/Users/tonysoprano/Documents/New%20project/services/tax_education.py)
+
+Typed domain models so far:
+
+- [domain/planning.py](/Users/tonysoprano/Documents/New%20project/domain/planning.py)
+- [domain/portfolio.py](/Users/tonysoprano/Documents/New%20project/domain/portfolio.py)
+- [domain/signals.py](/Users/tonysoprano/Documents/New%20project/domain/signals.py)
+- [domain/scenarios.py](/Users/tonysoprano/Documents/New%20project/domain/scenarios.py)
+- [domain/real_estate.py](/Users/tonysoprano/Documents/New%20project/domain/real_estate.py)
+- [domain/user_profiles.py](/Users/tonysoprano/Documents/New%20project/domain/user_profiles.py)
+
+## Feature Flags
+
+Current flags:
+
+- `FEATURE_PLANNING_SERVICE`
+- `FEATURE_PORTFOLIO_DOCTOR_SERVICE`
+- `FEATURE_ONBOARDING_GATE`
+- `FEATURE_WEALTH_MAP`
+- `FEATURE_SIMPLE_MODE`
+- `FEATURE_PRO_MODE`
+- `FEATURE_REAL_ESTATE_LAB`
+- `FEATURE_SCENARIO_SIM`
+- `FEATURE_TELAJ_PREP`
+- `FEATURE_NEW_THEME`
+
+See:
+
+- [feature_flags.md](/Users/tonysoprano/Documents/New%20project/feature_flags.md)
+
+## Local Run
 
 ```bash
 uv sync
+uv run streamlit run learning_machine/interface.py
+```
+
+Legacy research entrypoint still exists:
+
+```bash
 uv run python -m learning_machine.main
 ```
 
-## Sovereign AI Cloud Stack
-
-The repo now includes a cloud-ready paper-trading control loop:
-
-- `learning_machine.signal_worker`
-  - Runs on a schedule, computes the macro pulse, and pushes Discord alerts only when the regime changes.
-- `learning_machine.execution_worker`
-  - Runs during market hours, reads the latest macro state, checks broker risk limits, and places paper trades for the core assets.
-- `learning_machine.report_worker`
-  - Publishes a daily Discord summary from the saved ledger and equity curve.
-- `learning_machine.ledger`
-  - Persists trade events and portfolio equity snapshots under `.state/`.
-- `learning_machine.interface`
-  - Streamlit dashboard showing pulse, broker state, equity curve, and recent paper-trade history.
-
 ## Streamlit Secrets
 
-Set these in Streamlit Community Cloud or in `.streamlit/secrets.toml` for local testing:
+Set these in Streamlit Community Cloud or `.streamlit/secrets.toml`:
 
 ```toml
 FRED_API_KEY = "your_fred_key"
 DISCORD_WEBHOOK_URL = "your_discord_webhook"
 APP_URL = "https://your-app-url.streamlit.app"
+
+SUPABASE_URL = "https://your-project.supabase.co"
+SUPABASE_SERVICE_ROLE_KEY = "your_service_role_key"
+
+OPENAI_API_KEY = "your_openai_key"
+OPENAI_MODEL = "gpt-5-mini"
 ```
+
+Optional broker credentials can still be entered in the UI. Scheduled workers use GitHub secrets instead.
 
 ## GitHub Actions Secrets
 
-Set these in `Settings -> Secrets and variables -> Actions` so the scheduled workers can run:
+Required for automation:
 
 ```text
 FRED_API_KEY
 DISCORD_WEBHOOK_URL
 APP_URL
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+BROKER_PROVIDER
 ALPACA_API_KEY
 ALPACA_SECRET_KEY
 ALPACA_MODE
+COINBASE_API_KEY
+COINBASE_API_SECRET
+COINBASE_MODE
+EXECUTION_TICKERS
 ACCOUNT_SIZE
 MAX_POSITION_NOTIONAL
 DAILY_LOSS_LIMIT_PCT
@@ -75,44 +177,44 @@ COOLDOWN_MINUTES
 AUTO_HARVEST
 ```
 
-## Shared Storage
+## Deployments
 
-Local `.state` files still work, but the app and GitHub workers live on different machines. If you want one unified live feed and one shared track record, enable Supabase-backed storage.
+Current deployment model:
 
-1. Create a Supabase project.
-2. Run [supabase/schema.sql](/Users/tonysoprano/Documents/New%20project/supabase/schema.sql) in the SQL editor.
-3. Add these secrets to both Streamlit Cloud and GitHub Actions:
+- Streamlit Cloud
+- GitHub Actions
+- Supabase
+- Discord webhook
 
-```text
-SUPABASE_URL
-SUPABASE_SERVICE_ROLE_KEY
-```
+Current workflow:
 
-Once those secrets exist, the app and the workers will share:
+- hourly signal worker
+- every 15 minutes execution worker
+- weekday report worker
 
-- trade ledger
-- equity curve
-- latest saved signal
+Defined in:
 
-If those secrets are missing, the code falls back to local `.state` files.
+- [.github/workflows/heartbeat.yml](/Users/tonysoprano/Documents/New%20project/.github/workflows/heartbeat.yml)
 
-Recommended small-account defaults:
+## Known Constraints
 
-```text
-ALPACA_MODE=paper
-ACCOUNT_SIZE=200
-MAX_POSITION_NOTIONAL=50
-DAILY_LOSS_LIMIT_PCT=0.03
-COOLDOWN_MINUTES=60
-AUTO_HARVEST=false
-```
+- `learning_machine/interface.py` is still the main coupling point
+- broker credentials are still session-oriented in Streamlit
+- Coinbase sandbox is not fully wired in the official SDK path
+- experiment tracking is still more local than ledger/signal storage
+- README naming historically lags behind the newer TELAJ/Guru product direction
 
-## Worker Schedule
+## Migration Docs
 
-The default workflow is in `.github/workflows/heartbeat.yml`:
+- [architecture.md](/Users/tonysoprano/Documents/New%20project/architecture.md)
+- [telaj_migration_plan.md](/Users/tonysoprano/Documents/New%20project/telaj_migration_plan.md)
+- [data_contracts.md](/Users/tonysoprano/Documents/New%20project/data_contracts.md)
+- [onboarding_flow.md](/Users/tonysoprano/Documents/New%20project/onboarding_flow.md)
+- [feature_flags.md](/Users/tonysoprano/Documents/New%20project/feature_flags.md)
 
-- Every hour: macro pulse and Discord regime alert worker
-- Every 15 minutes on weekdays: execution worker for paper/live broker sync
-- 21:05 UTC on weekdays: daily report worker
+## Recommended Next Steps
 
-The execution worker maintains target notional per symbol, so repeated `BUY` signals will not keep stacking the same position every cycle once the target allocation is already in place.
+1. Commit the extracted `domain/` and `services/` files as the new baseline.
+2. Add read-only API routes for planning, board, briefing, media, and scenarios.
+3. Move more read-only logic out of `interface.py`.
+4. Keep broker execution behind Streamlit/workers until auth and user isolation are ready.

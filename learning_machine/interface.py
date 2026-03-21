@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
@@ -30,6 +31,13 @@ except ImportError:
     from learning_machine.signal_worker import latest_state_payload
     from learning_machine.storage import shared_storage_enabled
     from learning_machine.trade_manager import TradeManager
+
+try:
+    from services.planning_engine import PlanningEngine
+    from services.portfolio_doctor import PortfolioDoctorService
+except ImportError:  # pragma: no cover - fallback for mixed deploys
+    PlanningEngine = None
+    PortfolioDoctorService = None
 
 
 APP_NAME = "Guru's Superbrain"
@@ -79,6 +87,22 @@ def get_investment_proxy_history(period: str = "2y") -> pd.DataFrame:
     if helper is None:
         return pd.DataFrame()
     return helper(period)
+
+
+def planner_service_enabled() -> bool:
+    try:
+        raw = str(st.secrets.get("FEATURE_PLANNING_SERVICE", "true")).strip().lower()
+    except Exception:
+        raw = os.getenv("FEATURE_PLANNING_SERVICE", "true").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+def portfolio_doctor_service_enabled() -> bool:
+    try:
+        raw = str(st.secrets.get("FEATURE_PORTFOLIO_DOCTOR_SERVICE", "true")).strip().lower()
+    except Exception:
+        raw = os.getenv("FEATURE_PORTFOLIO_DOCTOR_SERVICE", "true").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
 
 
 def _render_quick_start() -> None:
@@ -515,8 +539,14 @@ def _render_money_planner_view(board: pd.DataFrame) -> None:
         st.info("Planner data is not available yet.")
         return
 
-    comparisons = _build_investment_comparison(history, amount)
-    plan = _build_money_genie_plan(amount=amount, horizon_years=horizon_years, risk_profile=risk_profile, account_type=account_type, board=board)
+    comparisons = _planner_comparison(history, amount)
+    plan = _planner_money_genie_plan(
+        amount=amount,
+        horizon_years=horizon_years,
+        risk_profile=risk_profile,
+        account_type=account_type,
+        board=board,
+    )
 
     top_cols = st.columns([1, 1, 1])
     best = comparisons.iloc[0]
@@ -637,6 +667,37 @@ def _render_everyday_guide(
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_planner_history() -> pd.DataFrame:
     return get_investment_proxy_history(period="2y")
+
+
+def _planner_comparison(history: pd.DataFrame, amount: float) -> pd.DataFrame:
+    if planner_service_enabled() and PlanningEngine is not None:
+        return PlanningEngine().build_investment_comparison(history, amount)
+    return _build_investment_comparison(history, amount)
+
+
+def _planner_money_genie_plan(
+    *,
+    amount: float,
+    horizon_years: int,
+    risk_profile: str,
+    account_type: str,
+    board: pd.DataFrame,
+) -> dict[str, object]:
+    if planner_service_enabled() and PlanningEngine is not None:
+        return PlanningEngine().build_money_genie_plan(
+            amount=amount,
+            horizon_years=horizon_years,
+            risk_profile=risk_profile,
+            account_type=account_type,
+            board=board,
+        )
+    return _build_money_genie_plan(
+        amount=amount,
+        horizon_years=horizon_years,
+        risk_profile=risk_profile,
+        account_type=account_type,
+        board=board,
+    )
 
 
 def _build_investment_comparison(history: pd.DataFrame, amount: float) -> pd.DataFrame:
@@ -1531,40 +1592,9 @@ def _render_portfolio_doctor(board: pd.DataFrame) -> None:
     positions = snapshot.get("positions", [])
     equity = float(snapshot.get("equity", 0.0))
     cash = float(snapshot.get("cash", 0.0))
-    if not positions:
-        cash_pct = 0.0 if equity <= 0 else (cash / max(equity, 1e-9)) * 100.0
-        _glass_card(
-            st,
-            "Portfolio diagnosis",
-            "The account is mostly idle. That is acceptable if the board is defensive, but expensive if strong BUY scores are being ignored.",
-            f"Cash share: {cash_pct:.1f}% | Board top pick: {board.iloc[0]['ticker'] if not board.empty else 'n/a'}",
-        )
-        _render_portfolio_checklist(cash_pct=cash_pct, concentration=0.0, conflict_symbols=[])
-        return
-    rows = pd.DataFrame(positions)
-    if "market_value" in rows:
-        rows["market_value"] = pd.to_numeric(rows["market_value"], errors="coerce").fillna(0.0)
-        total_position_value = float(rows["market_value"].abs().sum())
-    else:
-        total_position_value = 0.0
-    concentration = 0.0 if total_position_value <= 0 else float(rows["market_value"].abs().max() / total_position_value) * 100.0
-    symbols = {str(value).upper() for value in rows.get("symbol", pd.Series(dtype=str)).tolist()}
-    board_actions = {str(row.ticker).upper(): str(row.action) for row in board.itertuples()}
-    conflict_symbols = [symbol for symbol in symbols if board_actions.get(symbol) == "PROTECT"]
-    diagnosis = "Your holdings are reasonably aligned with the current board."
-    if concentration >= 60:
-        diagnosis = "Your account is highly concentrated. One asset is carrying too much emotional and financial weight."
-    elif conflict_symbols:
-        diagnosis = "Guru's Superbrain sees at least one live holding that it would rather protect than own."
-    foot = f"Largest position share: {concentration:.1f}% | Cash: ${cash:,.2f}"
-    if conflict_symbols:
-        foot += " | Conflict: " + ", ".join(conflict_symbols[:3])
-    _glass_card(st, "Portfolio diagnosis", diagnosis, foot)
-    _render_portfolio_checklist(
-        cash_pct=0.0 if equity <= 0 else (cash / max(equity, 1e-9)) * 100.0,
-        concentration=concentration,
-        conflict_symbols=conflict_symbols,
-    )
+    result = _portfolio_doctor_result(positions=positions, equity=equity, cash=cash, board=board)
+    _glass_card(st, "Portfolio diagnosis", str(result["diagnosis"]), str(result["footer"]))
+    st.dataframe(pd.DataFrame(result["checklist"]), use_container_width=True, hide_index=True)
 
 
 def _render_portfolio_checklist(*, cash_pct: float, concentration: float, conflict_symbols: list[str]) -> None:
@@ -1588,6 +1618,76 @@ def _render_portfolio_checklist(*, cash_pct: float, concentration: float, confli
         ]
     )
     st.dataframe(checklist, use_container_width=True, hide_index=True)
+
+
+def _portfolio_doctor_result(*, positions: list[dict[str, object]], equity: float, cash: float, board: pd.DataFrame) -> dict[str, object]:
+    if portfolio_doctor_service_enabled() and PortfolioDoctorService is not None:
+        return PortfolioDoctorService().diagnose(positions=positions, equity=equity, cash=cash, board=board)
+
+    if not positions:
+        cash_pct = 0.0 if equity <= 0 else (cash / max(equity, 1e-9)) * 100.0
+        return {
+            "diagnosis": "The account is mostly idle. That is acceptable if the board is defensive, but expensive if strong BUY scores are being ignored.",
+            "footer": f"Cash share: {cash_pct:.1f}% | Board top pick: {board.iloc[0]['ticker'] if not board.empty else 'n/a'}",
+            "checklist": [
+                {
+                    "Simple check": "Do I have too much in one thing?",
+                    "Answer": "No",
+                    "What it means": "Your money is not trapped in one bet.",
+                },
+                {
+                    "Simple check": "Am I mostly sitting in cash?",
+                    "Answer": "Yes" if cash_pct >= 70 else "No",
+                    "What it means": "That is okay if the board is scared." if cash_pct >= 70 else "You already have some money at work.",
+                },
+                {
+                    "Simple check": "Do my holdings fight the model?",
+                    "Answer": "No",
+                    "What it means": "No live holdings are currently fighting the model.",
+                },
+            ],
+        }
+
+    rows = pd.DataFrame(positions)
+    if "market_value" in rows:
+        rows["market_value"] = pd.to_numeric(rows["market_value"], errors="coerce").fillna(0.0)
+        total_position_value = float(rows["market_value"].abs().sum())
+    else:
+        total_position_value = 0.0
+    concentration = 0.0 if total_position_value <= 0 else float(rows["market_value"].abs().max() / total_position_value) * 100.0
+    symbols = {str(value).upper() for value in rows.get("symbol", pd.Series(dtype=str)).tolist()}
+    board_actions = {str(row.ticker).upper(): str(row.action) for row in board.itertuples()}
+    conflict_symbols = [symbol for symbol in symbols if board_actions.get(symbol) == "PROTECT"]
+    diagnosis = "Your holdings are reasonably aligned with the current board."
+    if concentration >= 60:
+        diagnosis = "Your account is highly concentrated. One asset is carrying too much emotional and financial weight."
+    elif conflict_symbols:
+        diagnosis = "Guru's Superbrain sees at least one live holding that it would rather protect than own."
+    foot = f"Largest position share: {concentration:.1f}% | Cash: ${cash:,.2f}"
+    if conflict_symbols:
+        foot += " | Conflict: " + ", ".join(conflict_symbols[:3])
+    cash_pct = 0.0 if equity <= 0 else (cash / max(equity, 1e-9)) * 100.0
+    return {
+        "diagnosis": diagnosis,
+        "footer": foot,
+        "checklist": [
+            {
+                "Simple check": "Do I have too much in one thing?",
+                "Answer": "Yes" if concentration >= 60 else "No",
+                "What it means": "One asset dominates the account." if concentration >= 60 else "Your money is not trapped in one bet.",
+            },
+            {
+                "Simple check": "Am I mostly sitting in cash?",
+                "Answer": "Yes" if cash_pct >= 70 else "No",
+                "What it means": "That is okay if the board is scared." if cash_pct >= 70 else "You already have some money at work.",
+            },
+            {
+                "Simple check": "Do my holdings fight the model?",
+                "Answer": "Yes" if conflict_symbols else "No",
+                "What it means": f"Conflicts: {', '.join(conflict_symbols[:3])}" if conflict_symbols else "Your holdings broadly agree with the current board.",
+            },
+        ],
+    }
 
 
 def _build_sentiment_gauge(score: int) -> go.Figure:

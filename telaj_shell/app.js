@@ -508,7 +508,7 @@ function loadOnboardingState() {
     state.onboarding = {
       completed: Boolean(parsed.completed),
       currentStep: Number(parsed.currentStep ?? 0),
-      stage: parsed.stage === "intent" ? "intent" : "questions",
+      stage: parsed.stage === "complete" ? "complete" : parsed.stage === "intent" ? "intent" : "questions",
       answers: typeof parsed.answers === "object" && parsed.answers ? parsed.answers : {},
       profiles:
         typeof parsed.profiles === "object" && parsed.profiles
@@ -531,6 +531,8 @@ function loadOnboardingState() {
     } else if (!state.onboarding.intent?.analysis) {
       state.onboarding.completed = false;
       state.onboarding.stage = "intent";
+    } else if (state.onboarding.completed) {
+      state.onboarding.stage = "complete";
     }
   } catch (error) {
     console.warn("TELAJ onboarding state could not be restored.", error);
@@ -1012,9 +1014,10 @@ function applyProfilesToNarrative() {
 }
 
 function renderOnboarding() {
-  if (state.onboarding.completed) {
+  if (state.onboarding.completed || state.onboarding.stage === "complete") {
     onboardingShell.classList.remove("is-active");
     appShell.classList.remove("is-hidden");
+    onboardingShell.innerHTML = "";
     return;
   }
 
@@ -1201,6 +1204,7 @@ function renderIntentStage() {
     state.onboarding.intent.analysis = await analyzeIntent(state.onboarding.intent.notes, state.onboarding.profiles);
     state.onboarding.intent.confirmed = Boolean(state.onboarding.intent.analysis);
     state.onboarding.completed = true;
+    state.onboarding.stage = "complete";
     persistOnboardingState();
     applyProfilesToNarrative();
     renderOnboarding();
@@ -1702,21 +1706,31 @@ function renderProgress() {
 function renderRealEstate() {
   calculatePropertyAppraisal();
   document.getElementById("property-signal").innerHTML = `
-    <div class="eyebrow">Property signal</div>
+    <div class="eyebrow">Property decision</div>
     <h3>${state.property.signal}</h3>
     <p class="body-copy">${state.property.note}</p>
-    <div class="action-row">
-      <button class="action-button">Model property</button>
-      <button class="action-button">Run vacancy stress</button>
-      <button class="ghost-button">Keep preparing</button>
+    <div class="insight-grid">
+      <div class="insight-card">
+        <div class="micro-label">TELAJ stance</div>
+        <div class="panel-copy">Preparation before expansion</div>
+      </div>
+      <div class="insight-card">
+        <div class="micro-label">Why this matters</div>
+        <div class="panel-copy">The household needs resilient liquidity, financing discipline, and vacancy tolerance before the next property move.</div>
+      </div>
+    </div>
+    <div class="property-action-row">
+      <button class="action-button primary" id="property-run-appraisal-top">Run appraisal</button>
+      <button class="action-button" id="property-view-checklist-top">View checklist</button>
+      <button class="ghost-button" id="property-go-allocation">Back to allocation</button>
     </div>
   `;
   document.getElementById("property-metrics").innerHTML = `
-    <div class="eyebrow">Readiness metrics</div>
-    <h3>What TELAJ sees</h3>
+    <div class="eyebrow">Property posture</div>
+    <h3>Readiness at a glance</h3>
     <div class="stats-grid">
       <div class="stat-box">
-        <div class="stat-label">Quick appraisal</div>
+        <div class="stat-label">Estimated value</div>
         <div class="stat-value">€${Math.round(state.propertyAppraisal.estimatedValue).toLocaleString()}</div>
       </div>
       ${state.property.metrics
@@ -1732,49 +1746,71 @@ function renderRealEstate() {
     </div>
   `;
   document.getElementById("property-checklist").innerHTML = `
-    <div class="eyebrow">Quick appraisal</div>
-    <h3>Estimate property value by address and size</h3>
+    <div class="eyebrow">Property lab</div>
+    <h3>Quick appraisal and readiness plan</h3>
     <p class="body-copy">Educational only. This is a rough heuristic, not a formal valuation or professional appraisal.</p>
-    <div class="input-stack">
-      <label class="input-field input-span-2">
-        <span class="micro-label">Address / city</span>
-        <input id="property-address" type="text" value="${state.propertyAppraisal.address}" placeholder="Via Roma 10, Milano or London, UK" />
-      </label>
-      <label class="input-field">
-        <span class="micro-label">Size</span>
-        <input id="property-size" type="number" min="0" step="1" value="${state.propertyAppraisal.size}" />
-      </label>
-      <label class="input-field">
-        <span class="micro-label">Unit</span>
-        <select id="property-unit">
-          <option value="sqm" ${state.propertyAppraisal.unit === "sqm" ? "selected" : ""}>sq m</option>
-          <option value="sqft" ${state.propertyAppraisal.unit === "sqft" ? "selected" : ""}>sq ft</option>
-        </select>
-      </label>
-      <div class="action-row input-span-2">
-        <button class="action-button primary" id="run-appraisal">Run appraisal</button>
-        <button class="ghost-button" id="property-checklist-toggle">Show readiness checklist</button>
+    <div class="property-stack">
+      <div class="subpanel">
+        <div class="micro-label">Appraisal inputs</div>
+        <div class="input-stack">
+          <label class="input-field input-span-2">
+            <span class="micro-label">Address / city</span>
+            <input id="property-address" type="text" value="${state.propertyAppraisal.address}" placeholder="Via Roma 10, Milano or London, UK" />
+          </label>
+          <label class="input-field">
+            <span class="micro-label">Size</span>
+            <input id="property-size" type="number" min="0" step="1" value="${state.propertyAppraisal.size}" />
+          </label>
+          <label class="input-field">
+            <span class="micro-label">Unit</span>
+            <select id="property-unit">
+              <option value="sqm" ${state.propertyAppraisal.unit === "sqm" ? "selected" : ""}>sq m</option>
+              <option value="sqft" ${state.propertyAppraisal.unit === "sqft" ? "selected" : ""}>sq ft</option>
+            </select>
+          </label>
+          <div class="property-action-row input-span-2">
+            <button class="action-button primary" id="run-appraisal">Run appraisal</button>
+            <button class="ghost-button" id="property-checklist-toggle">Jump to checklist</button>
+          </div>
+        </div>
       </div>
-    </div>
-    <div class="insight-grid">
-      <div class="insight-card">
-        <div class="micro-label">Estimated range</div>
-        <div class="panel-copy">€${Math.round(state.propertyAppraisal.valueLow).toLocaleString()} to €${Math.round(state.propertyAppraisal.valueHigh).toLocaleString()}</div>
+      <div class="subpanel">
+        <div class="micro-label">Appraisal output</div>
+        <div class="insight-grid">
+          <div class="insight-card">
+            <div class="micro-label">Estimated range</div>
+            <div class="panel-copy">€${Math.round(state.propertyAppraisal.valueLow).toLocaleString()} to €${Math.round(state.propertyAppraisal.valueHigh).toLocaleString()}</div>
+          </div>
+          <div class="insight-card">
+            <div class="micro-label">Price per sq m</div>
+            <div class="panel-copy">€${Math.round(state.propertyAppraisal.pricePerSqm).toLocaleString()} / sq m</div>
+          </div>
+        </div>
+        <div class="section-spacer"></div>
+        <div class="micro-label">Appraisal note</div>
+        <div class="panel-copy">${state.propertyAppraisal.note}</div>
       </div>
-      <div class="insight-card">
-        <div class="micro-label">Price per sq m</div>
-        <div class="panel-copy">€${Math.round(state.propertyAppraisal.pricePerSqm).toLocaleString()} / sq m</div>
+      <div class="subpanel" id="property-readiness-list">
+        <div class="micro-label">Before the next property move</div>
+        <ul class="clean-list">
+          ${state.property.checklist.map((item) => `<li>${item}</li>`).join("")}
+        </ul>
       </div>
-    </div>
-    <div class="onboarding-summary">
-      <div class="micro-label">Appraisal note</div>
-      <div class="panel-copy">${state.propertyAppraisal.note}</div>
-      <div class="micro-label">Before real estate</div>
-      <ul class="clean-list">
-        ${state.property.checklist.map((item) => `<li>${item}</li>`).join("")}
-      </ul>
     </div>
   `;
+  document.getElementById("property-run-appraisal-top").addEventListener("click", () => {
+    const target = document.getElementById("property-checklist");
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
+  document.getElementById("property-view-checklist-top").addEventListener("click", () => {
+    const target = document.getElementById("property-readiness-list");
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
+  document.getElementById("property-go-allocation").addEventListener("click", () => setView("allocation"));
   document.getElementById("run-appraisal").addEventListener("click", () => {
     state.propertyAppraisal.address = document.getElementById("property-address").value;
     state.propertyAppraisal.size = Number(document.getElementById("property-size").value || 0);
@@ -1783,7 +1819,7 @@ function renderRealEstate() {
     renderRealEstate();
   });
   document.getElementById("property-checklist-toggle").addEventListener("click", () => {
-    const target = document.querySelector("#property-checklist .clean-list");
+    const target = document.getElementById("property-readiness-list");
     if (target) {
       target.scrollIntoView({ behavior: "smooth", block: "start" });
     }

@@ -707,6 +707,12 @@ select:focus {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.property-action-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .action-button,
 .ghost-button {
   padding: 12px 14px;
@@ -947,6 +953,19 @@ select:focus {
   padding: 14px;
 }
 
+.property-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.subpanel {
+  border: 2px solid var(--border);
+  background: var(--card-strong);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
 .insight-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1007,6 +1026,7 @@ select:focus {
 
   .stats-grid,
   .action-row,
+  .property-action-row,
   .achievement-grid,
   .insight-grid,
   .answer-grid,

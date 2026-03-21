@@ -775,6 +775,21 @@ select:focus {
   gap: 12px;
 }
 
+.allocation-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.allocation-block {
+  display: grid;
+  gap: 8px;
+  border: 2px solid var(--border);
+  background: var(--card-strong);
+  padding: 12px;
+}
+
 .allocation-row {
   grid-template-columns: 110px 1fr auto;
   align-items: center;
@@ -993,6 +1008,22 @@ select:focus {
 @keyframes pulseDot {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.5; transform: scale(0.82); }
+}
+
+@media (max-width: 1500px) {
+  .allocation-grid,
+  .signal-grid,
+  .progress-grid,
+  .real-estate-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .allocation-grid > *,
+  .signal-grid > *,
+  .progress-grid > *,
+  .real-estate-grid > * {
+    grid-column: auto;
+  }
 }
 
 @media (max-width: 1180px) {

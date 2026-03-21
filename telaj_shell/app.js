@@ -1607,31 +1607,68 @@ function renderLeaderboard() {
 
 function renderAllocationView() {
   document.getElementById("allocation-main").innerHTML = `
-    <div class="eyebrow">Main move</div>
+    <div class="eyebrow">Capital call</div>
     <h3>${state.recommendation.headline}</h3>
     <p class="body-copy">${state.recommendation.summary}</p>
+    <div class="allocation-hero-actions">
+      <div class="task-pill">Primary: ${state.recommendation.primaryAction}</div>
+      <div class="task-pill">Avoid: ${state.recommendation.avoid}</div>
+    </div>
     <div class="insight-grid">
       <div class="insight-card"><div class="micro-label">Primary action</div><div class="panel-copy">${state.recommendation.primaryAction}</div></div>
       <div class="insight-card"><div class="micro-label">Secondary action</div><div class="panel-copy">${state.recommendation.secondaryAction}</div></div>
       <div class="insight-card"><div class="micro-label">Growth sleeve</div><div class="panel-copy">${state.recommendation.growthSleeve}</div></div>
       <div class="insight-card"><div class="micro-label">Avoid</div><div class="panel-copy">${state.recommendation.avoid}</div></div>
     </div>
+    <div class="property-action-row">
+      <button class="action-button primary" id="allocation-go-home">View morning call</button>
+      <button class="action-button" id="allocation-go-signals">Review signal history</button>
+      <button class="ghost-button" id="allocation-go-cash">Check reserve status</button>
+    </div>
   `;
-  document.getElementById("allocation-bars").innerHTML = document.getElementById("allocation-snapshot").innerHTML;
+  document.getElementById("allocation-bars").innerHTML = `
+    <div class="eyebrow">Current mix</div>
+    <h3>How the household is currently positioned</h3>
+    <div class="bar-stack">
+      ${state.allocation
+        .map(
+          (item) => `
+            <div class="allocation-block">
+              <div class="allocation-row">
+                <div class="row-label">${item.label}</div>
+                <div class="bar-track"><div class="bar-fill" style="width:${item.weight}%"></div></div>
+                <div class="allocation-number">${item.weight}%</div>
+              </div>
+              <div class="list-note">${item.note}</div>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+  `;
   document.getElementById("allocation-rules").innerHTML = `
-    <div class="eyebrow">Rules</div>
-    <h3>Allocation logic</h3>
+    <div class="eyebrow">TELAJ logic</div>
+    <h3>Why this portfolio posture makes sense</h3>
     <ul class="clean-list">
       ${state.rules.map((item) => `<li>${item}</li>`).join("")}
     </ul>
   `;
   document.getElementById("allocation-watchouts").innerHTML = `
-    <div class="eyebrow">Watchouts</div>
-    <h3>Do not confuse activity with progress</h3>
+    <div class="eyebrow">Guardrails</div>
+    <h3>What can quietly break the plan</h3>
     <ul class="clean-list">
       ${state.watchouts.map((item) => `<li>${item}</li>`).join("")}
     </ul>
   `;
+  document.getElementById("allocation-go-home").addEventListener("click", () => setView("home"));
+  document.getElementById("allocation-go-signals").addEventListener("click", () => setView("signals"));
+  document.getElementById("allocation-go-cash").addEventListener("click", () => {
+    setView("home");
+    const target = document.getElementById("cash-status");
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
 }
 
 function renderSignalsView() {

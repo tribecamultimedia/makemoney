@@ -55,6 +55,34 @@ const defaultState = {
     { ticker: "VNQ", move: "-0.4%", signal: "Prepare", trend: "down" },
     { ticker: "SGOV", move: "+0.1%", signal: "Hold reserve", trend: "up" },
   ],
+  marketTape: [
+    { ticker: "NVDA", price: 132.48, changePct: 2.4, trend: "up" },
+    { ticker: "TSLA", price: 211.34, changePct: -1.1, trend: "down" },
+    { ticker: "MU", price: 118.22, changePct: 1.8, trend: "up" },
+    { ticker: "VRT", price: 96.73, changePct: 3.2, trend: "up" },
+    { ticker: "SMCI", price: 58.11, changePct: -2.6, trend: "down" },
+    { ticker: "INTC", price: 34.62, changePct: 0.7, trend: "up" },
+  ],
+  highlightedSignals: [
+    {
+      ticker: "GLD",
+      label: "Defensive add",
+      note: "Gold is the cleaner defensive sleeve if the household still needs ballast.",
+      action: "Add slowly",
+    },
+    {
+      ticker: "SGOV",
+      label: "Reserve builder",
+      note: "Short-duration cash proxies help when liquidity matters more than excitement.",
+      action: "Hold reserve",
+    },
+    {
+      ticker: "VRT",
+      label: "Momentum watch",
+      note: "Interesting mover, but TELAJ should only let this matter after the core plan is funded.",
+      action: "Watch only",
+    },
+  ],
   recommendation: {
     headline: "Increase liquidity first, then add gold and broad ETFs",
     summary: "TELAJ is not against investing. It wants the household to be harder to destabilize before you push further into risk.",
@@ -454,6 +482,8 @@ async function loadMockApiState() {
       stats: familyDashboard.stats ?? state.stats,
       allocation: familyDashboard.allocation ?? state.allocation,
       watchlist: familyDashboard.watchlist ?? state.watchlist,
+      marketTape: familyDashboard.marketTape ?? state.marketTape,
+      highlightedSignals: familyDashboard.highlightedSignals ?? state.highlightedSignals,
       recommendation: allocation.recommendation ?? state.recommendation,
       rules: allocation.rules ?? state.rules,
       watchouts: allocation.watchouts ?? state.watchouts,
@@ -1040,20 +1070,36 @@ function renderTasks() {
 function renderWatchlist() {
   const panel = document.getElementById("watchlist");
   panel.innerHTML = `
-    <div class="eyebrow">Watchlist</div>
-    <h3>Live-style ticker strip</h3>
-    <div class="watchlist-list">
-      ${state.watchlist
+    <div class="eyebrow">Market tape</div>
+    <h3>Live movers and highlighted signals</h3>
+    <div class="ticker-tape">
+      ${state.marketTape
         .map(
           (item) => `
-            <div class="watch-item">
+            <div class="tape-item">
+              <div class="row-label">${item.ticker}</div>
+              <div class="tape-price">$${Number(item.price).toFixed(2)}</div>
+              <div class="watch-badge ${item.trend}">${item.changePct > 0 ? "+" : ""}${Number(item.changePct).toFixed(1)}%</div>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+    <div class="section-spacer"></div>
+    <div class="eyebrow">Highlighted signals</div>
+    <div class="highlight-list">
+      ${state.highlightedSignals
+        .map(
+          (item) => `
+            <div class="highlight-item">
               <div class="watch-top">
                 <div>
                   <div class="row-label">${item.ticker}</div>
-                  <div class="panel-copy">${item.signal}</div>
+                  <div class="highlight-title">${item.label}</div>
                 </div>
-                <div class="watch-badge ${item.trend}">${item.move}</div>
+                <div class="signal-badge ${item.action.toLowerCase().includes("watch") ? "warn" : "good"}">${item.action}</div>
               </div>
+              <div class="panel-copy">${item.note}</div>
             </div>
           `
         )

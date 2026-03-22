@@ -100,7 +100,7 @@ select:focus {
 }
 
 .auth-logo {
-  width: clamp(180px, 24vw, 230px);
+  width: clamp(240px, 30vw, 320px);
   height: auto;
   display: block;
   margin-bottom: 12px;
@@ -562,7 +562,7 @@ select:focus {
 }
 
 .brand-logo {
-  width: 180px;
+  width: 220px;
   max-width: 100%;
   height: auto;
   display: block;

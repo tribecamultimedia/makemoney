@@ -190,16 +190,16 @@ const defaultState = {
     ],
   },
   liquidityDetails: {
-    liquidAssets: 18000,
-    monthlyNeed: 4200,
+    liquidAssets: 0,
+    monthlyNeed: 0,
   },
   financialPosition: {
-    investments: 42000,
-    retirement: 28000,
+    investments: 0,
+    retirement: 0,
     realEstate: 0,
     business: 0,
-    creditCardDebt: 3500,
-    loans: 12000,
+    creditCardDebt: 0,
+    loans: 0,
     mortgageDebt: 0,
   },
   propertyAppraisal: {
@@ -2178,6 +2178,51 @@ function renderFinancialPosition() {
   panel.innerHTML = `
     <div class="eyebrow">Financial position</div>
     <h3>Put the household position at the center of every move</h3>
+    <div class="micro-label">Start here</div>
+    <div class="input-stack financial-input-stack">
+      <label class="input-field">
+        <span class="micro-label">Liquid cash</span>
+        <input id="fp-liquid" type="number" min="0" step="1000" value="${state.liquidityDetails.liquidAssets}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Monthly household need</span>
+        <input id="fp-monthly-need" type="number" min="0" step="100" value="${state.liquidityDetails.monthlyNeed}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Investments</span>
+        <input id="fp-investments" type="number" min="0" step="1000" value="${state.financialPosition.investments}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Retirement</span>
+        <input id="fp-retirement" type="number" min="0" step="1000" value="${state.financialPosition.retirement}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Real estate</span>
+        <input id="fp-real-estate" type="number" min="0" step="1000" value="${state.financialPosition.realEstate}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Business</span>
+        <input id="fp-business" type="number" min="0" step="1000" value="${state.financialPosition.business}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Credit card debt</span>
+        <input id="fp-credit-card" type="number" min="0" step="100" value="${state.financialPosition.creditCardDebt}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Loans</span>
+        <input id="fp-loans" type="number" min="0" step="100" value="${state.financialPosition.loans}" />
+      </label>
+      <label class="input-field input-span-2">
+        <span class="micro-label">Mortgage debt</span>
+        <input id="fp-mortgage" type="number" min="0" step="1000" value="${state.financialPosition.mortgageDebt}" />
+      </label>
+      <div class="property-action-row input-span-2">
+        <button class="action-button primary" id="save-financial-position">Update position</button>
+        <button class="action-button" id="financial-go-allocation">Use this in allocation</button>
+      </div>
+    </div>
+    <div class="section-spacer"></div>
+    <div class="micro-label">Then see the map</div>
     <div class="financial-layout">
       <div class="financial-chart-wrap">
         ${financialPieChart(position.assets)}
@@ -2251,50 +2296,6 @@ function renderFinancialPosition() {
           `
         )
         .join("")}
-    </div>
-    <div class="section-spacer"></div>
-    <div class="micro-label">Update the household map</div>
-    <div class="input-stack">
-      <label class="input-field">
-        <span class="micro-label">Liquid cash</span>
-        <input id="fp-liquid" type="number" min="0" step="1000" value="${state.liquidityDetails.liquidAssets}" />
-      </label>
-      <label class="input-field">
-        <span class="micro-label">Monthly household need</span>
-        <input id="fp-monthly-need" type="number" min="0" step="100" value="${state.liquidityDetails.monthlyNeed}" />
-      </label>
-      <label class="input-field">
-        <span class="micro-label">Investments</span>
-        <input id="fp-investments" type="number" min="0" step="1000" value="${state.financialPosition.investments}" />
-      </label>
-      <label class="input-field">
-        <span class="micro-label">Retirement</span>
-        <input id="fp-retirement" type="number" min="0" step="1000" value="${state.financialPosition.retirement}" />
-      </label>
-      <label class="input-field">
-        <span class="micro-label">Real estate</span>
-        <input id="fp-real-estate" type="number" min="0" step="1000" value="${state.financialPosition.realEstate}" />
-      </label>
-      <label class="input-field">
-        <span class="micro-label">Business</span>
-        <input id="fp-business" type="number" min="0" step="1000" value="${state.financialPosition.business}" />
-      </label>
-      <label class="input-field">
-        <span class="micro-label">Credit card debt</span>
-        <input id="fp-credit-card" type="number" min="0" step="100" value="${state.financialPosition.creditCardDebt}" />
-      </label>
-      <label class="input-field">
-        <span class="micro-label">Loans</span>
-        <input id="fp-loans" type="number" min="0" step="100" value="${state.financialPosition.loans}" />
-      </label>
-      <label class="input-field input-span-2">
-        <span class="micro-label">Mortgage debt</span>
-        <input id="fp-mortgage" type="number" min="0" step="1000" value="${state.financialPosition.mortgageDebt}" />
-      </label>
-      <div class="property-action-row input-span-2">
-        <button class="action-button primary" id="save-financial-position">Update position</button>
-        <button class="action-button" id="financial-go-allocation">Use this in allocation</button>
-      </div>
     </div>
   `;
 

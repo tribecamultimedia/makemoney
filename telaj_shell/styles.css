@@ -65,6 +65,105 @@ select:focus {
   display: none;
 }
 
+.auth-shell {
+  min-height: 100vh;
+  display: none;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top left, rgba(31, 107, 255, 0.12), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(77, 145, 255, 0.08), transparent 32%),
+    var(--bg);
+}
+
+.auth-shell.is-active {
+  display: grid;
+}
+
+.auth-card {
+  width: min(980px, 100%);
+  min-height: 70vh;
+  border: 2px solid var(--border-strong);
+  background: linear-gradient(180deg, rgba(31, 107, 255, 0.06), rgba(23, 24, 27, 1));
+  box-shadow: 14px 14px 0 rgba(0, 0, 0, 0.4);
+  padding: 28px;
+  display: grid;
+  gap: 22px;
+  align-content: start;
+}
+
+.auth-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+}
+
+.auth-status,
+.auth-error,
+.auth-info {
+  padding: 10px 12px;
+  border: 2px solid var(--border);
+  background: var(--card);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.auth-status,
+.auth-info {
+  color: var(--accent-strong);
+}
+
+.auth-error {
+  color: var(--red);
+  border-color: rgba(255, 107, 107, 0.45);
+}
+
+.auth-options,
+.auth-form,
+.auth-feedback {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-options {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.auth-option {
+  min-height: 120px;
+  border: 2px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  text-align: left;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  cursor: pointer;
+}
+
+.auth-option.is-selected,
+.auth-option:hover {
+  border-color: var(--accent);
+  background: var(--accent-faint);
+}
+
+.auth-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.auth-note {
+  border: 2px solid var(--border);
+  background: var(--card-strong);
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+}
+
 .onboarding-shell {
   min-height: 100vh;
   display: none;
@@ -1062,6 +1161,13 @@ select:focus {
 
   .hero-shell {
     grid-template-columns: 1fr;
+  }
+
+  .auth-head,
+  .auth-options,
+  .auth-form {
+    grid-template-columns: 1fr;
+    display: grid;
   }
 
   .home-grid,

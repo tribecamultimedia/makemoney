@@ -1,6 +1,14 @@
 const defaultState = {
   activeView: "home",
   dataSource: "Embedded fallback",
+  auth: {
+    authenticated: false,
+    mode: "gate",
+    guest: false,
+    email: "",
+    error: "",
+    info: "",
+  },
   onboarding: {
     completed: false,
     currentStep: 0,
@@ -197,6 +205,7 @@ const defaultState = {
 };
 
 const state = structuredClone(defaultState);
+const AUTH_STORAGE_KEY = "telaj-auth-v1";
 const ONBOARDING_STORAGE_KEY = "telaj-onboarding-v1";
 const WEALTH_INPUTS_STORAGE_KEY = "telaj-wealth-inputs-v1";
 const questionBank = [
@@ -493,7 +502,9 @@ const questionBank = [
 const navItems = document.querySelectorAll(".nav-item");
 const views = document.querySelectorAll(".view");
 const appShell = document.getElementById("app-shell");
+const authShell = document.getElementById("auth-shell");
 const onboardingShell = document.getElementById("onboarding-shell");
+let supabaseClient = null;
 
 const mockEndpoints = {
   familyDashboard: "./mock-api/family-dashboard.json",
@@ -502,6 +513,56 @@ const mockEndpoints = {
   progress: "./mock-api/progress.json",
   realEstate: "./mock-api/real-estate.json",
 };
+
+function initSupabaseClient() {
+  const config = window.TELAJ_CONFIG || {};
+  if (!config.supabaseUrl || !config.supabaseAnonKey || !window.supabase?.createClient) {
+    return null;
+  }
+
+  if (!supabaseClient) {
+    supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+  }
+
+  return supabaseClient;
+}
+
+function loadAuthState() {
+  try {
+    const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+    const parsed = JSON.parse(raw);
+    state.auth = {
+      authenticated: Boolean(parsed.authenticated),
+      mode: typeof parsed.mode === "string" ? parsed.mode : "gate",
+      guest: Boolean(parsed.guest),
+      email: typeof parsed.email === "string" ? parsed.email : "",
+      error: "",
+      info: typeof parsed.info === "string" ? parsed.info : "",
+    };
+  } catch (error) {
+    console.warn("TELAJ auth state could not be restored.", error);
+  }
+}
+
+function persistAuthState() {
+  window.localStorage.setItem(
+    AUTH_STORAGE_KEY,
+    JSON.stringify({
+      authenticated: state.auth.authenticated,
+      mode: state.auth.mode,
+      guest: state.auth.guest,
+      email: state.auth.email,
+      info: state.auth.info,
+    })
+  );
+}
+
+function getAuthAvailability() {
+  return Boolean(initSupabaseClient());
+}
 
 function mergeState(payload) {
   Object.assign(state, payload);
@@ -1037,6 +1098,13 @@ function applyProfilesToNarrative() {
 }
 
 function renderOnboarding() {
+  if (!state.auth.authenticated) {
+    onboardingShell.classList.remove("is-active");
+    onboardingShell.innerHTML = "";
+    appShell.classList.add("is-hidden");
+    return;
+  }
+
   if (state.onboarding.completed || state.onboarding.stage === "complete") {
     onboardingShell.classList.remove("is-active");
     appShell.classList.remove("is-hidden");
@@ -1133,6 +1201,164 @@ function renderOnboarding() {
     persistOnboardingState();
     renderOnboarding();
   });
+}
+
+function renderAuthShell() {
+  if (state.auth.authenticated) {
+    authShell.classList.remove("is-active");
+    authShell.innerHTML = "";
+    return;
+  }
+
+  const supabaseReady = getAuthAvailability();
+  const mode = state.auth.mode || "gate";
+  authShell.classList.add("is-active");
+  appShell.classList.add("is-hidden");
+  onboardingShell.classList.remove("is-active");
+  onboardingShell.innerHTML = "";
+
+  authShell.innerHTML = `
+    <div class="auth-card">
+      <div class="auth-head">
+        <div>
+          <div class="eyebrow">TELAJ ACCESS</div>
+          <h1 class="onboarding-title">Choose how you want to enter TELAJ.</h1>
+          <p class="onboarding-copy">Use guest mode to start quickly, or create an account so your household profile follows you across devices.</p>
+        </div>
+        <div class="auth-status">${supabaseReady ? "Supabase ready" : "Guest mode ready"}</div>
+      </div>
+      <div class="auth-options">
+        <button class="auth-option ${mode === "guest" ? "is-selected" : ""}" id="auth-guest">
+          <div class="answer-title">Continue as guest</div>
+          <div class="answer-note">Fastest path. Good for trying TELAJ before creating a permanent account.</div>
+        </button>
+        <button class="auth-option ${mode === "signup" ? "is-selected" : ""}" id="auth-signup">
+          <div class="answer-title">Create account</div>
+          <div class="answer-note">Use email and password so TELAJ can save your profile more permanently.</div>
+        </button>
+        <button class="auth-option ${mode === "login" ? "is-selected" : ""}" id="auth-login">
+          <div class="answer-title">Log in</div>
+          <div class="answer-note">Return to your saved TELAJ household, intent profile, and balance-sheet data.</div>
+        </button>
+      </div>
+      ${
+        mode === "signup" || mode === "login"
+          ? `
+            <div class="auth-form">
+              <label class="input-field">
+                <span class="micro-label">Email</span>
+                <input id="auth-email" type="email" value="${state.auth.email}" placeholder="you@example.com" />
+              </label>
+              <label class="input-field">
+                <span class="micro-label">Password</span>
+                <input id="auth-password" type="password" placeholder="Minimum 6 characters" />
+              </label>
+            </div>
+          `
+          : `
+            <div class="auth-note">
+              <div class="micro-label">Guest mode</div>
+              <div class="panel-copy">Guest mode lets you start immediately. Later you can upgrade to a permanent account without rebuilding the household profile.</div>
+            </div>
+          `
+      }
+      <div class="auth-feedback">
+        ${state.auth.error ? `<div class="auth-error">${state.auth.error}</div>` : ""}
+        ${state.auth.info ? `<div class="auth-info">${state.auth.info}</div>` : ""}
+        ${!supabaseReady ? `<div class="auth-info">Supabase public config is not set yet, so email login is disabled and guest mode will use local preview access.</div>` : ""}
+      </div>
+      <div class="onboarding-actions">
+        <div class="task-pill">${supabaseReady ? "Auth provider connected" : "Preview auth shell"}</div>
+        <button class="action-button primary" id="auth-continue">${
+          mode === "signup" ? "Create account" : mode === "login" ? "Log in" : "Continue as guest"
+        }</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("auth-guest")?.addEventListener("click", () => {
+    state.auth.mode = "guest";
+    state.auth.error = "";
+    state.auth.info = "";
+    renderAuthShell();
+  });
+  document.getElementById("auth-signup")?.addEventListener("click", () => {
+    state.auth.mode = "signup";
+    state.auth.error = "";
+    state.auth.info = "";
+    renderAuthShell();
+  });
+  document.getElementById("auth-login")?.addEventListener("click", () => {
+    state.auth.mode = "login";
+    state.auth.error = "";
+    state.auth.info = "";
+    renderAuthShell();
+  });
+  document.getElementById("auth-continue")?.addEventListener("click", async () => {
+    await handleAuthContinue();
+  });
+}
+
+async function handleAuthContinue() {
+  state.auth.error = "";
+  state.auth.info = "";
+  const client = initSupabaseClient();
+
+  if (state.auth.mode === "guest") {
+    if (client) {
+      const { data, error } = await client.auth.signInAnonymously();
+      if (error) {
+        state.auth.error = error.message;
+        renderAuthShell();
+        return;
+      }
+      state.auth.authenticated = true;
+      state.auth.guest = true;
+      state.auth.email = data?.user?.email || "";
+      state.auth.info = "Guest session started.";
+    } else {
+      state.auth.authenticated = true;
+      state.auth.guest = true;
+      state.auth.info = "Guest preview session started.";
+    }
+    persistAuthState();
+    renderAuthShell();
+    renderOnboarding();
+    return;
+  }
+
+  const email = document.getElementById("auth-email")?.value?.trim() || "";
+  const password = document.getElementById("auth-password")?.value || "";
+  state.auth.email = email;
+
+  if (!client) {
+    state.auth.error = "Supabase is not configured yet. Add the public URL and anon key to enable account auth.";
+    renderAuthShell();
+    return;
+  }
+  if (!email || !password) {
+    state.auth.error = "Email and password are required.";
+    renderAuthShell();
+    return;
+  }
+
+  const result =
+    state.auth.mode === "signup"
+      ? await client.auth.signUp({ email, password })
+      : await client.auth.signInWithPassword({ email, password });
+
+  if (result.error) {
+    state.auth.error = result.error.message;
+    renderAuthShell();
+    return;
+  }
+
+  state.auth.authenticated = true;
+  state.auth.guest = false;
+  state.auth.info = state.auth.mode === "signup" ? "Account created. Continue into TELAJ." : "Logged in.";
+  persistAuthState();
+  renderAuthShell();
+  renderOnboarding();
 }
 
 function renderIntentStage() {
@@ -2091,9 +2317,23 @@ function renderAll() {
 }
 
 async function bootstrap() {
+  initSupabaseClient();
+  loadAuthState();
   loadOnboardingState();
   loadWealthInputs();
   await loadMockApiState();
+  if (supabaseClient) {
+    try {
+      const { data } = await supabaseClient.auth.getSession();
+      if (data?.session?.user) {
+        state.auth.authenticated = true;
+        state.auth.guest = Boolean(data.session.user.is_anonymous);
+        state.auth.email = data.session.user.email || "";
+      }
+    } catch (error) {
+      console.warn("TELAJ auth session could not be restored.", error);
+    }
+  }
   if (state.onboarding.completed && (!state.onboarding.profiles?.householdProfile || !state.onboarding.profiles?.behaviorProfile || !state.onboarding.profiles?.goalProfile)) {
     state.onboarding.profiles = deriveLifeMatrixProfiles();
     persistOnboardingState();
@@ -2103,9 +2343,11 @@ async function bootstrap() {
     state.onboarding.stage = "intent";
     persistOnboardingState();
   }
-  if (state.onboarding.completed) {
+  persistAuthState();
+  if (state.auth.authenticated && state.onboarding.completed) {
     renderAll();
   }
+  renderAuthShell();
   renderOnboarding();
 }
 

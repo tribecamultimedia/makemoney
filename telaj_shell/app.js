@@ -1317,23 +1317,23 @@ function renderAuthShell() {
       <div class="auth-head">
         <div>
           <div class="eyebrow">TELAJ ACCESS</div>
-          <h1 class="onboarding-title">Choose how you want to enter TELAJ.</h1>
-          <p class="onboarding-copy">Use guest mode to start quickly, or create an account so your household profile follows you across devices.</p>
+          <h1 class="onboarding-title">Know where you stand. Know what to do next.</h1>
+          <p class="onboarding-copy">TELAJ maps your household, shows where your money sits, and gives one clear next move. Start as a guest or create an account to keep your progress.</p>
         </div>
         <div class="auth-status">${supabaseReady ? "Supabase ready" : "Guest mode ready"}</div>
       </div>
       <div class="auth-options">
         <button class="auth-option ${mode === "guest" ? "is-selected" : ""}" id="auth-guest">
           <div class="answer-title">Continue as guest</div>
-          <div class="answer-note">Fastest path. Good for trying TELAJ before creating a permanent account.</div>
+          <div class="answer-note">Fastest way to try TELAJ and see your financial position clearly.</div>
         </button>
         <button class="auth-option ${mode === "signup" ? "is-selected" : ""}" id="auth-signup">
           <div class="answer-title">Create account</div>
-          <div class="answer-note">Use email and password so TELAJ can save your profile more permanently.</div>
+          <div class="answer-note">Save your household profile, real-estate work, and TELAJ decisions across devices.</div>
         </button>
         <button class="auth-option ${mode === "login" ? "is-selected" : ""}" id="auth-login">
           <div class="answer-title">Log in</div>
-          <div class="answer-note">Return to your saved TELAJ household, intent profile, and balance-sheet data.</div>
+          <div class="answer-note">Return to your saved household map, capital plan, and daily TELAJ guidance.</div>
         </button>
       </div>
       <div class="social-auth">
@@ -1362,8 +1362,8 @@ function renderAuthShell() {
           `
           : `
             <div class="auth-note">
-              <div class="micro-label">Guest mode</div>
-              <div class="panel-copy">Guest mode lets you start immediately. Later you can upgrade to a permanent account without rebuilding the household profile.</div>
+              <div class="micro-label">What TELAJ does</div>
+              <div class="panel-copy">See your assets, debts, liquidity, and capital allocation in one place. TELAJ then tells you what deserves attention first and where the next dollar should go.</div>
             </div>
           `
       }

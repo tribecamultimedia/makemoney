@@ -195,6 +195,32 @@ select:focus {
   gap: 8px;
 }
 
+.subscriber-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.subscriber-span-2 {
+  grid-column: span 2;
+}
+
+.toggle-card {
+  border: 2px solid var(--border);
+  background: var(--card-strong);
+  padding: 14px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.toggle-card input {
+  width: 18px;
+  min-height: 18px;
+  margin-top: 2px;
+}
+
 .social-button {
   min-height: 72px;
   border: 2px solid var(--border);
@@ -690,7 +716,8 @@ select:focus {
 
 .health-panel,
 .xp-panel,
-.profile-panel {
+.profile-panel,
+.subscriber-panel {
   grid-column: span 4;
 }
 

@@ -10,6 +10,15 @@ const defaultState = {
     error: "",
     info: "",
   },
+  subscriberPreferences: {
+    contactEmail: "",
+    signalEmailOptIn: false,
+    weeklyDigestOptIn: false,
+    marketingOptIn: false,
+    discordOptIn: false,
+    discordHandle: "",
+    deliveryStatus: "Preferences only",
+  },
   onboarding: {
     completed: false,
     currentStep: 0,
@@ -209,6 +218,7 @@ const state = structuredClone(defaultState);
 const AUTH_STORAGE_KEY = "telaj-auth-v1";
 const ONBOARDING_STORAGE_KEY = "telaj-onboarding-v1";
 const WEALTH_INPUTS_STORAGE_KEY = "telaj-wealth-inputs-v1";
+const SUBSCRIBER_PREFERENCES_KEY = "telaj-subscriber-preferences-v1";
 const questionBank = [
   {
     id: "netWorthBand",
@@ -561,6 +571,33 @@ function persistAuthState() {
       info: state.auth.info,
     })
   );
+}
+
+function loadSubscriberPreferences() {
+  try {
+    const raw = window.localStorage.getItem(SUBSCRIBER_PREFERENCES_KEY);
+    if (!raw) {
+      return;
+    }
+    const parsed = JSON.parse(raw);
+    state.subscriberPreferences = {
+      ...state.subscriberPreferences,
+      ...(typeof parsed === "object" && parsed ? parsed : {}),
+    };
+  } catch (error) {
+    console.warn("TELAJ subscriber preferences could not be restored.", error);
+  }
+}
+
+function persistSubscriberPreferences() {
+  window.localStorage.setItem(SUBSCRIBER_PREFERENCES_KEY, JSON.stringify(state.subscriberPreferences));
+}
+
+function syncSubscriberEmailFromAuth() {
+  if (!state.subscriberPreferences.contactEmail && state.auth.email) {
+    state.subscriberPreferences.contactEmail = state.auth.email;
+    persistSubscriberPreferences();
+  }
 }
 
 function getAuthAvailability() {
@@ -2002,6 +2039,108 @@ function renderXpLevel() {
   document.getElementById("rail-streak").textContent = `${state.profile.streak} days`;
 }
 
+function renderSubscriberPreferences() {
+  const panel = document.getElementById("subscriber-preferences");
+  if (!panel) {
+    return;
+  }
+
+  syncSubscriberEmailFromAuth();
+  const prefs = state.subscriberPreferences;
+  const inviteUrl = window.TELAJ_CONFIG?.discordInviteUrl || "";
+
+  panel.innerHTML = `
+    <div class="eyebrow">Delivery preferences</div>
+    <h3>Collect subscribers and route the signal</h3>
+    <p class="body-copy">Use this to decide how TELAJ should reach you later. Preferences are stored now; real email and Discord delivery can plug into this without changing the user flow.</p>
+    <div class="subscriber-grid">
+      <label class="input-field subscriber-span-2">
+        <span class="micro-label">Contact email</span>
+        <input id="subscriber-email" type="email" value="${prefs.contactEmail || ""}" placeholder="you@example.com" />
+      </label>
+      <label class="toggle-card">
+        <input id="subscriber-signal-email" type="checkbox" ${prefs.signalEmailOptIn ? "checked" : ""} />
+        <div>
+          <div class="micro-label">Morning signal email</div>
+          <div class="panel-copy">Receive the daily TELAJ call by email.</div>
+        </div>
+      </label>
+      <label class="toggle-card">
+        <input id="subscriber-weekly-digest" type="checkbox" ${prefs.weeklyDigestOptIn ? "checked" : ""} />
+        <div>
+          <div class="micro-label">Weekly digest</div>
+          <div class="panel-copy">Get a slower summary of positioning and discipline.</div>
+        </div>
+      </label>
+      <label class="toggle-card">
+        <input id="subscriber-marketing" type="checkbox" ${prefs.marketingOptIn ? "checked" : ""} />
+        <div>
+          <div class="micro-label">Product updates</div>
+          <div class="panel-copy">Allow launch notes, improvements, and educational updates.</div>
+        </div>
+      </label>
+      <label class="toggle-card">
+        <input id="subscriber-discord-optin" type="checkbox" ${prefs.discordOptIn ? "checked" : ""} />
+        <div>
+          <div class="micro-label">Discord alerts</div>
+          <div class="panel-copy">Use Discord as a second signal channel when connected.</div>
+        </div>
+      </label>
+      <label class="input-field subscriber-span-2">
+        <span class="micro-label">Discord handle or note</span>
+        <input id="subscriber-discord-handle" type="text" value="${prefs.discordHandle || ""}" placeholder="@yourname or 'joining later'" />
+      </label>
+    </div>
+    <div class="insight-grid">
+      <div class="insight-card">
+        <div class="micro-label">Subscriber status</div>
+        <div class="panel-copy">${prefs.deliveryStatus}</div>
+      </div>
+      <div class="insight-card">
+        <div class="micro-label">What TELAJ has now</div>
+        <div class="panel-copy">${prefs.contactEmail ? `Email on file: ${prefs.contactEmail}` : "No contact email saved yet."}</div>
+      </div>
+    </div>
+    <div class="property-action-row">
+      <button class="action-button primary" id="subscriber-save">Save preferences</button>
+      <button class="action-button" id="subscriber-discord-join">${inviteUrl ? "Join Discord" : "Discord invite pending"}</button>
+    </div>
+    <div class="legal-note">
+      <div class="micro-label">Consent</div>
+      <div class="panel-copy">Keep account access, signal emails, weekly digests, and product updates as separate opt-ins. This panel is the right place to store those permissions before wiring email delivery.</div>
+    </div>
+  `;
+
+  document.getElementById("subscriber-save")?.addEventListener("click", () => {
+    state.subscriberPreferences.contactEmail = document.getElementById("subscriber-email").value.trim();
+    state.subscriberPreferences.signalEmailOptIn = Boolean(document.getElementById("subscriber-signal-email").checked);
+    state.subscriberPreferences.weeklyDigestOptIn = Boolean(document.getElementById("subscriber-weekly-digest").checked);
+    state.subscriberPreferences.marketingOptIn = Boolean(document.getElementById("subscriber-marketing").checked);
+    state.subscriberPreferences.discordOptIn = Boolean(document.getElementById("subscriber-discord-optin").checked);
+    state.subscriberPreferences.discordHandle = document.getElementById("subscriber-discord-handle").value.trim();
+
+    const channels = [];
+    if (state.subscriberPreferences.signalEmailOptIn) channels.push("daily signal email");
+    if (state.subscriberPreferences.weeklyDigestOptIn) channels.push("weekly digest");
+    if (state.subscriberPreferences.marketingOptIn) channels.push("product updates");
+    if (state.subscriberPreferences.discordOptIn) channels.push("Discord alerts");
+
+    state.subscriberPreferences.deliveryStatus = channels.length ? `Ready for ${channels.join(", ")}` : "Preferences only";
+    persistSubscriberPreferences();
+    renderSubscriberPreferences();
+  });
+
+  document.getElementById("subscriber-discord-join")?.addEventListener("click", () => {
+    if (inviteUrl) {
+      window.open(inviteUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    state.subscriberPreferences.deliveryStatus = "Discord invite URL not configured yet";
+    persistSubscriberPreferences();
+    renderSubscriberPreferences();
+  });
+}
+
 function renderAllocationSnapshot() {
   const panel = document.getElementById("allocation-snapshot");
   const advice = getFinancialAllocationAdvice();
@@ -2617,6 +2756,7 @@ function renderAll() {
   renderSystemHealth();
   renderXpLevel();
   renderProfileMatrix();
+  renderSubscriberPreferences();
   renderFinancialPosition();
   renderAllocationSnapshot();
   renderCashStatus();
@@ -2636,6 +2776,7 @@ function renderAll() {
 async function bootstrap() {
   initSupabaseClient();
   loadAuthState();
+  loadSubscriberPreferences();
   loadOnboardingState();
   loadWealthInputs();
   await loadMockApiState();
@@ -2646,6 +2787,7 @@ async function bootstrap() {
         state.auth.authenticated = true;
         state.auth.guest = Boolean(data.session.user.is_anonymous);
         state.auth.email = data.session.user.email || "";
+        syncSubscriberEmailFromAuth();
       }
     } catch (error) {
       console.warn("TELAJ auth session could not be restored.", error);

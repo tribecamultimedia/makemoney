@@ -5,6 +5,8 @@ Static TELAJ product shell for drag-and-drop deployment on Netlify.
 ## Files
 
 - `index.html`
+- `config.js`
+- `config.example.js`
 - `styles.css`
 - `app.js`
 - `mock-api/family-dashboard.json`
@@ -19,6 +21,21 @@ Static TELAJ product shell for drag-and-drop deployment on Netlify.
 1. Open Netlify.
 2. Use the manual drag-and-drop deploy flow.
 3. Upload the contents of this folder, or zip this folder and upload it.
+
+## Configure Supabase
+
+1. Open `config.example.js`.
+2. Copy its values into `config.js`.
+3. Set:
+   - `supabaseUrl`
+   - `supabaseAnonKey`
+4. Redeploy the shell.
+
+Use the Supabase:
+- Project URL
+- anon public key
+
+Do not use the service role key in the frontend.
 
 ## Notes
 
@@ -42,3 +59,5 @@ Static TELAJ product shell for drag-and-drop deployment on Netlify.
   - `GEMINI_API_KEY`
   - `GEMINI_MODEL`
 - If no provider key is available, the route falls back to TELAJ's local heuristic analysis.
+- The auth shell reads Supabase frontend config from:
+  - `config.js`

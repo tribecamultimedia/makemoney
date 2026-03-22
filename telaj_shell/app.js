@@ -1888,6 +1888,26 @@ function getFinancialAllocationAdvice() {
   };
 }
 
+function getCurrentHouseholdMix() {
+  const assets = [
+    { label: "Liquid cash", value: Number(state.liquidityDetails.liquidAssets || 0), note: "Available reserve and optionality." },
+    { label: "Investments", value: Number(state.financialPosition.investments || 0), note: "Brokerage or non-retirement market assets." },
+    { label: "Retirement", value: Number(state.financialPosition.retirement || 0), note: "Long-duration retirement capital." },
+    { label: "Real Estate", value: Number(state.financialPosition.realEstate || 0), note: "Property equity or estimated value bucket." },
+    { label: "Business", value: Number(state.financialPosition.business || 0), note: "Operating or private business value." },
+  ].filter((item) => item.value > 0);
+
+  const total = assets.reduce((sum, item) => sum + item.value, 0);
+  if (!total) {
+    return [];
+  }
+
+  return assets.map((item) => ({
+    ...item,
+    percent: Math.round((item.value / total) * 100),
+  }));
+}
+
 function polarPoint(cx, cy, radius, angle) {
   const radians = ((angle - 90) * Math.PI) / 180;
   return {
@@ -2532,6 +2552,7 @@ function renderLeaderboard() {
 }
 
 function renderAllocationView() {
+  const householdMix = getCurrentHouseholdMix();
   document.getElementById("allocation-main").innerHTML = `
     <div class="eyebrow">Capital call</div>
     <h3>${state.recommendation.headline}</h3>
@@ -2553,24 +2574,30 @@ function renderAllocationView() {
     </div>
   `;
   document.getElementById("allocation-bars").innerHTML = `
-    <div class="eyebrow">Current mix</div>
-    <h3>How the household is currently positioned</h3>
-    <div class="bar-stack">
-      ${state.allocation
-        .map(
-          (item) => `
-            <div class="allocation-block">
-              <div class="allocation-row">
-                <div class="row-label">${item.label}</div>
-                <div class="bar-track"><div class="bar-fill" style="width:${item.weight}%"></div></div>
-                <div class="allocation-number">${item.weight}%</div>
-              </div>
-              <div class="list-note">${item.note}</div>
-            </div>
-          `
-        )
-        .join("")}
-    </div>
+    <div class="eyebrow">Current household mix</div>
+    <h3>How the entered household assets are actually positioned</h3>
+    ${
+      householdMix.length
+        ? `
+          <div class="bar-stack">
+            ${householdMix
+              .map(
+                (item) => `
+                  <div class="allocation-block">
+                    <div class="allocation-row">
+                      <div class="row-label">${item.label}</div>
+                      <div class="bar-track"><div class="bar-fill" style="width:${item.percent}%"></div></div>
+                      <div class="allocation-number">${item.percent}%</div>
+                    </div>
+                    <div class="list-note">${item.note} ${formatEuro(item.value)}.</div>
+                  </div>
+                `
+              )
+              .join("")}
+          </div>
+        `
+        : `<div class="subpanel"><div class="panel-copy">Current household mix is not mapped yet. Enter liquid cash and asset values in the Financial Position panel first.</div></div>`
+    }
   `;
   document.getElementById("allocation-rules").innerHTML = `
     <div class="eyebrow">TELAJ logic</div>

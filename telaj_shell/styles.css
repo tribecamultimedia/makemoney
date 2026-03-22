@@ -528,7 +528,8 @@ select:focus {
 
 .health-panel,
 .xp-panel,
-.profile-panel {
+.profile-panel,
+.financial-position-panel {
   grid-column: span 4;
 }
 
@@ -941,6 +942,78 @@ select:focus {
   gap: 12px;
 }
 
+.financial-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 16px;
+  align-items: center;
+}
+
+.financial-chart-wrap {
+  display: grid;
+  place-items: center;
+}
+
+.financial-pie {
+  width: 180px;
+  height: 180px;
+}
+
+.pie-value,
+.pie-label,
+.legend-value {
+  font-family: "JetBrains Mono", monospace;
+}
+
+.pie-value {
+  fill: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.pie-label {
+  fill: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.financial-summary,
+.financial-legend {
+  display: grid;
+  gap: 10px;
+}
+
+.financial-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.legend-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  border: 2px solid var(--border);
+  background: var(--card-strong);
+  padding: 10px 12px;
+}
+
+.legend-swatch {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.08);
+}
+
+.empty-chart {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  border: 2px dashed var(--border);
+  color: var(--muted);
+  padding: 16px;
+}
+
 .subpanel {
   border: 2px solid var(--border);
   background: var(--card-strong);
@@ -1008,6 +1081,8 @@ select:focus {
   }
 
   .stats-grid,
+  .financial-layout,
+  .financial-summary,
   .action-row,
   .property-action-row,
   .achievement-grid,

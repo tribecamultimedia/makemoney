@@ -175,6 +175,15 @@ const defaultState = {
     liquidAssets: 18000,
     monthlyNeed: 4200,
   },
+  financialPosition: {
+    investments: 42000,
+    retirement: 28000,
+    realEstate: 0,
+    business: 0,
+    creditCardDebt: 3500,
+    loans: 12000,
+    mortgageDebt: 0,
+  },
   propertyAppraisal: {
     address: "",
     size: 90,
@@ -563,6 +572,9 @@ function loadWealthInputs() {
     if (parsed.liquidityDetails) {
       state.liquidityDetails = { ...state.liquidityDetails, ...parsed.liquidityDetails };
     }
+    if (parsed.financialPosition) {
+      state.financialPosition = { ...state.financialPosition, ...parsed.financialPosition };
+    }
     if (parsed.propertyAppraisal) {
       state.propertyAppraisal = { ...state.propertyAppraisal, ...parsed.propertyAppraisal };
     }
@@ -576,6 +588,7 @@ function persistWealthInputs() {
     WEALTH_INPUTS_STORAGE_KEY,
     JSON.stringify({
       liquidityDetails: state.liquidityDetails,
+      financialPosition: state.financialPosition,
       propertyAppraisal: state.propertyAppraisal,
     })
   );
@@ -1004,6 +1017,16 @@ function applyProfilesToNarrative() {
     state.recommendation.avoid = "Fast, narrative-driven moves that break the household plan";
   }
 
+  if (state.financialPosition.creditCardDebt > 0) {
+    state.morningSignal.move = "Clear expensive debt before adding optional risk";
+    state.morningSignal.rationale =
+      "TELAJ sees revolving consumer debt on the balance sheet, which usually deserves attention before new speculative or non-essential allocation.";
+    state.recommendation.primaryAction = "Reduce credit card debt";
+    state.recommendation.headline = "Pay down expensive debt, then rebuild the investment posture";
+  } else if (state.financialPosition.loans > state.financialPosition.investments && state.financialPosition.loans > 0) {
+    state.recommendation.secondaryAction = "Review loan burden before increasing long-duration risk";
+  }
+
   if (behaviorProfile.weakness === "overspending") {
     state.recommendation.avoid = "Lifestyle inflation and emotional spending";
   } else if (behaviorProfile.weakness === "fomo") {
@@ -1259,6 +1282,80 @@ function calculateLiquidityMonths() {
   return liquidAssets / monthlyNeed;
 }
 
+function getFinancialPosition() {
+  const assets = [
+    { key: "liquid", label: "Cash", value: Number(state.liquidityDetails.liquidAssets || 0), color: "#1f6bff" },
+    { key: "investments", label: "Investments", value: Number(state.financialPosition.investments || 0), color: "#4d91ff" },
+    { key: "retirement", label: "Retirement", value: Number(state.financialPosition.retirement || 0), color: "#27d17f" },
+    { key: "realEstate", label: "Real estate", value: Number(state.financialPosition.realEstate || 0), color: "#ffd166" },
+    { key: "business", label: "Business", value: Number(state.financialPosition.business || 0), color: "#8c6bff" },
+  ].filter((item) => item.value > 0);
+
+  const debts = [
+    { key: "creditCardDebt", label: "Credit card", value: Number(state.financialPosition.creditCardDebt || 0) },
+    { key: "loans", label: "Loans", value: Number(state.financialPosition.loans || 0) },
+    { key: "mortgageDebt", label: "Mortgage", value: Number(state.financialPosition.mortgageDebt || 0) },
+  ].filter((item) => item.value > 0);
+
+  const totalAssets = assets.reduce((sum, item) => sum + item.value, 0);
+  const totalDebt = debts.reduce((sum, item) => sum + item.value, 0);
+  const netWorth = totalAssets - totalDebt;
+  const debtRatio = totalAssets > 0 ? totalDebt / totalAssets : 0;
+
+  let opinion = "The household can focus on disciplined long-term allocation.";
+  if (state.financialPosition.creditCardDebt > 0) {
+    opinion = "TELAJ would likely prioritize expensive consumer debt before stretching into new risk.";
+  } else if (debtRatio > 0.6) {
+    opinion = "Debt is a large share of the household picture, so resilience and balance-sheet repair matter first.";
+  } else if (calculateLiquidityMonths() < 3) {
+    opinion = "Liquidity is still thin, so TELAJ would protect reserves before a bigger investment move.";
+  }
+
+  return { assets, debts, totalAssets, totalDebt, netWorth, debtRatio, opinion };
+}
+
+function polarPoint(cx, cy, radius, angle) {
+  const radians = ((angle - 90) * Math.PI) / 180;
+  return {
+    x: cx + radius * Math.cos(radians),
+    y: cy + radius * Math.sin(radians),
+  };
+}
+
+function pieSlice(cx, cy, radius, startAngle, endAngle, fill) {
+  const start = polarPoint(cx, cy, radius, endAngle);
+  const end = polarPoint(cx, cy, radius, startAngle);
+  const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
+  return `<path d="M ${cx} ${cy} L ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y} Z" fill="${fill}"></path>`;
+}
+
+function financialPieChart(assets) {
+  const total = assets.reduce((sum, item) => sum + item.value, 0);
+  if (!total) {
+    return `<div class="empty-chart">Add asset amounts to see the household map.</div>`;
+  }
+
+  let angle = 0;
+  const slices = assets
+    .map((item) => {
+      const nextAngle = angle + (item.value / total) * 360;
+      const path = pieSlice(90, 90, 74, angle, nextAngle, item.color);
+      angle = nextAngle;
+      return path;
+    })
+    .join("");
+
+  return `
+    <svg class="financial-pie" viewBox="0 0 180 180" aria-hidden="true">
+      <circle cx="90" cy="90" r="78" fill="#111214" stroke="#2c2e34" stroke-width="2"></circle>
+      ${slices}
+      <circle cx="90" cy="90" r="38" fill="#0a0a0b" stroke="#2c2e34" stroke-width="2"></circle>
+      <text x="90" y="82" text-anchor="middle" class="pie-value">€${Math.round(total / 1000)}k</text>
+      <text x="90" y="100" text-anchor="middle" class="pie-label">assets</text>
+    </svg>
+  `;
+}
+
 function calculatePropertyAppraisal() {
   const size = Number(state.propertyAppraisal.size || 0);
   const unit = state.propertyAppraisal.unit || "sqm";
@@ -1431,6 +1528,108 @@ function renderAllocationSnapshot() {
         .join("")}
     </div>
   `;
+}
+
+function renderFinancialPosition() {
+  const panel = document.getElementById("financial-position");
+  if (!panel) {
+    return;
+  }
+
+  const position = getFinancialPosition();
+  const debtPressure =
+    position.totalDebt === 0 ? "Clean" : position.debtRatio > 0.6 ? "Heavy" : position.debtRatio > 0.3 ? "Moderate" : "Controlled";
+
+  panel.innerHTML = `
+    <div class="eyebrow">Financial position</div>
+    <h3>Where the household stands</h3>
+    <div class="financial-layout">
+      <div class="financial-chart-wrap">
+        ${financialPieChart(position.assets)}
+      </div>
+      <div class="financial-summary">
+        <div class="stat-box">
+          <div class="stat-label">Total assets</div>
+          <div class="stat-value">€${Math.round(position.totalAssets).toLocaleString()}</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Total debt</div>
+          <div class="stat-value">€${Math.round(position.totalDebt).toLocaleString()}</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Net worth</div>
+          <div class="stat-value accent-text">€${Math.round(position.netWorth).toLocaleString()}</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Debt pressure</div>
+          <div class="stat-value">${debtPressure}</div>
+        </div>
+      </div>
+    </div>
+    <p class="body-copy">${position.opinion}</p>
+    <div class="financial-legend">
+      ${position.assets
+        .map(
+          (item) => `
+            <div class="legend-item">
+              <span class="legend-swatch" style="background:${item.color}"></span>
+              <span>${item.label}</span>
+              <span class="legend-value">€${Math.round(item.value).toLocaleString()}</span>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+    <div class="section-spacer"></div>
+    <div class="micro-label">Debt breakdown</div>
+    <div class="input-stack">
+      <label class="input-field">
+        <span class="micro-label">Investments</span>
+        <input id="fp-investments" type="number" min="0" step="1000" value="${state.financialPosition.investments}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Retirement</span>
+        <input id="fp-retirement" type="number" min="0" step="1000" value="${state.financialPosition.retirement}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Real estate</span>
+        <input id="fp-real-estate" type="number" min="0" step="1000" value="${state.financialPosition.realEstate}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Business</span>
+        <input id="fp-business" type="number" min="0" step="1000" value="${state.financialPosition.business}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Credit card debt</span>
+        <input id="fp-credit-card" type="number" min="0" step="100" value="${state.financialPosition.creditCardDebt}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Loans</span>
+        <input id="fp-loans" type="number" min="0" step="100" value="${state.financialPosition.loans}" />
+      </label>
+      <label class="input-field input-span-2">
+        <span class="micro-label">Mortgage debt</span>
+        <input id="fp-mortgage" type="number" min="0" step="1000" value="${state.financialPosition.mortgageDebt}" />
+      </label>
+      <div class="property-action-row input-span-2">
+        <button class="action-button primary" id="save-financial-position">Update position</button>
+        <button class="action-button" id="financial-go-allocation">Use this in allocation</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("save-financial-position").addEventListener("click", () => {
+    state.financialPosition.investments = Number(document.getElementById("fp-investments").value || 0);
+    state.financialPosition.retirement = Number(document.getElementById("fp-retirement").value || 0);
+    state.financialPosition.realEstate = Number(document.getElementById("fp-real-estate").value || 0);
+    state.financialPosition.business = Number(document.getElementById("fp-business").value || 0);
+    state.financialPosition.creditCardDebt = Number(document.getElementById("fp-credit-card").value || 0);
+    state.financialPosition.loans = Number(document.getElementById("fp-loans").value || 0);
+    state.financialPosition.mortgageDebt = Number(document.getElementById("fp-mortgage").value || 0);
+    persistWealthInputs();
+    renderFinancialPosition();
+  });
+  document.getElementById("financial-go-allocation").addEventListener("click", () => setView("allocation"));
 }
 
 function renderCashStatus() {
@@ -1875,6 +2074,7 @@ function renderAll() {
   renderSystemHealth();
   renderXpLevel();
   renderProfileMatrix();
+  renderFinancialPosition();
   renderAllocationSnapshot();
   renderCashStatus();
   renderTasks();

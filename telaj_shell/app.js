@@ -6,6 +6,7 @@ const defaultState = {
     mode: "gate",
     guest: false,
     email: "",
+    legalAccepted: false,
     error: "",
     info: "",
   },
@@ -539,6 +540,7 @@ function loadAuthState() {
       mode: typeof parsed.mode === "string" ? parsed.mode : "gate",
       guest: Boolean(parsed.guest),
       email: typeof parsed.email === "string" ? parsed.email : "",
+      legalAccepted: Boolean(parsed.legalAccepted),
       error: "",
       info: typeof parsed.info === "string" ? parsed.info : "",
     };
@@ -555,6 +557,7 @@ function persistAuthState() {
       mode: state.auth.mode,
       guest: state.auth.guest,
       email: state.auth.email,
+      legalAccepted: state.auth.legalAccepted,
       info: state.auth.info,
     })
   );
@@ -1288,6 +1291,16 @@ function renderAuthShell() {
         ${state.auth.info ? `<div class="auth-info">${state.auth.info}</div>` : ""}
         ${!supabaseReady ? `<div class="auth-info">Supabase public config is not set yet, so email login is disabled and guest mode will use local preview access.</div>` : ""}
       </div>
+      <label class="legal-ack">
+        <input id="legal-accept" type="checkbox" ${state.auth.legalAccepted ? "checked" : ""} />
+        <span>
+          I understand TELAJ provides educational information, model-based guidance, and planning suggestions only. It is not investment, tax, legal, accounting, or financial advice, and I remain responsible for my own decisions.
+        </span>
+      </label>
+      <div class="legal-note">
+        <div class="micro-label">Important</div>
+        <div class="panel-copy">TELAJ is not a broker, not an investment adviser, and not a fiduciary. Signals, scenarios, and allocation examples are informational only and do not guarantee future results.</div>
+      </div>
       <div class="onboarding-actions">
         <div class="task-pill">${supabaseReady ? "Auth provider connected" : "Preview auth shell"}</div>
         <button class="action-button primary" id="auth-continue">${
@@ -1315,6 +1328,11 @@ function renderAuthShell() {
     state.auth.info = "";
     renderAuthShell();
   });
+  document.getElementById("legal-accept")?.addEventListener("change", (event) => {
+    state.auth.legalAccepted = Boolean(event.target.checked);
+    state.auth.error = "";
+    persistAuthState();
+  });
   document.getElementById("auth-continue")?.addEventListener("click", async () => {
     await handleAuthContinue();
   });
@@ -1330,6 +1348,12 @@ async function handleAuthContinue() {
   state.auth.error = "";
   state.auth.info = "";
   const client = initSupabaseClient();
+
+  if (!state.auth.legalAccepted) {
+    state.auth.error = "You must acknowledge the TELAJ educational-use disclaimer before continuing.";
+    renderAuthShell();
+    return;
+  }
 
   if (state.auth.mode === "guest") {
     if (client) {
@@ -1392,6 +1416,12 @@ async function handleOAuth(provider) {
   state.auth.error = "";
   state.auth.info = "";
   const client = initSupabaseClient();
+
+  if (!state.auth.legalAccepted) {
+    state.auth.error = "You must acknowledge the TELAJ educational-use disclaimer before continuing.";
+    renderAuthShell();
+    return;
+  }
 
   if (!client) {
     state.auth.error = "Supabase is not configured yet. Add the public URL and anon key to enable social login.";
@@ -2062,6 +2092,10 @@ function renderFinancialPosition() {
         </div>
         <div class="financial-reason-list">
           ${advice.reasons.map((item) => `<div class="financial-reason">${item}</div>`).join("")}
+        </div>
+        <div class="legal-note">
+          <div class="micro-label">Disclaimer</div>
+          <div class="panel-copy">This capital call is educational model guidance, not investment, legal, tax, or financial advice. Verify suitability for your own situation before acting.</div>
         </div>
       </div>
     </div>

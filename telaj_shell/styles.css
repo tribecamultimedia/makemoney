@@ -170,6 +170,31 @@ select:focus {
   gap: 8px;
 }
 
+.legal-ack,
+.legal-note {
+  border: 2px solid var(--border);
+  background: var(--card-strong);
+  padding: 14px;
+}
+
+.legal-ack {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.legal-ack input {
+  width: 18px;
+  min-height: 18px;
+  margin-top: 2px;
+}
+
+.legal-note {
+  display: grid;
+  gap: 8px;
+}
+
 .social-button {
   min-height: 72px;
   border: 2px solid var(--border);

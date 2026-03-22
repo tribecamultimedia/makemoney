@@ -128,6 +128,12 @@ select:focus {
   gap: 12px;
 }
 
+.social-auth {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .auth-options {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -162,6 +168,38 @@ select:focus {
   padding: 14px;
   display: grid;
   gap: 8px;
+}
+
+.social-button {
+  min-height: 72px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  padding: 14px 16px;
+  text-align: left;
+  display: grid;
+  gap: 6px;
+  align-content: center;
+}
+
+.social-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-faint);
+}
+
+.social-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.social-label {
+  font-weight: 700;
+}
+
+.social-note {
+  color: var(--muted);
+  font-size: 14px;
 }
 
 .onboarding-shell {
@@ -621,15 +659,19 @@ select:focus {
 }
 
 .morning-hero {
-  grid-column: span 6;
+  grid-column: span 4;
   min-height: 360px;
 }
 
 .health-panel,
 .xp-panel,
-.profile-panel,
-.financial-position-panel {
+.profile-panel {
   grid-column: span 4;
+}
+
+.financial-position-panel {
+  grid-column: span 8;
+  min-height: 420px;
 }
 
 .allocation-panel,
@@ -1043,9 +1085,9 @@ select:focus {
 
 .financial-layout {
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: 220px 1.1fr 1fr;
   gap: 16px;
-  align-items: center;
+  align-items: start;
 }
 
 .financial-chart-wrap {
@@ -1085,6 +1127,67 @@ select:focus {
 
 .financial-summary {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.financial-callout {
+  display: grid;
+  gap: 12px;
+}
+
+.financial-callout-card {
+  border: 2px solid var(--accent);
+  background: rgba(31, 107, 255, 0.08);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.financial-call-title {
+  font-size: clamp(24px, 3vw, 34px);
+  line-height: 0.94;
+  margin: 0;
+}
+
+.financial-call-copy {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.financial-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.financial-plan-card {
+  border: 2px solid var(--border);
+  background: var(--card-strong);
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.financial-plan-percent {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+
+.financial-plan-amount {
+  font-family: "JetBrains Mono", monospace;
+  color: var(--accent-strong);
+}
+
+.financial-reason-list {
+  display: grid;
+  gap: 8px;
+}
+
+.financial-reason {
+  border-left: 3px solid var(--accent);
+  padding-left: 10px;
+  color: var(--muted);
 }
 
 .legend-item {
@@ -1165,6 +1268,7 @@ select:focus {
 
   .auth-head,
   .auth-options,
+  .social-auth,
   .auth-form {
     grid-template-columns: 1fr;
     display: grid;
@@ -1193,6 +1297,7 @@ select:focus {
   .property-action-row,
   .achievement-grid,
   .insight-grid,
+  .financial-plan-grid,
   .answer-grid,
   .summary-grid {
     grid-template-columns: 1fr;

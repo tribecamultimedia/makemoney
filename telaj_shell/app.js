@@ -1095,6 +1095,17 @@ function applyProfilesToNarrative() {
   } else if (behaviorProfile.weakness === "procrastination") {
     state.recommendation.avoid = "Waiting forever instead of acting on good enough decisions";
   }
+
+  const financialAdvice = getFinancialAllocationAdvice();
+  state.morningSignal.move = financialAdvice.heroMove;
+  state.morningSignal.rationale = financialAdvice.heroRationale;
+  state.morningSignal.rationaleShort = financialAdvice.plainEnglish;
+  state.recommendation.headline = financialAdvice.headline;
+  state.recommendation.summary = financialAdvice.summary;
+  state.recommendation.primaryAction = financialAdvice.primaryAction;
+  state.recommendation.secondaryAction = financialAdvice.secondaryAction;
+  state.recommendation.growthSleeve = financialAdvice.growthSleeve;
+  state.recommendation.avoid = financialAdvice.watchout;
 }
 
 function renderOnboarding() {
@@ -1241,6 +1252,16 @@ function renderAuthShell() {
           <div class="answer-note">Return to your saved TELAJ household, intent profile, and balance-sheet data.</div>
         </button>
       </div>
+      <div class="social-auth">
+        <button class="social-button" id="auth-google" ${supabaseReady ? "" : "disabled"}>
+          <span class="social-label">Continue with Google</span>
+          <span class="social-note">Use your Gmail identity</span>
+        </button>
+        <button class="social-button" id="auth-github" ${supabaseReady ? "" : "disabled"}>
+          <span class="social-label">Continue with GitHub</span>
+          <span class="social-note">Useful for builders and operators</span>
+        </button>
+      </div>
       ${
         mode === "signup" || mode === "login"
           ? `
@@ -1296,6 +1317,12 @@ function renderAuthShell() {
   });
   document.getElementById("auth-continue")?.addEventListener("click", async () => {
     await handleAuthContinue();
+  });
+  document.getElementById("auth-google")?.addEventListener("click", async () => {
+    await handleOAuth("google");
+  });
+  document.getElementById("auth-github")?.addEventListener("click", async () => {
+    await handleOAuth("github");
   });
 }
 
@@ -1359,6 +1386,35 @@ async function handleAuthContinue() {
   persistAuthState();
   renderAuthShell();
   renderOnboarding();
+}
+
+async function handleOAuth(provider) {
+  state.auth.error = "";
+  state.auth.info = "";
+  const client = initSupabaseClient();
+
+  if (!client) {
+    state.auth.error = "Supabase is not configured yet. Add the public URL and anon key to enable social login.";
+    renderAuthShell();
+    return;
+  }
+
+  const { error } = await client.auth.signInWithOAuth({
+    provider,
+    options: {
+      redirectTo: window.location.origin,
+    },
+  });
+
+  if (error) {
+    state.auth.error = error.message;
+    renderAuthShell();
+    return;
+  }
+
+  state.auth.info = `Redirecting to ${provider}...`;
+  persistAuthState();
+  renderAuthShell();
 }
 
 function renderIntentStage() {
@@ -1508,6 +1564,10 @@ function calculateLiquidityMonths() {
   return liquidAssets / monthlyNeed;
 }
 
+function formatEuro(value) {
+  return `€${Math.round(Number(value) || 0).toLocaleString()}`;
+}
+
 function getFinancialPosition() {
   const assets = [
     { key: "liquid", label: "Cash", value: Number(state.liquidityDetails.liquidAssets || 0), color: "#1f6bff" },
@@ -1538,6 +1598,183 @@ function getFinancialPosition() {
   }
 
   return { assets, debts, totalAssets, totalDebt, netWorth, debtRatio, opinion };
+}
+
+function allocatePercentages(rawBuckets) {
+  const total = rawBuckets.reduce((sum, bucket) => sum + bucket.percent, 0);
+  if (!total) {
+    return rawBuckets;
+  }
+
+  const normalized = rawBuckets.map((bucket) => ({
+    ...bucket,
+    percent: Math.round((bucket.percent / total) * 100),
+  }));
+
+  const diff = 100 - normalized.reduce((sum, bucket) => sum + bucket.percent, 0);
+  if (diff !== 0 && normalized.length) {
+    normalized[0].percent += diff;
+  }
+
+  return normalized;
+}
+
+function getFinancialAllocationAdvice() {
+  const liquidAssets = Number(state.liquidityDetails.liquidAssets || 0);
+  const monthlyNeed = Number(state.liquidityDetails.monthlyNeed || 0);
+  const reserveMonths = calculateLiquidityMonths();
+  const position = getFinancialPosition();
+  const unsecuredDebt = Number(state.financialPosition.creditCardDebt || 0) + Number(state.financialPosition.loans || 0);
+  const mortgageDebt = Number(state.financialPosition.mortgageDebt || 0);
+  const profiles = state.onboarding.profiles || {};
+  const householdProfile = profiles.householdProfile || {};
+  const behaviorProfile = profiles.behaviorProfile || {};
+  const goalProfile = profiles.goalProfile || {};
+
+  let reserveTargetMonths = 6;
+  if (goalProfile.primaryGoal === "safety" || goalProfile.wealthFor === "children" || goalProfile.wealthFor === "multi-generational") {
+    reserveTargetMonths = 9;
+  } else if (householdProfile.propertyExposure || householdProfile.primaryResidenceStatus === "own-mortgage") {
+    reserveTargetMonths = 8;
+  }
+
+  const reserveTargetAmount = monthlyNeed > 0 ? reserveTargetMonths * monthlyNeed : liquidAssets * 0.3;
+  const reserveGap = Math.max(reserveTargetAmount - liquidAssets, 0);
+
+  let buckets;
+  let headline;
+  let summary;
+  let primaryAction;
+  let secondaryAction;
+  let growthSleeve;
+  let watchout;
+  let heroMove;
+  let heroRationale;
+  let reasons = [];
+
+  if (liquidAssets <= 0) {
+    buckets = allocatePercentages([{ label: "Emergency reserve", percent: 100, note: "No liquid capital has been mapped yet." }]);
+    headline = "Map liquid capital before TELAJ commits you to an investment move";
+    summary = "Without a clear liquid-cash figure, TELAJ should default to caution and build the reserve picture first.";
+    primaryAction = "Confirm liquid cash and monthly household need";
+    secondaryAction = "Only invest after the reserve target is visible";
+    growthSleeve = "No growth sleeve yet";
+    watchout = "Investing from an unmapped balance sheet";
+    heroMove = "Map the cash position before taking the next step";
+    heroRationale = "TELAJ needs the liquid position first because every later allocation depends on it.";
+    reasons = [
+      "The balance sheet is still incomplete.",
+      "Reserve math is impossible without liquid cash and household need.",
+      "TELAJ should not manufacture certainty from missing data.",
+    ];
+  } else if (state.financialPosition.creditCardDebt > 0) {
+    buckets = allocatePercentages([
+      { label: "Debt payoff", percent: 45, note: "Expensive revolving debt usually deserves first claim on free capital." },
+      { label: "Emergency reserve", percent: 35, note: "Keep the household from falling back into the debt loop." },
+      { label: "Treasury bonds", percent: 20, note: "Park the defensive sleeve where it stays stable and liquid." },
+    ]);
+    headline = "Use liquid capital to repair the balance sheet before investing aggressively";
+    summary = `${formatEuro(liquidAssets)} is meaningful, but TELAJ sees expensive consumer debt on the household. The first move is balance-sheet repair, not chasing returns.`;
+    primaryAction = "Pay down credit card debt first";
+    secondaryAction = "Hold the remaining defense in cash and short Treasuries";
+    growthSleeve = "Delay ETF growth until expensive debt is cleared";
+    watchout = "Stretching into risk while revolving debt is still active";
+    heroMove = "Reduce expensive debt before adding optional risk";
+    heroRationale = "Paying down costly debt is a cleaner return than buying more market exposure while interest is compounding against you.";
+    reasons = [
+      "Revolving debt weakens every future allocation decision.",
+      "A reserve buffer prevents re-borrowing after payoff.",
+      "Treasury exposure keeps part of the capital liquid and defensive.",
+    ];
+  } else if (reserveMonths < reserveTargetMonths) {
+    buckets = allocatePercentages([
+      { label: "Emergency reserve", percent: 45, note: "Bring the household closer to its reserve target first." },
+      { label: "Treasury bonds", percent: 30, note: "Keep a defensive yield sleeve without sacrificing liquidity." },
+      { label: "Broad ETFs", percent: 15, note: "Allow some growth, but only in a measured way." },
+      { label: "Gold", percent: 10, note: "Add ballast instead of extra fragility." },
+    ]);
+    headline = "Strengthen the reserve base, then let a small portion work";
+    summary = `With ${formatEuro(liquidAssets)} liquid and about ${reserveMonths.toFixed(1)} months of runway, TELAJ would still prioritize resilience before a bigger risk move.`;
+    primaryAction = "Close the reserve gap first";
+    secondaryAction = "Keep the defensive sleeve in short Treasuries";
+    growthSleeve = "Only a small ETF sleeve until the reserve target is funded";
+    watchout = "Acting fully invested while the reserve target is still short";
+    heroMove = "Build the reserve before you stretch for returns";
+    heroRationale = "The household is not under-protected, but it still needs more runway before TELAJ leans into bigger exposure.";
+    reasons = [
+      `Reserve target is about ${formatEuro(reserveTargetAmount)} and the gap is still ${formatEuro(reserveGap)}.`,
+      "Short Treasuries keep capital productive without locking the household up.",
+      "A small ETF sleeve preserves momentum without compromising safety.",
+    ];
+  } else {
+    buckets = [
+      { label: "Emergency reserve", percent: 30, note: "Keep a real shock absorber in place." },
+      { label: "Treasury bonds", percent: 25, note: "Fund defense and optionality with short-duration quality." },
+      { label: "Broad ETFs", percent: 30, note: "Compounding should happen through a diversified core." },
+      { label: "Gold", percent: 15, note: "Gold stays as a defensive hedge, not the entire plan." },
+    ];
+
+    if (goalProfile.primaryGoal === "growth" && behaviorProfile.disciplineScore >= 70) {
+      buckets = [
+        { label: "Broad ETFs", percent: 40, note: "Disciplined growth deserves a larger diversified core." },
+        { label: "Treasury bonds", percent: 20, note: "Defense stays meaningful, but not dominant." },
+        { label: "Gold", percent: 15, note: "Gold remains ballast rather than the main engine." },
+        { label: "Emergency reserve", percent: 25, note: "Reserves remain intact even in growth mode." },
+      ];
+    } else if (goalProfile.primaryGoal === "safety" || householdProfile.propertyExposure || mortgageDebt > liquidAssets * 0.8 || unsecuredDebt > liquidAssets * 0.2) {
+      buckets = [
+        { label: "Emergency reserve", percent: 35, note: "Higher reserve because the household carries more fixed obligations." },
+        { label: "Treasury bonds", percent: 30, note: "Defensive income before aggressive reach." },
+        { label: "Gold", percent: 15, note: "Gold stays as a hedge against macro stress." },
+        { label: "Broad ETFs", percent: 20, note: "Growth is still present, just subordinate to stability." },
+      ];
+    }
+
+    buckets = allocatePercentages(buckets);
+    headline = "Use the liquid balance deliberately instead of letting it sit idle";
+    summary = `With ${formatEuro(liquidAssets)} liquid, low expensive debt, and reserve coverage already in place, TELAJ would now split fresh capital between defense, compounding, and liquidity discipline.`;
+    primaryAction = "Allocate the liquid balance in planned sleeves";
+    secondaryAction = "Keep a standing emergency reserve instead of going fully invested";
+    growthSleeve = "Broad ETFs as the growth core, with gold and Treasuries as defense";
+    watchout = "Going all-in because the cash balance feels too large";
+    heroMove = "Put the liquid capital to work in layers";
+    heroRationale = "TELAJ sees enough reserve strength to let part of the cash compound, but it still wants defense and optionality in the mix.";
+    reasons = [
+      "A diversified ETF sleeve is the cleanest growth engine for household capital.",
+      "Gold and Treasuries reduce the risk of regretting the move under stress.",
+      "Keeping a dedicated reserve prevents the portfolio from becoming the emergency fund.",
+    ];
+  }
+
+  const plan = buckets.map((bucket) => ({
+    ...bucket,
+    amount: liquidAssets * (bucket.percent / 100),
+  }));
+
+  const plainEnglish = liquidAssets
+    ? `If ${formatEuro(liquidAssets)} is the liquid cash available today, TELAJ would currently split it as ${plan
+        .map((bucket) => `${bucket.percent}% to ${bucket.label.toLowerCase()}`)
+        .join(", ")}.`
+    : "TELAJ needs the liquid position mapped before it can produce a household allocation call.";
+
+  return {
+    reserveMonths,
+    reserveTargetMonths,
+    reserveTargetAmount,
+    reserveGap,
+    headline,
+    summary,
+    primaryAction,
+    secondaryAction,
+    growthSleeve,
+    watchout,
+    heroMove,
+    heroRationale,
+    reasons,
+    plan,
+    plainEnglish,
+    debtRatio: position.debtRatio,
+  };
 }
 
 function polarPoint(cx, cy, radius, angle) {
@@ -1737,17 +1974,19 @@ function renderXpLevel() {
 
 function renderAllocationSnapshot() {
   const panel = document.getElementById("allocation-snapshot");
+  const advice = getFinancialAllocationAdvice();
   panel.innerHTML = `
     <div class="eyebrow">Allocation</div>
-    <h3>Portfolio allocation</h3>
+    <h3>Position-based split</h3>
+    <p class="body-copy">${advice.summary}</p>
     <div class="bar-stack">
-      ${state.allocation
+      ${advice.plan
         .map(
           (item) => `
             <div class="allocation-row">
               <div class="row-label">${item.label}</div>
-              <div class="bar-track"><div class="bar-fill" style="width:${item.weight}%"></div></div>
-              <div class="allocation-number">${item.weight}%</div>
+              <div class="bar-track"><div class="bar-fill" style="width:${item.percent}%"></div></div>
+              <div class="allocation-number">${item.percent}%</div>
             </div>
           `
         )
@@ -1763,12 +2002,13 @@ function renderFinancialPosition() {
   }
 
   const position = getFinancialPosition();
+  const advice = getFinancialAllocationAdvice();
   const debtPressure =
     position.totalDebt === 0 ? "Clean" : position.debtRatio > 0.6 ? "Heavy" : position.debtRatio > 0.3 ? "Moderate" : "Controlled";
 
   panel.innerHTML = `
     <div class="eyebrow">Financial position</div>
-    <h3>Where the household stands</h3>
+    <h3>Put the household position at the center of every move</h3>
     <div class="financial-layout">
       <div class="financial-chart-wrap">
         ${financialPieChart(position.assets)}
@@ -1776,19 +2016,52 @@ function renderFinancialPosition() {
       <div class="financial-summary">
         <div class="stat-box">
           <div class="stat-label">Total assets</div>
-          <div class="stat-value">€${Math.round(position.totalAssets).toLocaleString()}</div>
+          <div class="stat-value">${formatEuro(position.totalAssets)}</div>
         </div>
         <div class="stat-box">
           <div class="stat-label">Total debt</div>
-          <div class="stat-value">€${Math.round(position.totalDebt).toLocaleString()}</div>
+          <div class="stat-value">${formatEuro(position.totalDebt)}</div>
         </div>
         <div class="stat-box">
           <div class="stat-label">Net worth</div>
-          <div class="stat-value accent-text">€${Math.round(position.netWorth).toLocaleString()}</div>
+          <div class="stat-value accent-text">${formatEuro(position.netWorth)}</div>
         </div>
         <div class="stat-box">
           <div class="stat-label">Debt pressure</div>
           <div class="stat-value">${debtPressure}</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Liquid runway</div>
+          <div class="stat-value">${advice.reserveMonths ? `${advice.reserveMonths.toFixed(1)} months` : "Map expenses"}</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Reserve target</div>
+          <div class="stat-value">${state.liquidityDetails.monthlyNeed > 0 ? `${advice.reserveTargetMonths} months` : "Pending"}</div>
+        </div>
+      </div>
+      <div class="financial-callout">
+        <div class="financial-callout-card">
+          <div class="micro-label">TELAJ capital call</div>
+          <h4 class="financial-call-title">${advice.headline}</h4>
+          <div class="financial-call-copy">${advice.plainEnglish}</div>
+          <div class="task-pill">Primary: ${advice.primaryAction}</div>
+        </div>
+        <div class="financial-plan-grid">
+          ${advice.plan
+            .map(
+              (bucket) => `
+                <div class="financial-plan-card">
+                  <div class="micro-label">${bucket.label}</div>
+                  <div class="financial-plan-percent">${bucket.percent}%</div>
+                  <div class="financial-plan-amount">${formatEuro(bucket.amount)}</div>
+                  <div class="panel-copy">${bucket.note}</div>
+                </div>
+              `
+            )
+            .join("")}
+        </div>
+        <div class="financial-reason-list">
+          ${advice.reasons.map((item) => `<div class="financial-reason">${item}</div>`).join("")}
         </div>
       </div>
     </div>
@@ -1800,15 +2073,23 @@ function renderFinancialPosition() {
             <div class="legend-item">
               <span class="legend-swatch" style="background:${item.color}"></span>
               <span>${item.label}</span>
-              <span class="legend-value">€${Math.round(item.value).toLocaleString()}</span>
+              <span class="legend-value">${formatEuro(item.value)}</span>
             </div>
           `
         )
         .join("")}
     </div>
     <div class="section-spacer"></div>
-    <div class="micro-label">Debt breakdown</div>
+    <div class="micro-label">Update the household map</div>
     <div class="input-stack">
+      <label class="input-field">
+        <span class="micro-label">Liquid cash</span>
+        <input id="fp-liquid" type="number" min="0" step="1000" value="${state.liquidityDetails.liquidAssets}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Monthly household need</span>
+        <input id="fp-monthly-need" type="number" min="0" step="100" value="${state.liquidityDetails.monthlyNeed}" />
+      </label>
       <label class="input-field">
         <span class="micro-label">Investments</span>
         <input id="fp-investments" type="number" min="0" step="1000" value="${state.financialPosition.investments}" />
@@ -1845,6 +2126,8 @@ function renderFinancialPosition() {
   `;
 
   document.getElementById("save-financial-position").addEventListener("click", () => {
+    state.liquidityDetails.liquidAssets = Number(document.getElementById("fp-liquid").value || 0);
+    state.liquidityDetails.monthlyNeed = Number(document.getElementById("fp-monthly-need").value || 0);
     state.financialPosition.investments = Number(document.getElementById("fp-investments").value || 0);
     state.financialPosition.retirement = Number(document.getElementById("fp-retirement").value || 0);
     state.financialPosition.realEstate = Number(document.getElementById("fp-real-estate").value || 0);
@@ -1853,7 +2136,7 @@ function renderFinancialPosition() {
     state.financialPosition.loans = Number(document.getElementById("fp-loans").value || 0);
     state.financialPosition.mortgageDebt = Number(document.getElementById("fp-mortgage").value || 0);
     persistWealthInputs();
-    renderFinancialPosition();
+    renderAll();
   });
   document.getElementById("financial-go-allocation").addEventListener("click", () => setView("allocation"));
 }

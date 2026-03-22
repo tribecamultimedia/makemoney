@@ -1,0 +1,144 @@
+{
+  "hero": {
+    "market": "Columbus, OH",
+    "headline": "Employer expansion and logistics depth keep Columbus interesting for patient rental buyers.",
+    "note": "TELAJ likes this market for practical buy-and-hold and small multifamily, not for hype or instant flips."
+  },
+  "markets": [
+    {
+      "market": "Columbus, OH",
+      "jobMomentum": 82,
+      "infrastructureMomentum": 77,
+      "supplyPressure": 48,
+      "affordability": 72,
+      "rentStrength": 69,
+      "liquidity": 71,
+      "hazardDrag": 24,
+      "taxFriendliness": 63,
+      "summary": "Data center, logistics, and university-driven demand continue to support rental depth.",
+      "strategyFit": "small multifamily",
+      "catalysts": ["data center investment", "logistics hiring", "steady population inflow"],
+      "risks": ["permits rising in outer-ring suburbs", "insurance drift"]
+    },
+    {
+      "market": "Raleigh, NC",
+      "jobMomentum": 79,
+      "infrastructureMomentum": 73,
+      "supplyPressure": 56,
+      "affordability": 58,
+      "rentStrength": 72,
+      "liquidity": 74,
+      "hazardDrag": 33,
+      "taxFriendliness": 67,
+      "summary": "Research, health care, and employer growth keep demand solid, but pricing is less forgiving.",
+      "strategyFit": "buy and hold",
+      "catalysts": ["life science hiring", "tech expansion", "population growth"],
+      "risks": ["new apartment deliveries", "higher entry basis"]
+    },
+    {
+      "market": "Cleveland, OH",
+      "jobMomentum": 58,
+      "infrastructureMomentum": 54,
+      "supplyPressure": 39,
+      "affordability": 81,
+      "rentStrength": 57,
+      "liquidity": 49,
+      "hazardDrag": 27,
+      "taxFriendliness": 61,
+      "summary": "Still affordable and usable for yield seekers, but exitability is slower and neighborhood selection matters more.",
+      "strategyFit": "value add",
+      "catalysts": ["medical corridor stability", "low basis opportunities"],
+      "risks": ["patchy liquidity", "block-by-block quality"]
+    },
+    {
+      "market": "Austin, TX",
+      "jobMomentum": 76,
+      "infrastructureMomentum": 69,
+      "supplyPressure": 78,
+      "affordability": 41,
+      "rentStrength": 51,
+      "liquidity": 75,
+      "hazardDrag": 46,
+      "taxFriendliness": 71,
+      "summary": "Still fundamentally attractive long term, but current supply pressure and basis make patience more important.",
+      "strategyFit": "wait / avoid",
+      "catalysts": ["employer depth", "continued in-migration"],
+      "risks": ["apartment supply wave", "compressed yields"]
+    }
+  ],
+  "newsSignals": [
+    {
+      "market": "Columbus, OH",
+      "headline": "Large cloud and data infrastructure expansion announced near the metro logistics corridor",
+      "category": "data center development",
+      "implication": "higher long-term housing demand from contractors, operations staff, and follow-on employers",
+      "stance": "signal",
+      "confidence": "medium"
+    },
+    {
+      "market": "Raleigh, NC",
+      "headline": "Major life-science and hospital hiring wave expands local high-income renter base",
+      "category": "employer expansion",
+      "implication": "supportive for stable rental demand, especially near employment clusters",
+      "stance": "signal",
+      "confidence": "medium"
+    },
+    {
+      "market": "Austin, TX",
+      "headline": "New permit volume and multifamily deliveries continue to rise",
+      "category": "permit surge",
+      "implication": "future rent competition and slower rent growth if absorption cools",
+      "stance": "caution",
+      "confidence": "medium"
+    }
+  ],
+  "deals": [
+    {
+      "id": "deal-col-1",
+      "address": "North Linden duplex, Columbus, OH",
+      "market": "Columbus, OH",
+      "propertyType": "duplex",
+      "strategy": "small multifamily",
+      "price": 245000,
+      "expectedRent": 2400,
+      "capRate": 6.4,
+      "monthlyCashFlow": 310,
+      "positives": ["Solid entry basis", "Good workforce rental demand", "Duplex diversifies vacancy"],
+      "risks": ["Older systems", "Street selection matters"]
+    },
+    {
+      "id": "deal-ral-1",
+      "address": "Townhome near RTP, Raleigh, NC",
+      "market": "Raleigh, NC",
+      "propertyType": "townhome",
+      "strategy": "buy and hold",
+      "price": 365000,
+      "expectedRent": 2700,
+      "capRate": 5.6,
+      "monthlyCashFlow": 145,
+      "positives": ["Strong tenant base", "Better resale liquidity", "Employer depth nearby"],
+      "risks": ["Thin cash flow", "HOA and basis sensitivity"]
+    },
+    {
+      "id": "deal-cle-1",
+      "address": "Triplex near clinic corridor, Cleveland, OH",
+      "market": "Cleveland, OH",
+      "propertyType": "triplex",
+      "strategy": "value add",
+      "price": 198000,
+      "expectedRent": 2300,
+      "capRate": 7.2,
+      "monthlyCashFlow": 365,
+      "positives": ["Low basis", "Good yield", "Medical employment nearby"],
+      "risks": ["Operational complexity", "Slower exit market"]
+    }
+  ],
+  "taxEducation": {
+    "items": [
+      "Depreciation can shelter some rental income, but the mechanics depend on basis allocation and your full tax picture.",
+      "Mortgage interest matters, but it does not turn a weak property into a strong deal.",
+      "Cost segregation is an advanced strategy worth discussing only with a qualified CPA.",
+      "Entity structure, liability protection, and transfer issues should be reviewed with a real attorney and CPA."
+    ]
+  }
+}

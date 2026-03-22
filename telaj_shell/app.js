@@ -212,6 +212,47 @@ const defaultState = {
     pricePerSqm: 0,
     note: "Enter an address and size to get a quick educational appraisal.",
   },
+  realEstateIntel: {
+    hero: null,
+    markets: [],
+    newsSignals: [],
+    deals: [],
+    taxEducation: { items: [] },
+  },
+  realEstateFilters: {
+    budget: 350000,
+    market: "",
+    strategy: "",
+    targetYield: 6,
+    minimumCapRate: 5.5,
+    minimumCashFlow: 100,
+    propertyType: "",
+  },
+  addressAnalyzer: {
+    address: "",
+    purchasePrice: 250000,
+    expectedRent: 2200,
+    downPaymentPct: 25,
+    interestRatePct: 6.25,
+    taxesMonthly: 240,
+    insuranceMonthly: 110,
+    repairsMonthly: 150,
+    vacancyPct: 6,
+    managementPct: 8,
+    closingCosts: 9000,
+    renovationBudget: 12000,
+  },
+  holdAdvisor: {
+    address: "",
+    currentValue: 325000,
+    mortgageBalance: 185000,
+    currentRent: 2400,
+    monthlyExpenses: 650,
+    estimatedRepairs: 8000,
+    currentRatePct: 6.9,
+    expectedSalePrice: 325000,
+    exitCostsPct: 7,
+  },
 };
 
 const state = structuredClone(defaultState);
@@ -523,6 +564,7 @@ const mockEndpoints = {
   signals: "./mock-api/signals.json",
   progress: "./mock-api/progress.json",
   realEstate: "./mock-api/real-estate.json",
+  realEstateIntel: "./mock-api/real-estate-intel.json",
 };
 
 function initSupabaseClient() {
@@ -705,12 +747,13 @@ async function fetchJson(url) {
 
 async function loadMockApiState() {
   try {
-    const [familyDashboard, allocation, signals, progress, realEstate] = await Promise.all([
+    const [familyDashboard, allocation, signals, progress, realEstate, realEstateIntel] = await Promise.all([
       fetchJson(mockEndpoints.familyDashboard),
       fetchJson(mockEndpoints.allocation),
       fetchJson(mockEndpoints.signals),
       fetchJson(mockEndpoints.progress),
       fetchJson(mockEndpoints.realEstate),
+      fetchJson(mockEndpoints.realEstateIntel),
     ]);
 
     mergeState({
@@ -730,6 +773,7 @@ async function loadMockApiState() {
       badges: progress.badges ?? state.badges,
       leaderboard: progress.leaderboard ?? state.leaderboard,
       property: realEstate.property ?? state.property,
+      realEstateIntel: realEstateIntel ?? state.realEstateIntel,
       dataSource: "Mock API JSON",
     });
   } catch (error) {
@@ -2623,125 +2667,241 @@ function renderProgress() {
 }
 
 function renderRealEstate() {
-  calculatePropertyAppraisal();
+  const engine = window.TelajRealEstateEngine;
+  const intel = state.realEstateIntel || { markets: [], newsSignals: [], deals: [], taxEducation: { items: [] }, hero: null };
+  const rankedMarkets = engine.rankMarkets(intel.markets || []);
+  const marketSignals = engine.summarizeNews(intel.newsSignals || []);
+  const topMarket = rankedMarkets[0];
+  const filteredDeals = engine.findDeals(intel.deals || [], state.realEstateFilters || {});
+  const addressAnalysis = engine.analyzeAddress(state.addressAnalyzer || {});
+  const ownedPropertyDecision = engine.adviseOwnedProperty(state.holdAdvisor || {});
+
   document.getElementById("property-signal").innerHTML = `
-    <div class="eyebrow">Property decision</div>
-    <h3>${state.property.signal}</h3>
-    <p class="body-copy">${state.property.note}</p>
+    <div class="eyebrow">Hero insight</div>
+    <h3>${intel.hero?.headline || state.property.signal}</h3>
+    <p class="body-copy">${intel.hero?.note || state.property.note}</p>
     <div class="insight-grid">
-      <div class="insight-card">
-        <div class="micro-label">TELAJ stance</div>
-        <div class="panel-copy">Preparation before expansion</div>
-      </div>
-      <div class="insight-card">
-        <div class="micro-label">Why this matters</div>
-        <div class="panel-copy">The household needs resilient liquidity, financing discipline, and vacancy tolerance before the next property move.</div>
-      </div>
+      <div class="insight-card"><div class="micro-label">Best market now</div><div class="panel-copy">${topMarket ? topMarket.market : "No market signal loaded"}</div></div>
+      <div class="insight-card"><div class="micro-label">Strategy fit</div><div class="panel-copy">${topMarket ? topMarket.strategyFit : "Review carefully"}</div></div>
+      <div class="insight-card"><div class="micro-label">Opportunity / risk</div><div class="panel-copy">${topMarket ? `${topMarket.opportunityScore} / ${topMarket.riskScore}` : "Pending"}</div></div>
+      <div class="insight-card"><div class="micro-label">TELAJ view</div><div class="panel-copy">${topMarket ? `Look for ${topMarket.strategyFit} before chasing overheated narratives.` : "Stay selective and data-driven."}</div></div>
     </div>
     <div class="property-action-row">
-      <button class="action-button primary" id="property-run-appraisal-top">Run appraisal</button>
-      <button class="action-button" id="property-view-checklist-top">View checklist</button>
+      <button class="action-button primary" id="property-go-deals">Open deal finder</button>
+      <button class="action-button" id="property-go-address">Analyze an address</button>
       <button class="ghost-button" id="property-go-allocation">Back to allocation</button>
     </div>
   `;
-  document.getElementById("property-metrics").innerHTML = `
-    <div class="eyebrow">Property posture</div>
-    <h3>Readiness at a glance</h3>
-    <div class="stats-grid">
-      <div class="stat-box">
-        <div class="stat-label">Estimated value</div>
-        <div class="stat-value">€${Math.round(state.propertyAppraisal.estimatedValue).toLocaleString()}</div>
-      </div>
-      ${state.property.metrics
+
+  document.getElementById("market-radar").innerHTML = `
+    <div class="eyebrow">Market radar</div>
+    <h3>Rank attractive markets and explain why</h3>
+    <div class="property-list">
+      ${rankedMarkets
         .map(
-          (item) => `
-            <div class="stat-box">
-              <div class="stat-label">${item.label}</div>
-              <div class="stat-value">${item.value}</div>
+          (market) => `
+            <div class="subpanel">
+              <div class="history-top">
+                <div><div class="row-label">${market.market}</div><div>${market.strategyFit}</div></div>
+                <div class="signal-badge ${market.riskScore >= 60 ? "warn" : "good"}">Opp ${market.opportunityScore}</div>
+              </div>
+              <div class="stats-grid">
+                <div class="stat-box"><div class="stat-label">Risk</div><div class="stat-value">${market.riskScore}</div></div>
+                <div class="stat-box"><div class="stat-label">Demand</div><div class="stat-value">${market.demandMomentum}</div></div>
+                <div class="stat-box"><div class="stat-label">Supply</div><div class="stat-value">${market.supplyPressure}</div></div>
+                <div class="stat-box"><div class="stat-label">Exitability</div><div class="stat-value">${market.exitability}</div></div>
+              </div>
+              <div class="panel-copy">${market.summary}</div>
+              <div class="tag-row">${market.catalysts.map((item) => `<span class="task-pill">${item}</span>`).join("")}</div>
             </div>
           `
         )
         .join("")}
     </div>
   `;
-  document.getElementById("property-checklist").innerHTML = `
-    <div class="eyebrow">Property lab</div>
-    <h3>Quick appraisal and readiness plan</h3>
-    <p class="body-copy">Educational only. This is a rough heuristic, not a formal valuation or professional appraisal.</p>
-    <div class="property-stack">
-      <div class="subpanel">
-        <div class="micro-label">Appraisal inputs</div>
-        <div class="input-stack">
-          <label class="input-field input-span-2">
-            <span class="micro-label">Address / city</span>
-            <input id="property-address" type="text" value="${state.propertyAppraisal.address}" placeholder="Via Roma 10, Milano or London, UK" />
-          </label>
-          <label class="input-field">
-            <span class="micro-label">Size</span>
-            <input id="property-size" type="number" min="0" step="1" value="${state.propertyAppraisal.size}" />
-          </label>
-          <label class="input-field">
-            <span class="micro-label">Unit</span>
-            <select id="property-unit">
-              <option value="sqm" ${state.propertyAppraisal.unit === "sqm" ? "selected" : ""}>sq m</option>
-              <option value="sqft" ${state.propertyAppraisal.unit === "sqft" ? "selected" : ""}>sq ft</option>
-            </select>
-          </label>
-          <div class="property-action-row input-span-2">
-            <button class="action-button primary" id="run-appraisal">Run appraisal</button>
-            <button class="ghost-button" id="property-checklist-toggle">Jump to checklist</button>
-          </div>
-        </div>
-      </div>
-      <div class="subpanel">
-        <div class="micro-label">Appraisal output</div>
-        <div class="insight-grid">
-          <div class="insight-card">
-            <div class="micro-label">Estimated range</div>
-            <div class="panel-copy">€${Math.round(state.propertyAppraisal.valueLow).toLocaleString()} to €${Math.round(state.propertyAppraisal.valueHigh).toLocaleString()}</div>
-          </div>
-          <div class="insight-card">
-            <div class="micro-label">Price per sq m</div>
-            <div class="panel-copy">€${Math.round(state.propertyAppraisal.pricePerSqm).toLocaleString()} / sq m</div>
-          </div>
-        </div>
-        <div class="section-spacer"></div>
-        <div class="micro-label">Appraisal note</div>
-        <div class="panel-copy">${state.propertyAppraisal.note}</div>
-      </div>
-      <div class="subpanel" id="property-readiness-list">
-        <div class="micro-label">Before the next property move</div>
-        <ul class="clean-list">
-          ${state.property.checklist.map((item) => `<li>${item}</li>`).join("")}
-        </ul>
-      </div>
+
+  document.getElementById("news-market-signals").innerHTML = `
+    <div class="eyebrow">News-to-market signals</div>
+    <h3>Read recent news through a housing-demand lens</h3>
+    <div class="history-list">
+      ${marketSignals
+        .map(
+          (item) => `
+            <div class="history-item">
+              <div class="history-top">
+                <div><div class="row-label">${item.market}</div><div>${item.headline}</div></div>
+                <div class="signal-badge ${item.stance === "caution" ? "warn" : "good"}">${item.category}</div>
+              </div>
+              <div class="panel-copy">${item.plainEnglish}</div>
+              <div class="history-meta">${item.caution} Confidence: ${item.confidence}.</div>
+            </div>
+          `
+        )
+        .join("")}
     </div>
   `;
-  document.getElementById("property-run-appraisal-top").addEventListener("click", () => {
-    const target = document.getElementById("property-checklist");
-    if (target) {
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+
+  document.getElementById("deal-finder").innerHTML = `
+    <div class="eyebrow">Deal finder</div>
+    <h3>Surface candidate deals by market and strategy</h3>
+    <div class="input-stack">
+      <label class="input-field"><span class="micro-label">Budget</span><input id="deal-budget" type="number" min="0" step="1000" value="${state.realEstateFilters.budget}" /></label>
+      <label class="input-field"><span class="micro-label">Market</span><select id="deal-market"><option value="">Any market</option>${[...new Set((intel.deals || []).map((item) => item.market))].map((market) => `<option value="${market}" ${state.realEstateFilters.market === market ? "selected" : ""}>${market}</option>`).join("")}</select></label>
+      <label class="input-field"><span class="micro-label">Strategy</span><select id="deal-strategy"><option value="">Any strategy</option>${["buy and hold", "small multifamily", "value add", "BRRRR-style", "build-to-rent", "wait / avoid"].map((item) => `<option value="${item}" ${state.realEstateFilters.strategy === item ? "selected" : ""}>${item}</option>`).join("")}</select></label>
+      <label class="input-field"><span class="micro-label">Property type</span><select id="deal-property-type"><option value="">Any type</option>${[...new Set((intel.deals || []).map((item) => item.propertyType))].map((item) => `<option value="${item}" ${state.realEstateFilters.propertyType === item ? "selected" : ""}>${item}</option>`).join("")}</select></label>
+      <label class="input-field"><span class="micro-label">Minimum cap rate</span><input id="deal-cap-rate" type="number" min="0" step="0.1" value="${state.realEstateFilters.minimumCapRate}" /></label>
+      <label class="input-field"><span class="micro-label">Minimum monthly cash flow</span><input id="deal-cash-flow" type="number" step="50" value="${state.realEstateFilters.minimumCashFlow}" /></label>
+      <div class="property-action-row input-span-2"><button class="action-button primary" id="deal-filter-run">Refresh ideas</button></div>
+    </div>
+    <div class="property-list">
+      ${filteredDeals.length
+        ? filteredDeals
+            .map(
+              (deal) => `
+                <div class="subpanel">
+                  <div class="history-top">
+                    <div><div class="row-label">${deal.market}</div><div>${deal.address}</div></div>
+                    <div class="signal-badge ${deal.score >= 70 ? "good" : deal.score >= 55 ? "warn" : "bad"}">Score ${deal.score}</div>
+                  </div>
+                  <div class="stats-grid">
+                    <div class="stat-box"><div class="stat-label">Price</div><div class="stat-value">${formatEuro(deal.price)}</div></div>
+                    <div class="stat-box"><div class="stat-label">Cap rate</div><div class="stat-value">${deal.capRate}%</div></div>
+                    <div class="stat-box"><div class="stat-label">Cash flow</div><div class="stat-value">${formatEuro(deal.monthlyCashFlow)}</div></div>
+                    <div class="stat-box"><div class="stat-label">Strategy</div><div class="stat-value">${deal.strategy}</div></div>
+                  </div>
+                  <div class="panel-copy">TELAJ thinks this is interesting because ${deal.positives[0].toLowerCase()}.</div>
+                  <div class="tag-row">${deal.risks.map((item) => `<span class="task-pill">${item}</span>`).join("")}</div>
+                </div>
+              `
+            )
+            .join("")
+        : `<div class="subpanel"><div class="panel-copy">No candidate deals match the current filter set. Relax the thresholds or change the market/strategy.</div></div>`}
+    </div>
+  `;
+
+  document.getElementById("address-analyzer").innerHTML = `
+    <div class="eyebrow">Address analyzer</div>
+    <h3>Evaluate a property by address and assumptions</h3>
+    <div class="input-stack">
+      <label class="input-field input-span-2"><span class="micro-label">Address</span><input id="address-input" type="text" value="${state.addressAnalyzer.address}" placeholder="123 Main St, Columbus, OH" /></label>
+      <label class="input-field"><span class="micro-label">Purchase price</span><input id="address-price" type="number" step="1000" value="${state.addressAnalyzer.purchasePrice}" /></label>
+      <label class="input-field"><span class="micro-label">Expected rent</span><input id="address-rent" type="number" step="50" value="${state.addressAnalyzer.expectedRent}" /></label>
+      <label class="input-field"><span class="micro-label">Down payment %</span><input id="address-down" type="number" step="1" value="${state.addressAnalyzer.downPaymentPct}" /></label>
+      <label class="input-field"><span class="micro-label">Interest rate %</span><input id="address-rate" type="number" step="0.1" value="${state.addressAnalyzer.interestRatePct}" /></label>
+      <label class="input-field"><span class="micro-label">Taxes / mo</span><input id="address-taxes" type="number" step="10" value="${state.addressAnalyzer.taxesMonthly}" /></label>
+      <label class="input-field"><span class="micro-label">Insurance / mo</span><input id="address-insurance" type="number" step="10" value="${state.addressAnalyzer.insuranceMonthly}" /></label>
+      <label class="input-field"><span class="micro-label">Repairs / mo</span><input id="address-repairs" type="number" step="10" value="${state.addressAnalyzer.repairsMonthly}" /></label>
+      <label class="input-field"><span class="micro-label">Vacancy %</span><input id="address-vacancy" type="number" step="1" value="${state.addressAnalyzer.vacancyPct}" /></label>
+      <label class="input-field"><span class="micro-label">Management %</span><input id="address-management" type="number" step="1" value="${state.addressAnalyzer.managementPct}" /></label>
+      <label class="input-field"><span class="micro-label">Closing costs</span><input id="address-closing" type="number" step="1000" value="${state.addressAnalyzer.closingCosts}" /></label>
+      <label class="input-field"><span class="micro-label">Renovation budget</span><input id="address-renovation" type="number" step="1000" value="${state.addressAnalyzer.renovationBudget}" /></label>
+      <div class="property-action-row input-span-2"><button class="action-button primary" id="address-run">Run analysis</button></div>
+    </div>
+    <div class="insight-grid">
+      <div class="insight-card"><div class="micro-label">Verdict</div><div class="panel-copy">${addressAnalysis.verdict}</div></div>
+      <div class="insight-card"><div class="micro-label">Cap rate</div><div class="panel-copy">${addressAnalysis.capRate}%</div></div>
+      <div class="insight-card"><div class="micro-label">Cash flow</div><div class="panel-copy">${formatEuro(addressAnalysis.monthlyCashFlow)} / mo</div></div>
+      <div class="insight-card"><div class="micro-label">Cash-on-cash</div><div class="panel-copy">${addressAnalysis.cashOnCash}%</div></div>
+      <div class="insight-card"><div class="micro-label">DSCR</div><div class="panel-copy">${addressAnalysis.dscr}</div></div>
+      <div class="insight-card"><div class="micro-label">Stress case</div><div class="panel-copy">${formatEuro(addressAnalysis.stressCashFlow)} / mo</div></div>
+    </div>
+    <div class="panel-copy">${addressAnalysis.explanation}</div>
+    <div class="summary-grid">
+      <div class="profile-chip"><div class="micro-label">Top strengths</div><div class="panel-copy">${addressAnalysis.strengths.join(" ") || "No major strength yet."}</div></div>
+      <div class="profile-chip"><div class="micro-label">Top risks</div><div class="panel-copy">${addressAnalysis.risks.join(" ") || "No major flagged risk yet."}</div></div>
+    </div>
+  `;
+
+  document.getElementById("hold-advisor").innerHTML = `
+    <div class="eyebrow">Hold / sell / refinance advisor</div>
+    <h3>Compare owned-property scenarios</h3>
+    <div class="input-stack">
+      <label class="input-field input-span-2"><span class="micro-label">Address</span><input id="hold-address" type="text" value="${state.holdAdvisor.address}" placeholder="Owned property address" /></label>
+      <label class="input-field"><span class="micro-label">Current value</span><input id="hold-value" type="number" step="1000" value="${state.holdAdvisor.currentValue}" /></label>
+      <label class="input-field"><span class="micro-label">Mortgage balance</span><input id="hold-mortgage" type="number" step="1000" value="${state.holdAdvisor.mortgageBalance}" /></label>
+      <label class="input-field"><span class="micro-label">Current rent or use value</span><input id="hold-rent" type="number" step="50" value="${state.holdAdvisor.currentRent}" /></label>
+      <label class="input-field"><span class="micro-label">Monthly expenses</span><input id="hold-expenses" type="number" step="10" value="${state.holdAdvisor.monthlyExpenses}" /></label>
+      <label class="input-field"><span class="micro-label">Estimated repairs</span><input id="hold-repairs" type="number" step="1000" value="${state.holdAdvisor.estimatedRepairs}" /></label>
+      <label class="input-field"><span class="micro-label">Current rate %</span><input id="hold-rate" type="number" step="0.1" value="${state.holdAdvisor.currentRatePct}" /></label>
+      <label class="input-field"><span class="micro-label">Expected sale price</span><input id="hold-sale" type="number" step="1000" value="${state.holdAdvisor.expectedSalePrice}" /></label>
+      <label class="input-field input-span-2"><span class="micro-label">Exit costs %</span><input id="hold-exit" type="number" step="0.5" value="${state.holdAdvisor.exitCostsPct}" /></label>
+      <div class="property-action-row input-span-2"><button class="action-button primary" id="hold-run">Compare scenarios</button></div>
+    </div>
+    <div class="insight-grid">
+      <div class="insight-card"><div class="micro-label">Recommendation</div><div class="panel-copy">${ownedPropertyDecision.recommendation}</div></div>
+      <div class="insight-card"><div class="micro-label">Equity</div><div class="panel-copy">${formatEuro(ownedPropertyDecision.equity)}</div></div>
+      <div class="insight-card"><div class="micro-label">Keep</div><div class="panel-copy">${formatEuro(ownedPropertyDecision.keepScenario)} / mo</div></div>
+      <div class="insight-card"><div class="micro-label">Refinance</div><div class="panel-copy">${formatEuro(ownedPropertyDecision.refinanceScenario)}</div></div>
+      <div class="insight-card"><div class="micro-label">Sell & redeploy</div><div class="panel-copy">${formatEuro(ownedPropertyDecision.sellScenario)}</div></div>
+      <div class="insight-card"><div class="micro-label">Decision score</div><div class="panel-copy">${ownedPropertyDecision.score}</div></div>
+    </div>
+    <div class="panel-copy">${ownedPropertyDecision.explanation}</div>
+  `;
+
+  document.getElementById("tax-education").innerHTML = `
+    <div class="eyebrow">Tax-aware education</div>
+    <h3>Educational only, not personal tax or legal advice</h3>
+    <ul class="clean-list">
+      ${(intel.taxEducation?.items || []).map((item) => `<li>${item}</li>`).join("")}
+    </ul>
+    <div class="legal-note">
+      <div class="micro-label">Educational only</div>
+      <div class="panel-copy">TELAJ can help frame questions around depreciation, refinance tradeoffs, entities, and sale friction, but you should verify those decisions with a licensed CPA or attorney.</div>
+    </div>
+  `;
+
+  document.getElementById("property-go-deals").addEventListener("click", () => {
+    document.getElementById("deal-finder")?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
-  document.getElementById("property-view-checklist-top").addEventListener("click", () => {
-    const target = document.getElementById("property-readiness-list");
-    if (target) {
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+  document.getElementById("property-go-address").addEventListener("click", () => {
+    document.getElementById("address-analyzer")?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
   document.getElementById("property-go-allocation").addEventListener("click", () => setView("allocation"));
-  document.getElementById("run-appraisal").addEventListener("click", () => {
-    state.propertyAppraisal.address = document.getElementById("property-address").value;
-    state.propertyAppraisal.size = Number(document.getElementById("property-size").value || 0);
-    state.propertyAppraisal.unit = document.getElementById("property-unit").value;
-    calculatePropertyAppraisal();
+
+  document.getElementById("deal-filter-run").addEventListener("click", () => {
+    state.realEstateFilters = {
+      ...state.realEstateFilters,
+      budget: Number(document.getElementById("deal-budget").value || 0),
+      market: document.getElementById("deal-market").value,
+      strategy: document.getElementById("deal-strategy").value,
+      propertyType: document.getElementById("deal-property-type").value,
+      minimumCapRate: Number(document.getElementById("deal-cap-rate").value || 0),
+      minimumCashFlow: Number(document.getElementById("deal-cash-flow").value || 0),
+    };
     renderRealEstate();
   });
-  document.getElementById("property-checklist-toggle").addEventListener("click", () => {
-    const target = document.getElementById("property-readiness-list");
-    if (target) {
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+
+  document.getElementById("address-run").addEventListener("click", () => {
+    state.addressAnalyzer = {
+      address: document.getElementById("address-input").value,
+      purchasePrice: Number(document.getElementById("address-price").value || 0),
+      expectedRent: Number(document.getElementById("address-rent").value || 0),
+      downPaymentPct: Number(document.getElementById("address-down").value || 0),
+      interestRatePct: Number(document.getElementById("address-rate").value || 0),
+      taxesMonthly: Number(document.getElementById("address-taxes").value || 0),
+      insuranceMonthly: Number(document.getElementById("address-insurance").value || 0),
+      repairsMonthly: Number(document.getElementById("address-repairs").value || 0),
+      vacancyPct: Number(document.getElementById("address-vacancy").value || 0),
+      managementPct: Number(document.getElementById("address-management").value || 0),
+      closingCosts: Number(document.getElementById("address-closing").value || 0),
+      renovationBudget: Number(document.getElementById("address-renovation").value || 0),
+    };
+    renderRealEstate();
+  });
+
+  document.getElementById("hold-run").addEventListener("click", () => {
+    state.holdAdvisor = {
+      address: document.getElementById("hold-address").value,
+      currentValue: Number(document.getElementById("hold-value").value || 0),
+      mortgageBalance: Number(document.getElementById("hold-mortgage").value || 0),
+      currentRent: Number(document.getElementById("hold-rent").value || 0),
+      monthlyExpenses: Number(document.getElementById("hold-expenses").value || 0),
+      estimatedRepairs: Number(document.getElementById("hold-repairs").value || 0),
+      currentRatePct: Number(document.getElementById("hold-rate").value || 0),
+      expectedSalePrice: Number(document.getElementById("hold-sale").value || 0),
+      exitCostsPct: Number(document.getElementById("hold-exit").value || 0),
+    };
+    renderRealEstate();
   });
 }
 

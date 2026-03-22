@@ -99,6 +99,13 @@ select:focus {
   align-items: start;
 }
 
+.auth-logo {
+  width: clamp(180px, 24vw, 230px);
+  height: auto;
+  display: block;
+  margin-bottom: 12px;
+}
+
 .auth-status,
 .auth-error,
 .auth-info {
@@ -552,6 +559,14 @@ select:focus {
 .nav-stack {
   display: grid;
   gap: 8px;
+}
+
+.brand-logo {
+  width: 180px;
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 6px 0 12px;
 }
 
 .nav-item,

@@ -746,6 +746,34 @@ function initSupabaseClient() {
   return supabaseClient;
 }
 
+function showFatalShellError(message) {
+  appShell.classList.add("is-hidden");
+  onboardingShell.classList.remove("is-active");
+  onboardingShell.innerHTML = "";
+  authShell.classList.add("is-active");
+  authShell.innerHTML = `
+    <div class="auth-card">
+      <div class="auth-head">
+        <div>
+          <img class="auth-logo" src="./assets/telaj-logo2.png" alt="TELAJ" />
+          <div class="eyebrow">TELAJ STATUS</div>
+          <h1 class="onboarding-title">TELAJ hit a startup error</h1>
+          <p class="onboarding-copy">The shell did not load correctly, so TELAJ is showing the error instead of a blank page.</p>
+        </div>
+        <div class="auth-error">Runtime error</div>
+      </div>
+      <div class="legal-note">
+        <div class="micro-label">Error</div>
+        <div class="panel-copy">${message}</div>
+      </div>
+      <div class="onboarding-actions">
+        <button class="action-button primary" id="fatal-reload">Reload TELAJ</button>
+      </div>
+    </div>
+  `;
+  document.getElementById("fatal-reload")?.addEventListener("click", () => window.location.reload());
+}
+
 function normalizeInviteCode(value) {
   return String(value || "")
     .trim()
@@ -869,8 +897,13 @@ function applyMarketRegion(region) {
 }
 
 function loadMarketRegion() {
-  const saved = window.localStorage.getItem("telaj-market-region-v1") || defaultState.marketRegion;
-  applyMarketRegion(saved);
+  try {
+    const saved = window.localStorage.getItem("telaj-market-region-v1") || defaultState.marketRegion;
+    applyMarketRegion(saved);
+  } catch (error) {
+    console.warn("TELAJ could not restore market region, defaulting to US.", error);
+    applyMarketRegion(defaultState.marketRegion);
+  }
 }
 
 function requiresBetaInvite() {
@@ -3473,69 +3506,79 @@ function bindNav() {
 }
 
 function renderAll() {
-  applyProfilesToNarrative();
-  renderRailAccount();
-  renderMorningHero();
-  renderSystemHealth();
-  renderXpLevel();
-  renderProfileMatrix();
-  renderSubscriberPreferences();
-  renderFinancialPosition();
-  renderAllocationSnapshot();
-  renderCashStatus();
-  renderTasks();
-  renderWatchlist();
-  renderHistoryPreview();
-  renderAchievements();
-  renderLeaderboard();
-  renderAllocationView();
-  renderSignalsView();
-  renderProgress();
-  renderRealEstate();
-  bindNav();
-  setView(state.activeView);
+  try {
+    applyProfilesToNarrative();
+    renderRailAccount();
+    renderMorningHero();
+    renderSystemHealth();
+    renderXpLevel();
+    renderProfileMatrix();
+    renderSubscriberPreferences();
+    renderFinancialPosition();
+    renderAllocationSnapshot();
+    renderCashStatus();
+    renderTasks();
+    renderWatchlist();
+    renderHistoryPreview();
+    renderAchievements();
+    renderLeaderboard();
+    renderAllocationView();
+    renderSignalsView();
+    renderProgress();
+    renderRealEstate();
+    bindNav();
+    setView(state.activeView);
+  } catch (error) {
+    console.error("TELAJ render failed.", error);
+    showFatalShellError(error instanceof Error ? error.message : "Unknown render failure");
+  }
 }
 
 async function bootstrap() {
-  initSupabaseClient();
-  loadMarketRegion();
-  loadAuthState();
-  loadSubscriberPreferences();
-  loadOnboardingState();
-  await loadMockApiState();
-  let loadedFinancialPosition = false;
-  if (supabaseClient) {
-    try {
-      const { data } = await supabaseClient.auth.getSession();
-      if (data?.session?.user) {
-        state.auth.authenticated = true;
-        state.auth.guest = Boolean(data.session.user.is_anonymous);
-        state.auth.email = data.session.user.email || "";
-        syncSubscriberEmailFromAuth();
-        loadedFinancialPosition = await loadFinancialPositionFromApi();
+  try {
+    initSupabaseClient();
+    loadMarketRegion();
+    loadAuthState();
+    loadSubscriberPreferences();
+    loadOnboardingState();
+    await loadMockApiState();
+    let loadedFinancialPosition = false;
+    if (supabaseClient) {
+      try {
+        const { data } = await supabaseClient.auth.getSession();
+        if (data?.session?.user) {
+          state.auth.authenticated = true;
+          state.auth.guest = Boolean(data.session.user.is_anonymous);
+          state.auth.email = data.session.user.email || "";
+          syncSubscriberEmailFromAuth();
+          loadedFinancialPosition = await loadFinancialPositionFromApi();
+        }
+      } catch (error) {
+        console.warn("TELAJ auth session could not be restored.", error);
       }
-    } catch (error) {
-      console.warn("TELAJ auth session could not be restored.", error);
     }
+    if (!loadedFinancialPosition) {
+      loadWealthInputs();
+    }
+    if (state.onboarding.completed && (!state.onboarding.profiles?.householdProfile || !state.onboarding.profiles?.behaviorProfile || !state.onboarding.profiles?.goalProfile)) {
+      state.onboarding.profiles = deriveLifeMatrixProfiles();
+      persistOnboardingState();
+    }
+    if (state.onboarding.completed && !state.onboarding.intent?.analysis) {
+      state.onboarding.completed = false;
+      state.onboarding.stage = "intent";
+      persistOnboardingState();
+    }
+    persistAuthState();
+    if (state.auth.authenticated && state.onboarding.completed) {
+      renderAll();
+    }
+    renderAuthShell();
+    renderOnboarding();
+  } catch (error) {
+    console.error("TELAJ bootstrap failed.", error);
+    showFatalShellError(error instanceof Error ? error.message : "Unknown bootstrap failure");
   }
-  if (!loadedFinancialPosition) {
-    loadWealthInputs();
-  }
-  if (state.onboarding.completed && (!state.onboarding.profiles?.householdProfile || !state.onboarding.profiles?.behaviorProfile || !state.onboarding.profiles?.goalProfile)) {
-    state.onboarding.profiles = deriveLifeMatrixProfiles();
-    persistOnboardingState();
-  }
-  if (state.onboarding.completed && !state.onboarding.intent?.analysis) {
-    state.onboarding.completed = false;
-    state.onboarding.stage = "intent";
-    persistOnboardingState();
-  }
-  persistAuthState();
-  if (state.auth.authenticated && state.onboarding.completed) {
-    renderAll();
-  }
-  renderAuthShell();
-  renderOnboarding();
 }
 
 bootstrap();

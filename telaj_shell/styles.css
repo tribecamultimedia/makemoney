@@ -521,6 +521,11 @@ select:focus {
   padding: 18px;
 }
 
+.rail-footer {
+  display: grid;
+  gap: 10px;
+}
+
 .eyebrow,
 .meta-line,
 .panel-tag,
@@ -670,6 +675,17 @@ select:focus {
 
 .meta-line span {
   color: var(--text);
+}
+
+.rail-footer .meta-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+}
+
+.rail-footer .meta-line span {
+  text-align: right;
 }
 
 .stage {

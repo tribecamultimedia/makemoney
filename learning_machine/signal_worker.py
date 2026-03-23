@@ -23,6 +23,126 @@ class SignalState:
     message: str
     reason: str
     hourly_drawdown: float
+    top_signals: tuple[dict[str, object], ...] = ()
+
+
+def build_top_signals(state: SignalState) -> tuple[dict[str, object], ...]:
+    if state.mode == "tactical_accumulation":
+        return (
+            {
+                "ticker": "SPY",
+                "label": "Broad ETF core",
+                "signal": "add slowly",
+                "confidence": 74,
+                "why": "The market is still below recent highs and close enough to recent lows that broad exposure is more attractive than waiting for a perfect entry.",
+                "safer": "Buy in tranches instead of all at once.",
+                "horizon": "6-18 months",
+            },
+            {
+                "ticker": "GLD",
+                "label": "Gold defense",
+                "signal": "buy",
+                "confidence": 71,
+                "why": "Volatility and macro uncertainty still justify a defensive hedge.",
+                "safer": "Add a smaller hedge rather than oversizing it.",
+                "horizon": "3-12 months",
+            },
+            {
+                "ticker": "SGOV",
+                "label": "Treasury reserve sleeve",
+                "signal": "hold",
+                "confidence": 79,
+                "why": "Short-duration Treasuries still work well for reserve capital while the market remains uneven.",
+                "safer": "Keep it as the reserve sleeve, not the whole portfolio.",
+                "horizon": "0-12 months",
+            },
+            {
+                "ticker": "QQQ",
+                "label": "High-beta growth",
+                "signal": "avoid",
+                "confidence": 67,
+                "why": "This part of the market is more vulnerable if momentum rolls over again.",
+                "safer": "Use broad ETFs instead of concentrated beta.",
+                "horizon": "1-6 months",
+            },
+        )
+    if state.mode == "capital_preservation" or state.mode == "event_freeze":
+        return (
+            {
+                "ticker": "SGOV",
+                "label": "Treasury reserve sleeve",
+                "signal": "buy",
+                "confidence": 82,
+                "why": "Capital preservation matters more than reaching for return while stress is elevated.",
+                "safer": "Keep reserve capital short duration and liquid.",
+                "horizon": "0-12 months",
+            },
+            {
+                "ticker": "GLD",
+                "label": "Gold defense",
+                "signal": "add slowly",
+                "confidence": 73,
+                "why": "Gold still helps if policy and macro conditions remain unsettled.",
+                "safer": "Build the hedge gradually.",
+                "horizon": "3-12 months",
+            },
+            {
+                "ticker": "SPY",
+                "label": "Broad ETF core",
+                "signal": "hold",
+                "confidence": 61,
+                "why": "Core exposure can stay on, but this is not the time for aggressive adding.",
+                "safer": "Wait for calmer conditions before increasing size.",
+                "horizon": "6-18 months",
+            },
+            {
+                "ticker": "QQQ",
+                "label": "High-beta growth",
+                "signal": "avoid",
+                "confidence": 76,
+                "why": "High-beta exposure is the least attractive part of the stack in a preservation regime.",
+                "safer": "Use broad ETFs or Treasuries instead.",
+                "horizon": "1-6 months",
+            },
+        )
+    return (
+        {
+            "ticker": "SPY",
+            "label": "Broad ETF core",
+            "signal": "buy",
+            "confidence": 76,
+            "why": "Risk conditions are supportive enough to keep compounding through diversified equity exposure.",
+            "safer": "Build in tranches if volatility rises.",
+            "horizon": "6-18 months",
+        },
+        {
+            "ticker": "GLD",
+            "label": "Gold defense",
+            "signal": "hold",
+            "confidence": 64,
+            "why": "Gold still helps diversification, but the regime does not require an oversized hedge.",
+            "safer": "Keep it as ballast, not the center of the plan.",
+            "horizon": "3-12 months",
+        },
+        {
+            "ticker": "SGOV",
+            "label": "Treasury reserve sleeve",
+            "signal": "hold",
+            "confidence": 74,
+            "why": "Reserve capital still belongs in short-duration safety, even when growth conditions improve.",
+            "safer": "Do not drain the reserve sleeve to chase extra return.",
+            "horizon": "0-12 months",
+        },
+        {
+            "ticker": "QQQ",
+            "label": "High-beta growth",
+            "signal": "add slowly",
+            "confidence": 62,
+            "why": "Momentum can work in a supportive regime, but concentrated beta still deserves caution.",
+            "safer": "Prefer broad ETFs if conviction is lower.",
+            "horizon": "1-6 months",
+        },
+    )
 
 
 def build_signal_state(fred_api_key: str | None = None) -> SignalState:
@@ -57,20 +177,28 @@ def build_signal_state(fred_api_key: str | None = None) -> SignalState:
     message = decision.summary
     reason = f"{regime['narrative']} | {internals.summary} | {credit.summary} | {event_risk.summary} | {decision.attribution}"
 
-    return SignalState(
+    state = SignalState(
         mode=mode,
         label=label,
         message=message,
         reason=reason,
         hourly_drawdown=float(stress["hourly_drawdown"]),
     )
+    return SignalState(**{**asdict(state), "top_signals": build_top_signals(state)})
 
 
 def load_previous_state() -> SignalState | None:
     payload = load_signal_payload()
     if payload is None:
         return None
-    relevant = {key: payload[key] for key in ("mode", "label", "message", "reason", "hourly_drawdown")}
+    relevant = {
+        "mode": payload["mode"],
+        "label": payload["label"],
+        "message": payload["message"],
+        "reason": payload["reason"],
+        "hourly_drawdown": payload["hourly_drawdown"],
+        "top_signals": tuple(payload.get("top_signals", [])),
+    }
     return SignalState(**relevant)
 
 
@@ -101,6 +229,7 @@ def notify_if_changed(state: SignalState, notifier: DiscordNotifier) -> bool:
         message=state.message,
         reason=state.reason,
     )
+    notifier.send_top_signals(signals=state.top_signals, timestamp=pd.Timestamp(datetime.now(UTC)))
     return True
 
 

@@ -84,6 +84,52 @@ class DiscordNotifier:
         except requests.RequestException:
             return False
 
+    def send_top_signals(self, *, signals: tuple[dict[str, object], ...], timestamp: pd.Timestamp) -> bool:
+        if not self.webhook_url or not signals:
+            return False
+
+        fields = []
+        for item in signals[:4]:
+            ticker = str(item.get("ticker", "Asset"))
+            label = str(item.get("label", "Signal"))
+            signal = str(item.get("signal", "hold")).upper()
+            confidence = item.get("confidence", "")
+            why = str(item.get("why", ""))
+            safer = str(item.get("safer", ""))
+            horizon = str(item.get("horizon", ""))
+            value = why
+            if safer:
+                value += f"\nSafer option: {safer}"
+            if horizon:
+                value += f"\nHorizon: {horizon}"
+            if confidence != "":
+                value += f"\nConfidence: {confidence}%"
+            fields.append(
+                {
+                    "name": f"{ticker} · {label} · {signal}",
+                    "value": value[:1024],
+                    "inline": False,
+                }
+            )
+
+        payload = {
+            "username": self.username,
+            "embeds": [
+                {
+                    "title": "TELAJ Top Signals",
+                    "color": 0x1F6BFF,
+                    "fields": fields,
+                    "footer": {"text": f"Signal time: {pd.Timestamp(timestamp).isoformat()}"},
+                }
+            ],
+        }
+        try:
+            response = requests.post(self.webhook_url, json=payload, timeout=10)
+            response.raise_for_status()
+            return True
+        except requests.RequestException:
+            return False
+
     def send_report(self, *, report: dict[str, object], timestamp: pd.Timestamp) -> bool:
         if not self.webhook_url:
             return False

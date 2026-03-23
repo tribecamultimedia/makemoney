@@ -782,10 +782,7 @@ select:focus {
   min-height: 360px;
 }
 
-.health-panel,
-.xp-panel,
-.profile-panel,
-.subscriber-panel {
+.health-panel {
   grid-column: span 4;
 }
 
@@ -797,10 +794,7 @@ select:focus {
 .allocation-panel,
 .reserve-panel,
 .tasks-panel,
-.watchlist-panel,
-.history-panel,
-.badges-panel,
-.leaderboard-panel {
+.watchlist-panel {
   grid-column: span 4;
 }
 

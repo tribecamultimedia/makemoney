@@ -2363,6 +2363,9 @@ function renderSystemHealth() {
 
 function renderProfileMatrix() {
   const panel = document.getElementById("profile-matrix");
+  if (!panel) {
+    return;
+  }
   const profiles = state.onboarding.profiles;
   if (!profiles?.householdProfile || !profiles?.behaviorProfile || !profiles?.goalProfile) {
     panel.innerHTML = `
@@ -2445,14 +2448,16 @@ function renderRailAccount() {
 function renderXpLevel() {
   const panel = document.getElementById("xp-level");
   const progress = Math.min((state.profile.xp / state.profile.nextLevelXp) * 100, 100);
-  panel.innerHTML = `
-    <div class="eyebrow">Progression</div>
-    <h3>${state.profile.level}</h3>
-    <div class="stat-value accent-text">${state.profile.xp} XP</div>
-    <p class="body-copy">${state.profile.rank}</p>
-    <div class="bar-track"><div class="bar-fill" style="width:${progress}%"></div></div>
-    <p class="list-note">${state.profile.nextLevelXp - state.profile.xp} XP to Wealth Architect</p>
-  `;
+  if (panel) {
+    panel.innerHTML = `
+      <div class="eyebrow">Progression</div>
+      <h3>${state.profile.level}</h3>
+      <div class="stat-value accent-text">${state.profile.xp} XP</div>
+      <p class="body-copy">${state.profile.rank}</p>
+      <div class="bar-track"><div class="bar-fill" style="width:${progress}%"></div></div>
+      <p class="list-note">${state.profile.nextLevelXp - state.profile.xp} XP to Wealth Architect</p>
+    `;
+  }
   document.getElementById("rail-level").textContent = state.profile.level;
   document.getElementById("rail-streak").textContent = `${state.profile.streak} days`;
 }
@@ -2863,6 +2868,9 @@ function renderWatchlist() {
 
 function renderHistoryPreview() {
   const panel = document.getElementById("signal-history-preview");
+  if (!panel) {
+    return;
+  }
   const first = state.history[0];
   panel.innerHTML = `
     <div class="eyebrow">Signal history</div>
@@ -2875,6 +2883,9 @@ function renderHistoryPreview() {
 
 function renderAchievements() {
   const panel = document.getElementById("achievements");
+  if (!panel) {
+    return;
+  }
   panel.innerHTML = `
     <div class="eyebrow">Achievements</div>
     <h3>Badges earned by discipline</h3>
@@ -2896,6 +2907,9 @@ function renderAchievements() {
 
 function renderLeaderboard() {
   const panel = document.getElementById("leaderboard");
+  if (!panel) {
+    return;
+  }
   panel.innerHTML = `
     <div class="eyebrow">Leaderboard</div>
     <h3>Rank by discipline, not speculation</h3>
@@ -3312,8 +3326,26 @@ function renderRealEstate() {
 
 function bindNav() {
   navItems.forEach((item) => item.addEventListener("click", () => setView(item.dataset.section)));
-  document.getElementById("hero-execute").addEventListener("click", () => setView("home"));
-  document.getElementById("hero-simulate").addEventListener("click", () => setView("signals"));
+
+  function jumpToFinancialPosition() {
+    setView("home");
+    window.requestAnimationFrame(() => {
+      document.getElementById("financial-position")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      window.requestAnimationFrame(() => {
+        document.getElementById("fp-liquid")?.focus();
+      });
+    });
+  }
+
+  function jumpToMorningSignal() {
+    setView("home");
+    window.requestAnimationFrame(() => {
+      document.getElementById("morning-hero")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  document.getElementById("hero-execute").addEventListener("click", jumpToFinancialPosition);
+  document.getElementById("hero-simulate").addEventListener("click", jumpToMorningSignal);
 }
 
 function renderAll() {

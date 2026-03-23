@@ -722,6 +722,7 @@ const onboardingShell = document.getElementById("onboarding-shell");
 const railAccount = document.getElementById("rail-account");
 const railFooter = document.getElementById("rail-footer");
 let supabaseClient = null;
+let navBound = false;
 const DEFAULT_BETA_INVITE_CODES = ["TELAJ-BETA-7Q2M9X"];
 const FINANCIAL_POSITION_ENDPOINT = "/api/financial-position";
 
@@ -3249,7 +3250,23 @@ function renderProgress() {
     <p class="body-copy">${state.profile.streak}-day discipline streak. The system rewards consistency, not adrenaline.</p>
   `;
   document.getElementById("quest-board").innerHTML = document.getElementById("daily-tasks").innerHTML;
-  document.getElementById("badge-case").innerHTML = document.getElementById("achievements").innerHTML;
+  document.getElementById("badge-case").innerHTML = `
+    <div class="eyebrow">Achievements</div>
+    <h3>Badges earned by discipline</h3>
+    <div class="achievement-grid">
+      ${state.badges
+        .map(
+          (badge) => `
+            <div class="badge-card ${badge.earned ? "is-earned" : ""}">
+              <div class="badge-label">${badge.earned ? "Earned" : "Locked"}</div>
+              <div class="badge-name">${badge.name}</div>
+              <div class="body-copy">${badge.note}</div>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+  `;
   document.getElementById("level-roadmap").innerHTML = `
     <div class="eyebrow">Level path</div>
     <h3>Allocator journey</h3>
@@ -3503,6 +3520,11 @@ function renderRealEstate() {
 }
 
 function bindNav() {
+  if (navBound) {
+    return;
+  }
+  navBound = true;
+
   navItems.forEach((item) => item.addEventListener("click", () => setView(item.dataset.section)));
 
   function jumpToFinancialPosition() {
@@ -3534,16 +3556,11 @@ function renderAll() {
     renderMorningHero();
     renderSystemHealth();
     renderXpLevel();
-    renderProfileMatrix();
-    renderSubscriberPreferences();
     renderFinancialPosition();
     renderAllocationSnapshot();
     renderCashStatus();
     renderTasks();
     renderWatchlist();
-    renderHistoryPreview();
-    renderAchievements();
-    renderLeaderboard();
     renderAllocationView();
     renderSignalsView();
     renderProgress();

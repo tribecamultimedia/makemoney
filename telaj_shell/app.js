@@ -169,6 +169,8 @@ const defaultState = {
   assetCheck: {
     query: "",
     result: null,
+    loading: false,
+    error: "",
   },
   highlightedSignals: [
     {
@@ -729,6 +731,7 @@ let supabaseClient = null;
 let navBound = false;
 const DEFAULT_BETA_INVITE_CODES = ["TELAJ-BETA-7Q2M9X"];
 const FINANCIAL_POSITION_ENDPOINT = "/api/financial-position";
+const ASSET_CHECK_ENDPOINT = "/api/asset-check";
 
 const mockEndpoints = {
   familyDashboard: "./mock-api/family-dashboard.json",
@@ -1166,6 +1169,41 @@ async function fetchJson(url) {
     throw new Error(`Failed to fetch ${url}: ${response.status}`);
   }
   return response.json();
+}
+
+async function requestAssetCheck(query) {
+  const normalized = String(query || "").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(ASSET_CHECK_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: normalized,
+        region: state.marketRegion,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Asset check failed: ${response.status}`);
+    }
+
+    const payload = await response.json();
+    if (payload?.analysis) {
+      state.assetCheck.error = "";
+      return payload.analysis;
+    }
+  } catch (error) {
+    console.warn("TELAJ asset-check route unavailable, using local fallback.", error);
+    state.assetCheck.error = error instanceof Error ? error.message : "Live route unavailable";
+  }
+
+  return evaluateAssetCheck(normalized);
 }
 
 async function loadMockApiState() {
@@ -3216,8 +3254,8 @@ function renderWatchlist() {
         <input id="asset-check-input" type="text" value="${state.assetCheck.query}" placeholder="SPY, gold, QQQ, treasury, EURUSD" />
       </label>
       <div class="property-action-row input-span-2">
-        <button class="action-button primary" id="asset-check-run">Get TELAJ call</button>
-        <button class="ghost-button" id="asset-check-clear">Clear</button>
+        <button class="action-button primary" id="asset-check-run" ${state.assetCheck.loading ? "disabled" : ""}>${state.assetCheck.loading ? "Checking..." : "Get TELAJ call"}</button>
+        <button class="ghost-button" id="asset-check-clear" ${state.assetCheck.loading ? "disabled" : ""}>Clear</button>
       </div>
     </div>
     ${
@@ -3231,17 +3269,30 @@ function renderWatchlist() {
               </div>
               <div class="signal-badge ${assetResult.signal.includes("avoid") ? "warn" : assetResult.signal.includes("hold") || assetResult.signal.includes("review") ? "" : "good"}">${assetResult.confidence}%</div>
             </div>
+            ${
+              assetResult.priceLine
+                ? `<div class="history-meta">${assetResult.priceLine}${assetResult.source ? ` · ${assetResult.source}` : ""}</div>`
+                : assetResult.source
+                  ? `<div class="history-meta">${assetResult.source}</div>`
+                  : ""
+            }
             <div class="panel-copy">${assetResult.why}</div>
+            ${
+              assetResult.newsSummary
+                ? `<div class="panel-copy">${assetResult.newsSummary}</div>`
+                : ""
+            }
             <div class="history-meta">Risk: ${assetResult.risk} Safer option: ${assetResult.safer} Horizon: ${assetResult.horizon}.</div>
           </div>
         `
         : `
           <div class="subpanel">
             <div class="micro-label">How this works</div>
-            <div class="panel-copy">Type a stock, ETF, commodity, or currency and TELAJ will give a quick call using the current region context and the live signal stack already on the page.</div>
+            <div class="panel-copy">Type a stock, ETF, commodity, or currency and TELAJ will give a quick call using the current region context, the live signal stack, and the asset-check route when available.</div>
           </div>
         `
     }
+    ${state.assetCheck.error ? `<div class="history-meta">${state.assetCheck.error}. TELAJ used the local fallback.</div>` : ""}
     <div class="ticker-tape">
       ${state.marketTape
         .map(
@@ -3282,23 +3333,30 @@ function renderWatchlist() {
     renderWatchlist();
     renderSignalsView();
   });
-  document.getElementById("asset-check-run")?.addEventListener("click", () => {
+  document.getElementById("asset-check-run")?.addEventListener("click", async () => {
     state.assetCheck.query = document.getElementById("asset-check-input")?.value.trim() || "";
-    state.assetCheck.result = evaluateAssetCheck(state.assetCheck.query);
+    state.assetCheck.loading = true;
+    renderWatchlist();
+    state.assetCheck.result = await requestAssetCheck(state.assetCheck.query);
+    state.assetCheck.loading = false;
     renderWatchlist();
   });
   document.getElementById("asset-check-clear")?.addEventListener("click", () => {
     state.assetCheck.query = "";
     state.assetCheck.result = null;
+    state.assetCheck.error = "";
     renderWatchlist();
   });
-  document.getElementById("asset-check-input")?.addEventListener("keydown", (event) => {
+  document.getElementById("asset-check-input")?.addEventListener("keydown", async (event) => {
     if (event.key !== "Enter") {
       return;
     }
     event.preventDefault();
     state.assetCheck.query = event.target.value.trim();
-    state.assetCheck.result = evaluateAssetCheck(state.assetCheck.query);
+    state.assetCheck.loading = true;
+    renderWatchlist();
+    state.assetCheck.result = await requestAssetCheck(state.assetCheck.query);
+    state.assetCheck.loading = false;
     renderWatchlist();
   });
 }

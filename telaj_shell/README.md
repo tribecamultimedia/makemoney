@@ -16,6 +16,7 @@ Static TELAJ product shell for drag-and-drop deployment on Netlify.
 - `mock-api/real-estate.json`
 - `mock-api/family-profile.json`
 - `api/financial-position.js`
+- `api/asset-check.js`
 
 ## Deploy
 
@@ -51,6 +52,8 @@ Do not use the service role key in the frontend.
 - `mock-api/family-profile.json` documents the future API shape for that derived profile layer.
 - The intent step can now call a Vercel serverless route:
   - `/api/intent-analysis`
+- The market-tape asset checker can now call:
+  - `/api/asset-check`
 - Supported model env vars for Vercel:
   - `TELAJ_MODEL_PROVIDER`
     - `openai`
@@ -65,5 +68,8 @@ Do not use the service role key in the frontend.
 - The financial-position route needs backend env vars in Vercel:
   - `SUPABASE_URL`
   - `SUPABASE_ANON_KEY`
+- The live asset-check route can use:
+  - `MASSIVE_API_KEY`
+  - optional `MASSIVE_API_BASE`
 - The required table/policies are defined in:
   - `../sql/financial_positions.sql`

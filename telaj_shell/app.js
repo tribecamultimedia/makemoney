@@ -1316,7 +1316,7 @@ function renderAuthShell() {
     <div class="auth-card">
       <div class="auth-head">
         <div>
-          <img class="auth-logo" src="./assets/telaj-logo1.png" alt="TELAJ" />
+          <img class="auth-logo" src="./assets/telaj-logo2.png" alt="TELAJ" />
           <div class="eyebrow">TELAJ ACCESS</div>
           <h1 class="onboarding-title">Know where you stand. Know what to do next.</h1>
           <p class="onboarding-copy">TELAJ maps your household, shows where your money sits, and gives one clear next move. Start as a guest or create an account to keep your progress.</p>

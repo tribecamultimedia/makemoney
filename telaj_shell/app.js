@@ -7,8 +7,16 @@ const defaultState = {
     guest: false,
     email: "",
     legalAccepted: false,
+    betaUnlocked: false,
+    betaCode: "",
     error: "",
     info: "",
+  },
+  subscription: {
+    plan: "Beta",
+    status: "Invite only",
+    seat: "Founding tester",
+    renewal: "Billing not live yet",
   },
   subscriberPreferences: {
     contactEmail: "",
@@ -623,6 +631,7 @@ const appShell = document.getElementById("app-shell");
 const authShell = document.getElementById("auth-shell");
 const onboardingShell = document.getElementById("onboarding-shell");
 let supabaseClient = null;
+const DEFAULT_BETA_INVITE_CODES = ["TELAJ-BETA-7Q2M9X"];
 
 const mockEndpoints = {
   familyDashboard: "./mock-api/family-dashboard.json",
@@ -646,6 +655,23 @@ function initSupabaseClient() {
   return supabaseClient;
 }
 
+function normalizeInviteCode(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase();
+}
+
+function getBetaAccessConfig() {
+  const config = window.TELAJ_CONFIG || {};
+  const configuredCodes = Array.isArray(config.betaInviteCodes) ? config.betaInviteCodes : [];
+  const inviteCodes = configuredCodes.length ? configuredCodes : DEFAULT_BETA_INVITE_CODES;
+  return {
+    inviteOnly: config.betaInviteOnly !== false,
+    tierLabel: typeof config.betaTierLabel === "string" && config.betaTierLabel ? config.betaTierLabel : "Private beta",
+    inviteCodes: inviteCodes.map(normalizeInviteCode).filter(Boolean),
+  };
+}
+
 function loadAuthState() {
   try {
     const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
@@ -659,6 +685,8 @@ function loadAuthState() {
       guest: Boolean(parsed.guest),
       email: typeof parsed.email === "string" ? parsed.email : "",
       legalAccepted: Boolean(parsed.legalAccepted),
+      betaUnlocked: Boolean(parsed.betaUnlocked),
+      betaCode: typeof parsed.betaCode === "string" ? parsed.betaCode : "",
       error: "",
       info: typeof parsed.info === "string" ? parsed.info : "",
     };
@@ -676,6 +704,8 @@ function persistAuthState() {
       guest: state.auth.guest,
       email: state.auth.email,
       legalAccepted: state.auth.legalAccepted,
+      betaUnlocked: state.auth.betaUnlocked,
+      betaCode: state.auth.betaCode,
       info: state.auth.info,
     })
   );
@@ -710,6 +740,39 @@ function syncSubscriberEmailFromAuth() {
 
 function getAuthAvailability() {
   return Boolean(initSupabaseClient());
+}
+
+function requiresBetaInvite() {
+  return getBetaAccessConfig().inviteOnly;
+}
+
+function hasBetaAccess() {
+  return !requiresBetaInvite() || state.auth.betaUnlocked;
+}
+
+function unlockBetaAccess(rawCode) {
+  const normalized = normalizeInviteCode(rawCode);
+  const { inviteCodes } = getBetaAccessConfig();
+  if (!normalized) {
+    state.auth.error = "Enter a beta access code before continuing.";
+    renderAuthShell();
+    return false;
+  }
+  if (!inviteCodes.includes(normalized)) {
+    state.auth.error = "That beta access code is not valid.";
+    renderAuthShell();
+    return false;
+  }
+  state.auth.betaUnlocked = true;
+  state.auth.betaCode = normalized;
+  state.subscription.plan = "Beta";
+  state.subscription.status = "Unlocked";
+  state.subscription.seat = "Founding tester";
+  state.auth.error = "";
+  state.auth.info = "Beta access unlocked. You can continue into TELAJ.";
+  persistAuthState();
+  renderAuthShell();
+  return true;
 }
 
 function mergeState(payload) {
@@ -1373,6 +1436,8 @@ function renderAuthShell() {
 
   const supabaseReady = getAuthAvailability();
   const mode = state.auth.mode || "gate";
+  const betaConfig = getBetaAccessConfig();
+  const betaUnlocked = hasBetaAccess();
   authShell.classList.add("is-active");
   appShell.classList.add("is-hidden");
   onboardingShell.classList.remove("is-active");
@@ -1389,26 +1454,46 @@ function renderAuthShell() {
         </div>
         <div class="auth-status">${supabaseReady ? "Supabase ready" : "Guest mode ready"}</div>
       </div>
+      <div class="beta-access-card ${betaUnlocked ? "is-unlocked" : ""}">
+        <div>
+          <div class="micro-label">Access</div>
+          <div class="beta-access-title">${betaConfig.tierLabel}</div>
+          <div class="panel-copy">${
+            betaUnlocked
+              ? `Unlocked with code ${state.auth.betaCode}. This seat is marked as a founding tester beta.`
+              : "TELAJ is invite-only right now. Enter a beta code to unlock guest mode or account creation."
+          }</div>
+        </div>
+        <div class="beta-access-form">
+          <label class="input-field">
+            <span class="micro-label">Beta code</span>
+            <input id="beta-code" type="text" value="${state.auth.betaCode}" placeholder="TELAJ-BETA-XXXXXX" ${betaUnlocked ? "disabled" : ""} />
+          </label>
+          <button class="action-button ${betaUnlocked ? "" : "primary"}" id="beta-unlock" ${betaUnlocked ? "disabled" : ""}>${
+            betaUnlocked ? "Unlocked" : "Unlock beta"
+          }</button>
+        </div>
+      </div>
       <div class="auth-options">
-        <button class="auth-option ${mode === "guest" ? "is-selected" : ""}" id="auth-guest">
+        <button class="auth-option ${mode === "guest" ? "is-selected" : ""}" id="auth-guest" ${betaUnlocked ? "" : "disabled"}>
           <div class="answer-title">Continue as guest</div>
           <div class="answer-note">Fastest way to try TELAJ and see your financial position clearly.</div>
         </button>
-        <button class="auth-option ${mode === "signup" ? "is-selected" : ""}" id="auth-signup">
+        <button class="auth-option ${mode === "signup" ? "is-selected" : ""}" id="auth-signup" ${betaUnlocked ? "" : "disabled"}>
           <div class="answer-title">Create account</div>
           <div class="answer-note">Save your household profile, real-estate work, and TELAJ decisions across devices.</div>
         </button>
-        <button class="auth-option ${mode === "login" ? "is-selected" : ""}" id="auth-login">
+        <button class="auth-option ${mode === "login" ? "is-selected" : ""}" id="auth-login" ${betaUnlocked ? "" : "disabled"}>
           <div class="answer-title">Log in</div>
           <div class="answer-note">Return to your saved household map, capital plan, and daily TELAJ guidance.</div>
         </button>
       </div>
       <div class="social-auth">
-        <button class="social-button" id="auth-google" ${supabaseReady ? "" : "disabled"}>
+        <button class="social-button" id="auth-google" ${supabaseReady && betaUnlocked ? "" : "disabled"}>
           <span class="social-label">Continue with Google</span>
           <span class="social-note">Use your Gmail identity</span>
         </button>
-        <button class="social-button" id="auth-github" ${supabaseReady ? "" : "disabled"}>
+        <button class="social-button" id="auth-github" ${supabaseReady && betaUnlocked ? "" : "disabled"}>
           <span class="social-label">Continue with GitHub</span>
           <span class="social-note">Useful for builders and operators</span>
         </button>
@@ -1438,6 +1523,7 @@ function renderAuthShell() {
         ${state.auth.error ? `<div class="auth-error">${state.auth.error}</div>` : ""}
         ${state.auth.info ? `<div class="auth-info">${state.auth.info}</div>` : ""}
         ${!supabaseReady ? `<div class="auth-info">Supabase public config is not set yet, so email login is disabled and guest mode will use local preview access.</div>` : ""}
+        ${requiresBetaInvite() && !betaUnlocked ? `<div class="auth-info">Beta access is required before TELAJ entry is enabled.</div>` : ""}
       </div>
       <label class="legal-ack">
         <input id="legal-accept" type="checkbox" ${state.auth.legalAccepted ? "checked" : ""} />
@@ -1450,8 +1536,8 @@ function renderAuthShell() {
         <div class="panel-copy">TELAJ is not a broker, not an investment adviser, and not a fiduciary. Signals, scenarios, and allocation examples are informational only and do not guarantee future results.</div>
       </div>
       <div class="onboarding-actions">
-        <div class="task-pill">${supabaseReady ? "Auth provider connected" : "Preview auth shell"}</div>
-        <button class="action-button primary" id="auth-continue">${
+        <div class="task-pill">${state.subscription.plan} · ${state.subscription.status}</div>
+        <button class="action-button primary" id="auth-continue" ${betaUnlocked ? "" : "disabled"}>${
           mode === "signup" ? "Create account" : mode === "login" ? "Log in" : "Continue as guest"
         }</button>
       </div>
@@ -1481,6 +1567,10 @@ function renderAuthShell() {
     state.auth.error = "";
     persistAuthState();
   });
+  document.getElementById("beta-unlock")?.addEventListener("click", () => {
+    const betaCode = document.getElementById("beta-code")?.value || "";
+    unlockBetaAccess(betaCode);
+  });
   document.getElementById("auth-continue")?.addEventListener("click", async () => {
     await handleAuthContinue();
   });
@@ -1496,6 +1586,12 @@ async function handleAuthContinue() {
   state.auth.error = "";
   state.auth.info = "";
   const client = initSupabaseClient();
+
+  if (!hasBetaAccess()) {
+    state.auth.error = "Enter a valid beta code before continuing into TELAJ.";
+    renderAuthShell();
+    return;
+  }
 
   if (!state.auth.legalAccepted) {
     state.auth.error = "You must acknowledge the TELAJ educational-use disclaimer before continuing.";
@@ -1564,6 +1660,12 @@ async function handleOAuth(provider) {
   state.auth.error = "";
   state.auth.info = "";
   const client = initSupabaseClient();
+
+  if (!hasBetaAccess()) {
+    state.auth.error = "Enter a valid beta code before using social login.";
+    renderAuthShell();
+    return;
+  }
 
   if (!state.auth.legalAccepted) {
     state.auth.error = "You must acknowledge the TELAJ educational-use disclaimer before continuing.";

@@ -87,6 +87,72 @@ const defaultState = {
     { ticker: "SMCI", price: 58.11, changePct: -2.6, trend: "down" },
     { ticker: "INTC", price: 34.62, changePct: 0.7, trend: "up" },
   ],
+  investmentIntel: {
+    marketState: {
+      regime: "defensive accumulation",
+      distanceFromMonthLowPct: 2.1,
+      distanceFromMonthHighPct: 8.7,
+      breadth: "improving",
+      volatility: "elevated",
+      rates: "stable-to-softening",
+      riskLevel: "medium",
+      summary: "The market is off recent highs and still close enough to recent lows that TELAJ prefers selective buying over aggressive chasing.",
+    },
+    newsDrivers: [
+      "Rate pressure has stopped getting worse, which helps broad ETF accumulation.",
+      "Macro stress is still present, so defense should stay in the mix.",
+      "Gold remains useful while real yields and policy uncertainty are not fully settled."
+    ],
+    assetSignals: [
+      {
+        ticker: "SPY",
+        label: "Broad ETF core",
+        signal: "add slowly",
+        confidence: 74,
+        why: "The market is still below recent highs and close enough to recent lows that broad exposure is more attractive than waiting for a perfect entry.",
+        risk: "If breadth weakens again, a better entry may appear later.",
+        safer: "Buy in tranches instead of all at once.",
+        horizon: "6-18 months"
+      },
+      {
+        ticker: "GLD",
+        label: "Gold defense",
+        signal: "buy",
+        confidence: 71,
+        why: "Volatility and macro uncertainty still justify a defensive hedge.",
+        risk: "Gold can lag badly if risk appetite broadens and real yields rise.",
+        safer: "Add a smaller hedge rather than oversizing it.",
+        horizon: "3-12 months"
+      },
+      {
+        ticker: "SGOV",
+        label: "Treasury reserve sleeve",
+        signal: "hold",
+        confidence: 79,
+        why: "Short-duration Treasuries still work well for reserve capital while the market remains uneven.",
+        risk: "This protects capital more than it compounds aggressively.",
+        safer: "Keep it as the reserve sleeve, not the whole portfolio.",
+        horizon: "0-12 months"
+      },
+      {
+        ticker: "QQQ",
+        label: "High-beta growth",
+        signal: "avoid",
+        confidence: 67,
+        why: "This part of the market is more vulnerable if momentum rolls over again.",
+        risk: "You can miss upside if the rally broadens quickly.",
+        safer: "Use broad ETFs instead of concentrated beta.",
+        horizon: "1-6 months"
+      }
+    ],
+    portfolioAction: {
+      title: "Buy ETF core and gold, keep Treasuries as ballast",
+      summary: "TELAJ would add to broad ETFs in small tranches, keep a live gold hedge, and leave reserve capital in short Treasuries instead of chasing higher-beta names.",
+      primary: "Buy broad ETF in tranches",
+      secondary: "Add a measured gold hedge",
+      avoid: "Selling safety to chase fast momentum"
+    }
+  },
   highlightedSignals: [
     {
       ticker: "GLD",
@@ -2459,9 +2525,10 @@ function renderTasks() {
 
 function renderWatchlist() {
   const panel = document.getElementById("watchlist");
+  const intel = state.investmentIntel;
   panel.innerHTML = `
     <div class="eyebrow">Market tape</div>
-    <h3>Live movers and highlighted signals</h3>
+    <h3>Live movers and top asset calls</h3>
     <div class="ticker-tape">
       ${state.marketTape
         .map(
@@ -2476,9 +2543,9 @@ function renderWatchlist() {
         .join("")}
     </div>
     <div class="section-spacer"></div>
-    <div class="eyebrow">Highlighted signals</div>
+    <div class="eyebrow">Top asset signals</div>
     <div class="highlight-list">
-      ${state.highlightedSignals
+      ${intel.assetSignals
         .map(
           (item) => `
             <div class="highlight-item">
@@ -2487,9 +2554,9 @@ function renderWatchlist() {
                   <div class="row-label">${item.ticker}</div>
                   <div class="highlight-title">${item.label}</div>
                 </div>
-                <div class="signal-badge ${item.action.toLowerCase().includes("watch") ? "warn" : "good"}">${item.action}</div>
+                <div class="signal-badge ${item.signal.includes("avoid") ? "warn" : item.signal.includes("hold") ? "" : "good"}">${item.signal}</div>
               </div>
-              <div class="panel-copy">${item.note}</div>
+              <div class="panel-copy">${item.why}</div>
             </div>
           `
         )
@@ -2626,33 +2693,40 @@ function renderAllocationView() {
 }
 
 function renderSignalsView() {
+  const intel = state.investmentIntel;
+  const marketState = intel.marketState;
   document.getElementById("signal-stats").innerHTML = `
-    <div class="eyebrow">Signal stats</div>
-    <h3>Outcome summary</h3>
+    <div class="eyebrow">Market state</div>
+    <h3>${intel.portfolioAction.title}</h3>
+    <p class="body-copy">${marketState.summary}</p>
     <div class="stats-grid">
-      <div class="stat-box"><div class="stat-label">YTD vs benchmark</div><div class="stat-value accent-text">${state.stats.ytd}</div><div class="list-note">Benchmark ${state.stats.benchmark}</div></div>
-      <div class="stat-box"><div class="stat-label">Signals taken</div><div class="stat-value">${state.stats.signalsTaken}</div></div>
-      <div class="stat-box"><div class="stat-label">Win rate</div><div class="stat-value">${state.stats.winRate}</div></div>
-      <div class="stat-box"><div class="stat-label">Drawdowns avoided</div><div class="stat-value">4</div></div>
+      <div class="stat-box"><div class="stat-label">Regime</div><div class="stat-value accent-text">${marketState.regime}</div></div>
+      <div class="stat-box"><div class="stat-label">From month low</div><div class="stat-value">${marketState.distanceFromMonthLowPct}%</div></div>
+      <div class="stat-box"><div class="stat-label">From month high</div><div class="stat-value">${marketState.distanceFromMonthHighPct}%</div></div>
+      <div class="stat-box"><div class="stat-label">Volatility</div><div class="stat-value">${marketState.volatility}</div></div>
+    </div>
+    <div class="allocation-hero-actions">
+      <div class="task-pill">Primary: ${intel.portfolioAction.primary}</div>
+      <div class="task-pill">Avoid: ${intel.portfolioAction.avoid}</div>
     </div>
   `;
   document.getElementById("signal-history-list").innerHTML = `
-    <div class="eyebrow">History</div>
-    <h3>Signal log</h3>
+    <div class="eyebrow">Top signals</div>
+    <h3>What TELAJ thinks you should look at now</h3>
     <div class="history-list">
-      ${state.history
+      ${intel.assetSignals
         .map(
           (item) => `
             <div class="history-item">
               <div class="history-top">
                 <div>
-                  <div class="row-label">${item.date}</div>
-                  <div>${item.title}</div>
+                  <div class="row-label">${item.ticker} · ${item.label}</div>
+                  <div>${item.signal.toUpperCase()}</div>
                 </div>
-                <div class="signal-badge ${item.quality}">${item.outcome}</div>
+                <div class="signal-badge ${item.signal.includes("avoid") ? "warn" : item.signal.includes("hold") ? "" : "good"}">${item.confidence}%</div>
               </div>
-              <div class="history-meta">${item.action} | ${item.impact}</div>
-              ${sparkline(item.spark, item.quality === "good" ? "#27d17f" : item.quality === "bad" ? "#ff6b6b" : "#ffd166")}
+              <div class="panel-copy">${item.why}</div>
+              <div class="history-meta">Risk: ${item.risk} Safer option: ${item.safer} Horizon: ${item.horizon}.</div>
             </div>
           `
         )
@@ -2660,13 +2734,20 @@ function renderSignalsView() {
     </div>
   `;
   document.getElementById("signal-outcomes").innerHTML = `
-    <div class="eyebrow">Interpretation</div>
-    <h3>Why this matters</h3>
+    <div class="eyebrow">Research read</div>
+    <h3>Why TELAJ thinks this</h3>
     <ul class="clean-list">
-      <li>Captured gains should be visible, but avoided damage matters more.</li>
-      <li>TELAJ should celebrate discipline, not just green numbers.</li>
-      <li>The right signal can be “do nothing” when the setup is weak.</li>
+      ${intel.newsDrivers.map((item) => `<li>${item}</li>`).join("")}
+      <li>The right signal can still be “do nothing” when the setup is weak or the household is under-protected.</li>
     </ul>
+    <div class="section-spacer"></div>
+    <div class="eyebrow">Outcome summary</div>
+    <div class="stats-grid">
+      <div class="stat-box"><div class="stat-label">YTD vs benchmark</div><div class="stat-value accent-text">${state.stats.ytd}</div><div class="list-note">Benchmark ${state.stats.benchmark}</div></div>
+      <div class="stat-box"><div class="stat-label">Signals taken</div><div class="stat-value">${state.stats.signalsTaken}</div></div>
+      <div class="stat-box"><div class="stat-label">Win rate</div><div class="stat-value">${state.stats.winRate}</div></div>
+      <div class="stat-box"><div class="stat-label">Drawdowns avoided</div><div class="stat-value">4</div></div>
+    </div>
   `;
 }
 

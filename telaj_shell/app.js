@@ -869,7 +869,7 @@ function loadWealthInputs() {
   try {
     const raw = window.localStorage.getItem(WEALTH_INPUTS_STORAGE_KEY);
     if (!raw) {
-      return;
+      return false;
     }
     const parsed = JSON.parse(raw);
     if (parsed.liquidityDetails) {
@@ -881,8 +881,11 @@ function loadWealthInputs() {
     if (parsed.propertyAppraisal) {
       state.propertyAppraisal = { ...state.propertyAppraisal, ...parsed.propertyAppraisal };
     }
+    state.syncStatus.financialPosition = "Local fallback";
+    return true;
   } catch (error) {
     console.warn("TELAJ wealth inputs could not be restored.", error);
+    return false;
   }
 }
 
@@ -1756,10 +1759,12 @@ async function handleAuthContinue() {
       state.auth.guest = true;
       state.auth.email = data?.user?.email || "";
       state.auth.info = "Guest session started.";
+      await loadFinancialPositionFromApi();
     } else {
       state.auth.authenticated = true;
       state.auth.guest = true;
       state.auth.info = "Guest preview session started.";
+      state.syncStatus.financialPosition = "Local browser only";
     }
     persistAuthState();
     renderAuthShell();
@@ -2633,6 +2638,7 @@ function renderFinancialPosition() {
       <div class="property-action-row input-span-2">
         <button class="action-button primary" id="save-financial-position">Update position</button>
         <button class="action-button" id="financial-go-allocation">Use this in allocation</button>
+        ${state.auth.authenticated ? `<button class="ghost-button" id="financial-refresh">Refresh from cloud</button>` : ""}
       </div>
     </div>
     <div class="section-spacer"></div>
@@ -2728,6 +2734,10 @@ function renderFinancialPosition() {
     renderAll();
   });
   document.getElementById("financial-go-allocation").addEventListener("click", () => setView("allocation"));
+  document.getElementById("financial-refresh")?.addEventListener("click", async () => {
+    await loadFinancialPositionFromApi();
+    renderAll();
+  });
 }
 
 function renderCashStatus() {
@@ -3335,8 +3345,8 @@ async function bootstrap() {
   loadAuthState();
   loadSubscriberPreferences();
   loadOnboardingState();
-  loadWealthInputs();
   await loadMockApiState();
+  let loadedFinancialPosition = false;
   if (supabaseClient) {
     try {
       const { data } = await supabaseClient.auth.getSession();
@@ -3345,11 +3355,14 @@ async function bootstrap() {
         state.auth.guest = Boolean(data.session.user.is_anonymous);
         state.auth.email = data.session.user.email || "";
         syncSubscriberEmailFromAuth();
-        await loadFinancialPositionFromApi();
+        loadedFinancialPosition = await loadFinancialPositionFromApi();
       }
     } catch (error) {
       console.warn("TELAJ auth session could not be restored.", error);
     }
+  }
+  if (!loadedFinancialPosition) {
+    loadWealthInputs();
   }
   if (state.onboarding.completed && (!state.onboarding.profiles?.householdProfile || !state.onboarding.profiles?.behaviorProfile || !state.onboarding.profiles?.goalProfile)) {
     state.onboarding.profiles = deriveLifeMatrixProfiles();

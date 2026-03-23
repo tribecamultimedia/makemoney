@@ -48,9 +48,9 @@ const defaultState = {
     confidence: 78,
     move: "Increase liquidity buffer before adding more risk",
     rationale:
-      "Volatility is elevated, your cash reserve is still below target, and the model would rather strengthen the household than stretch into another position too early.",
+      "Volatility is elevated, your cash reserve is still below target, and the model would rather strengthen your financial base than stretch into another position too early.",
     risk: "medium",
-    whoFor: "Family cash stability",
+    whoFor: "Financial stability",
     confidenceLabel: "AI confidence",
     rationaleShort: "Protect the system first, invest second.",
   },
@@ -165,7 +165,7 @@ const defaultState = {
     {
       ticker: "GLD",
       label: "Defensive add",
-      note: "Gold is the cleaner defensive sleeve if the household still needs ballast.",
+      note: "Gold is the cleaner defensive sleeve if the financial position still needs ballast.",
       action: "Add slowly",
     },
     {
@@ -183,7 +183,7 @@ const defaultState = {
   ],
   recommendation: {
     headline: "Increase liquidity first, then add gold and broad ETFs",
-    summary: "TELAJ is not against investing. It wants the household to be harder to destabilize before you push further into risk.",
+    summary: "TELAJ is not against investing. It wants your financial position to be harder to destabilize before you push further into risk.",
     primaryAction: "Add to cash reserve",
     secondaryAction: "Allocate 10% to gold",
     growthSleeve: "Use a broad ETF basket only",
@@ -197,7 +197,7 @@ const defaultState = {
   ],
   watchouts: [
     "Do not buy assets you cannot hold through drawdowns",
-    "Do not let one asset dominate the family system",
+    "Do not let one asset dominate the financial system",
     "Do not weaken reserves to feel invested",
   ],
   history: [
@@ -339,10 +339,10 @@ const questionBank = [
     id: "netWorthBand",
     category: "Balance sheet",
     prompt: "Roughly how much are you worth today?",
-    helper: "TELAJ starts with a rough net-worth band so the advice fits the real scale of the household.",
+    helper: "TELAJ starts with a rough net-worth band so the advice fits the real scale of your finances.",
     options: [
       { value: "under-50k", title: "Under 50k", note: "Early-stage or still building the base." },
-      { value: "50k-250k", title: "50k-250k", note: "The household has started to build real capital." },
+      { value: "50k-250k", title: "50k-250k", note: "You have started to build real capital." },
       { value: "250k-1m", title: "250k-1m", note: "Meaningful capital allocation decisions matter now." },
       { value: "1m-plus", title: "1m+", note: "Preservation, optimization, and structure matter more." },
     ],
@@ -351,7 +351,7 @@ const questionBank = [
     id: "liquidity",
     category: "Balance sheet",
     prompt: "How much of your wealth is actually liquid?",
-    helper: "Liquidity matters because the household needs flexibility, not just headline net worth.",
+    helper: "Liquidity matters because your finances need flexibility, not just headline net worth.",
     options: [
       { value: "very-low", title: "Very low", note: "Most wealth is tied up or hard to access." },
       { value: "moderate", title: "Moderate", note: "Some flexibility, but still somewhat constrained." },
@@ -399,7 +399,7 @@ const questionBank = [
     id: "primaryHomeDebtRate",
     category: "Balance sheet",
     prompt: "What best describes the mortgage rate on your primary home?",
-    helper: "A low fixed mortgage and an expensive mortgage create very different household decisions.",
+    helper: "A low fixed mortgage and an expensive mortgage create very different financial decisions.",
     options: [
       { value: "low", title: "Low rate", note: "Cheap debt, usually not urgent to attack." },
       { value: "mid", title: "Mid rate", note: "Worth watching, but not necessarily urgent." },
@@ -495,7 +495,7 @@ const questionBank = [
     id: "incomeBand",
     category: "Money",
     prompt: "How would you describe your income level?",
-    helper: "TELAJ should adapt recommendations to your real earning power, not pretend every household has the same capacity.",
+    helper: "TELAJ should adapt recommendations to your real earning power, not pretend everyone has the same capacity.",
     options: [
       { value: "low", title: "Tight budget", note: "Every buffer matters." },
       { value: "middle", title: "Middle income", note: "There is room to build, but tradeoffs matter." },
@@ -512,7 +512,7 @@ const questionBank = [
       { value: "stable", title: "Very stable", note: "Predictable income and lower surprise risk." },
       { value: "mostly-stable", title: "Mostly stable", note: "Some variability, but manageable." },
       { value: "variable", title: "Variable", note: "Income can change meaningfully month to month." },
-      { value: "fragile", title: "Fragile", note: "The household needs more protection first." },
+      { value: "fragile", title: "Fragile", note: "Your finances need more protection first." },
     ],
   },
   {
@@ -570,7 +570,7 @@ const questionBank = [
     helper: "This is optional, but it matters because fragile life situations require stronger reserves.",
     options: [
       { value: "none", title: "No major issue", note: "No obvious health or caregiving constraint." },
-      { value: "mild", title: "Some constraints", note: "There is some uncertainty or family burden." },
+      { value: "mild", title: "Some constraints", note: "There is some uncertainty or a personal, business, or family burden." },
       { value: "significant", title: "Significant", note: "Health or caregiving meaningfully affects planning." },
       { value: "prefer-not", title: "Prefer not to say", note: "TELAJ will stay neutral on this factor." },
     ],
@@ -584,14 +584,14 @@ const questionBank = [
       { value: "safety", title: "Safety", note: "Stability, reserves, and lower stress." },
       { value: "income", title: "Income", note: "Cash flow and durable monthly support." },
       { value: "growth", title: "Growth", note: "Long-term compounding and asset expansion." },
-      { value: "legacy", title: "Legacy", note: "Multi-decade wealth and family continuity." },
+      { value: "legacy", title: "Legacy", note: "Multi-decade wealth and long-term continuity." },
     ],
   },
   {
     id: "wealthFor",
     category: "Goals",
     prompt: "Who is this wealth for?",
-    helper: "TELAJ should understand whether this is personal, household, or family capital.",
+    helper: "TELAJ should understand whether this is personal, business, or family capital.",
     options: [
       { value: "me", title: "Me", note: "Primarily my own financial operating system." },
       { value: "spouse", title: "Me and spouse", note: "Shared stability and long-term planning." },
@@ -958,16 +958,16 @@ function getFirstMissingQuestionIndex() {
 function deriveHouseholdProfile(answers) {
   const assetBase =
     answers.assetLocation === "investment-property"
-      ? "Business and investment property household"
+      ? "Business and investment property profile"
       : answers.assetLocation === "primary-home"
-        ? "Home-equity-led household"
+        ? "Home-equity-led profile"
       : answers.ownedAssets === "mixed"
-      ? "Multi-asset household"
+      ? "Multi-asset profile"
       : answers.ownedAssets === "property"
-        ? "Property-centered household"
+        ? "Property-centered profile"
         : answers.ownedAssets === "investments"
-          ? "Investment-led household"
-          : "Liquidity-led household";
+          ? "Investment-led profile"
+          : "Liquidity-led profile";
   const propertyExposure = ["property", "mixed"].includes(answers.ownedAssets) || ["existing", "active"].includes(answers.propertyIntent);
   const archetype =
     answers.householdRole === "parent" || answers.householdRole === "multi"
@@ -1216,7 +1216,7 @@ function applyProfilesToNarrative() {
   ) {
     state.morningSignal.move = "Strengthen liquidity before adding new risk";
     state.morningSignal.rationale =
-      "TELAJ sees a household that needs more room to absorb life, debt, or income pressure before taking on more exposure.";
+      "TELAJ sees a financial position that needs more room to absorb life, debt, or income pressure before taking on more exposure.";
     state.recommendation.headline = "Build reserve strength before stretching for returns";
     state.recommendation.primaryAction = "Increase cash buffer";
     state.tasks = [
@@ -1240,7 +1240,7 @@ function applyProfilesToNarrative() {
       { id: "discipline", title: "Ignore hype and stay broad", xp: 35, done: true },
     ];
   } else if (goalProfile.propertyIntent === "active" || householdProfile.propertyExposure) {
-    state.morningSignal.move = "Prepare the household before forcing the next property move";
+    state.morningSignal.move = "Prepare the broader financial picture before forcing the next property move";
     state.morningSignal.rationale =
       "TELAJ sees real estate in the picture, but wants liquidity, debt pressure, and resilience checked before momentum decisions.";
     state.recommendation.secondaryAction = "Prepare for real estate deliberately";
@@ -1252,12 +1252,12 @@ function applyProfilesToNarrative() {
       { id: "discipline", title: "Do not force the property move", xp: 40, done: true },
     ];
     state.property.signal = "Prepare before expanding real-estate exposure";
-    state.property.note = "TELAJ sees property relevance, but it wants stronger household resilience before a bigger move.";
+    state.property.note = "TELAJ sees property relevance, but it wants stronger financial resilience before a bigger move.";
   }
 
   if (householdProfile.propertyExposure && goalProfile.propertyIntent !== "none") {
     state.property.signal = "Real estate matters, but only if liquidity and stress still work";
-    state.property.note = "The property decision should serve the household system, not become the system.";
+    state.property.note = "The property decision should serve the broader financial system, not become the system.";
   }
 
   if (["2-3", "4plus"].includes(householdProfile.propertyCount)) {
@@ -1272,8 +1272,8 @@ function applyProfilesToNarrative() {
   if (householdProfile.primaryResidenceStatus === "own-mortgage" && householdProfile.primaryHomeDebtRate === "high") {
     state.morningSignal.move = "Review expensive home debt before stretching into new risk";
     state.morningSignal.rationale =
-      "TELAJ sees a primary household with a higher-cost mortgage, which can matter more than chasing another asset too early.";
-    state.recommendation.primaryAction = "Review mortgage pressure and household liquidity";
+      "TELAJ sees a primary residence with a higher-cost mortgage, which can matter more than chasing another asset too early.";
+    state.recommendation.primaryAction = "Review mortgage pressure and overall liquidity";
     state.recommendation.secondaryAction = "Delay optional risk until the home balance sheet is stronger";
   }
 
@@ -1281,14 +1281,14 @@ function applyProfilesToNarrative() {
     state.recommendation.secondaryAction = "Translate the goal into a property-readiness plan, not an impulse move";
     state.property.signal = "Property intent is real, but TELAJ wants readiness over urgency";
   } else if (intent?.optimizeFor === "durable cash flow") {
-    state.recommendation.headline = "Build reliable cash flow without weakening the household core";
+    state.recommendation.headline = "Build reliable cash flow without weakening the financial core";
     state.recommendation.growthSleeve = "Favor durable ETF and cash-flow assets over concentrated bets";
   } else if (intent?.optimizeFor === "reserve strength") {
-    state.morningSignal.move = "Protect the household buffer before reaching for the next idea";
+    state.morningSignal.move = "Protect the cash buffer before reaching for the next idea";
   }
 
   if (intent?.watchout === "Speculation risk" || intent?.watchout === "Speed pressure") {
-    state.recommendation.avoid = "Fast, narrative-driven moves that break the household plan";
+    state.recommendation.avoid = "Fast, narrative-driven moves that break the financial plan";
   }
 
   if (state.financialPosition.creditCardDebt > 0) {
@@ -1356,8 +1356,8 @@ function renderOnboarding() {
       <div class="onboarding-head">
         <div>
           <div class="eyebrow">TELAJ LIFE MATRIX</div>
-          <h1 class="onboarding-title">Map the family balance sheet before anything else.</h1>
-          <p class="onboarding-copy">TELAJ should understand what the household owns, where the capital sits, how much is owed, and only then how the person behaves under stress.</p>
+          <h1 class="onboarding-title">Map your finances before anything else.</h1>
+          <p class="onboarding-copy">TELAJ should understand what you own, where the capital sits, how much is owed, and only then how you behave under stress.</p>
         </div>
         <div class="onboarding-step">${question.category} | ${step + 1}/${questions.length}</div>
       </div>
@@ -1450,7 +1450,7 @@ function renderAuthShell() {
           <img class="auth-logo" src="./assets/telaj-logo2.png" alt="TELAJ" />
           <div class="eyebrow">TELAJ ACCESS</div>
           <h1 class="onboarding-title">Know where you stand. Know what to do next.</h1>
-          <p class="onboarding-copy">TELAJ maps your household, shows where your money sits, and gives one clear next move. Start as a guest or create an account to keep your progress.</p>
+          <p class="onboarding-copy">TELAJ maps your personal, business, or family finances, shows where your money sits, and gives one clear next move. Start as a guest or create an account to keep your progress.</p>
         </div>
         <div class="auth-status">${supabaseReady ? "Supabase ready" : "Guest mode ready"}</div>
       </div>
@@ -1481,11 +1481,11 @@ function renderAuthShell() {
         </button>
         <button class="auth-option ${mode === "signup" ? "is-selected" : ""}" id="auth-signup" ${betaUnlocked ? "" : "disabled"}>
           <div class="answer-title">Create account</div>
-          <div class="answer-note">Save your household profile, real-estate work, and TELAJ decisions across devices.</div>
+          <div class="answer-note">Save your financial profile, real-estate work, and TELAJ decisions across devices.</div>
         </button>
         <button class="auth-option ${mode === "login" ? "is-selected" : ""}" id="auth-login" ${betaUnlocked ? "" : "disabled"}>
           <div class="answer-title">Log in</div>
-          <div class="answer-note">Return to your saved household map, capital plan, and daily TELAJ guidance.</div>
+          <div class="answer-note">Return to your saved financial map, capital plan, and daily TELAJ guidance.</div>
         </button>
       </div>
       <div class="social-auth">
@@ -1715,7 +1715,7 @@ function renderIntentStage() {
       </div>
       <div class="question-stage">
         <div class="micro-label">Your words</div>
-        <textarea id="intent-notes" class="intent-textarea" placeholder="Example: I want to protect my family, stop making rushed decisions, and know when real estate actually makes sense for us. I care more about avoiding a big mistake than chasing the fastest return.">${notes}</textarea>
+        <textarea id="intent-notes" class="intent-textarea" placeholder="Example: I want to protect my finances, stop making rushed decisions, and know when real estate actually makes sense for me, my business, or the people I support. I care more about avoiding a big mistake than chasing the fastest return.">${notes}</textarea>
         <div class="onboarding-actions intent-actions">
           <button class="ghost-button" id="intent-back">Back</button>
           <div class="task-pill">${analysis ? "Intent analyzed" : "Write freely, then analyze"}</div>
@@ -1868,11 +1868,11 @@ function getFinancialPosition() {
   const netWorth = totalAssets - totalDebt;
   const debtRatio = totalAssets > 0 ? totalDebt / totalAssets : 0;
 
-  let opinion = "The household can focus on disciplined long-term allocation.";
+  let opinion = "The financial position can focus on disciplined long-term allocation.";
   if (state.financialPosition.creditCardDebt > 0) {
     opinion = "TELAJ would likely prioritize expensive consumer debt before stretching into new risk.";
   } else if (debtRatio > 0.6) {
-    opinion = "Debt is a large share of the household picture, so resilience and balance-sheet repair matter first.";
+    opinion = "Debt is a large share of the balance sheet, so resilience and balance-sheet repair matter first.";
   } else if (calculateLiquidityMonths() < 3) {
     opinion = "Liquidity is still thin, so TELAJ would protect reserves before a bigger investment move.";
   }
@@ -1936,7 +1936,7 @@ function getFinancialAllocationAdvice() {
     buckets = allocatePercentages([{ label: "Emergency reserve", percent: 100, note: "No liquid capital has been mapped yet." }]);
     headline = "Map liquid capital before TELAJ commits you to an investment move";
     summary = "Without a clear liquid-cash figure, TELAJ should default to caution and build the reserve picture first.";
-    primaryAction = "Confirm liquid cash and monthly household need";
+    primaryAction = "Confirm liquid cash and monthly financial need";
     secondaryAction = "Only invest after the reserve target is visible";
     growthSleeve = "No growth sleeve yet";
     watchout = "Investing from an unmapped balance sheet";
@@ -1944,17 +1944,17 @@ function getFinancialAllocationAdvice() {
     heroRationale = "TELAJ needs the liquid position first because every later allocation depends on it.";
     reasons = [
       "The balance sheet is still incomplete.",
-      "Reserve math is impossible without liquid cash and household need.",
+      "Reserve math is impossible without liquid cash and monthly financial need.",
       "TELAJ should not manufacture certainty from missing data.",
     ];
   } else if (state.financialPosition.creditCardDebt > 0) {
     buckets = allocatePercentages([
       { label: "Debt payoff", percent: 45, note: "Expensive revolving debt usually deserves first claim on free capital." },
-      { label: "Emergency reserve", percent: 35, note: "Keep the household from falling back into the debt loop." },
+      { label: "Emergency reserve", percent: 35, note: "Keep your finances from falling back into the debt loop." },
       { label: "Treasury bonds", percent: 20, note: "Park the defensive sleeve where it stays stable and liquid." },
     ]);
     headline = "Use liquid capital to repair the balance sheet before investing aggressively";
-    summary = `${formatEuro(liquidAssets)} is meaningful, but TELAJ sees expensive consumer debt on the household. The first move is balance-sheet repair, not chasing returns.`;
+    summary = `${formatEuro(liquidAssets)} is meaningful, but TELAJ sees expensive consumer debt on the balance sheet. The first move is balance-sheet repair, not chasing returns.`;
     primaryAction = "Pay down credit card debt first";
     secondaryAction = "Hold the remaining defense in cash and short Treasuries";
     growthSleeve = "Delay ETF growth until expensive debt is cleared";
@@ -1968,7 +1968,7 @@ function getFinancialAllocationAdvice() {
     ];
   } else if (reserveMonths < reserveTargetMonths) {
     buckets = allocatePercentages([
-      { label: "Emergency reserve", percent: 45, note: "Bring the household closer to its reserve target first." },
+      { label: "Emergency reserve", percent: 45, note: "Bring your finances closer to the reserve target first." },
       { label: "Treasury bonds", percent: 30, note: "Keep a defensive yield sleeve without sacrificing liquidity." },
       { label: "Broad ETFs", percent: 15, note: "Allow some growth, but only in a measured way." },
       { label: "Gold", percent: 10, note: "Add ballast instead of extra fragility." },
@@ -1980,10 +1980,10 @@ function getFinancialAllocationAdvice() {
     growthSleeve = "Only a small ETF sleeve until the reserve target is funded";
     watchout = "Acting fully invested while the reserve target is still short";
     heroMove = "Build the reserve before you stretch for returns";
-    heroRationale = "The household is not under-protected, but it still needs more runway before TELAJ leans into bigger exposure.";
+    heroRationale = "Your finances are not under-protected, but they still need more runway before TELAJ leans into bigger exposure.";
     reasons = [
       `Reserve target is about ${formatEuro(reserveTargetAmount)} and the gap is still ${formatEuro(reserveGap)}.`,
-      "Short Treasuries keep capital productive without locking the household up.",
+      "Short Treasuries keep capital productive without locking the balance sheet up.",
       "A small ETF sleeve preserves momentum without compromising safety.",
     ];
   } else {
@@ -2003,7 +2003,7 @@ function getFinancialAllocationAdvice() {
       ];
     } else if (goalProfile.primaryGoal === "safety" || householdProfile.propertyExposure || mortgageDebt > liquidAssets * 0.8 || unsecuredDebt > liquidAssets * 0.2) {
       buckets = [
-        { label: "Emergency reserve", percent: 35, note: "Higher reserve because the household carries more fixed obligations." },
+        { label: "Emergency reserve", percent: 35, note: "Higher reserve because your finances carry more fixed obligations." },
         { label: "Treasury bonds", percent: 30, note: "Defensive income before aggressive reach." },
         { label: "Gold", percent: 15, note: "Gold stays as a hedge against macro stress." },
         { label: "Broad ETFs", percent: 20, note: "Growth is still present, just subordinate to stability." },
@@ -2020,7 +2020,7 @@ function getFinancialAllocationAdvice() {
     heroMove = "Put the liquid capital to work in layers";
     heroRationale = "TELAJ sees enough reserve strength to let part of the cash compound, but it still wants defense and optionality in the mix.";
     reasons = [
-      "A diversified ETF sleeve is the cleanest growth engine for household capital.",
+      "A diversified ETF sleeve is the cleanest growth engine for long-term capital.",
       "Gold and Treasuries reduce the risk of regretting the move under stress.",
       "Keeping a dedicated reserve prevents the portfolio from becoming the emergency fund.",
     ];
@@ -2035,7 +2035,7 @@ function getFinancialAllocationAdvice() {
     ? `If ${formatEuro(liquidAssets)} is the liquid cash available today, TELAJ would currently split it as ${plan
         .map((bucket) => `${bucket.percent}% to ${bucket.label.toLowerCase()}`)
         .join(", ")}.`
-    : "TELAJ needs the liquid position mapped before it can produce a household allocation call.";
+    : "TELAJ needs the liquid position mapped before it can produce a real allocation call.";
 
   return {
     reserveMonths,
@@ -2217,7 +2217,7 @@ function renderProfileMatrix() {
     panel.innerHTML = `
       <div class="eyebrow">Life matrix</div>
       <h3>Profile not built yet</h3>
-      <p class="body-copy">Finish onboarding to let TELAJ describe the household, the behavior pattern, and the real goal structure.</p>
+      <p class="body-copy">Finish onboarding to let TELAJ describe your financial profile, the behavior pattern, and the real goal structure.</p>
     `;
     return;
   }
@@ -2410,7 +2410,7 @@ function renderFinancialPosition() {
 
   panel.innerHTML = `
     <div class="eyebrow">Financial position</div>
-    <h3>Put the household position at the center of every move</h3>
+    <h3>Put the financial position at the center of every move</h3>
     <div class="micro-label">Start here</div>
     <div class="input-stack financial-input-stack">
       <label class="input-field">
@@ -2418,7 +2418,7 @@ function renderFinancialPosition() {
         <input id="fp-liquid" type="number" min="0" step="1000" value="${state.liquidityDetails.liquidAssets}" />
       </label>
       <label class="input-field">
-        <span class="micro-label">Monthly household need</span>
+        <span class="micro-label">Monthly financial need</span>
         <input id="fp-monthly-need" type="number" min="0" step="100" value="${state.liquidityDetails.monthlyNeed}" />
       </label>
       <label class="input-field">
@@ -2575,7 +2575,7 @@ function renderCashStatus() {
         <input id="liquid-assets-input" type="number" min="0" step="500" value="${state.liquidityDetails.liquidAssets}" />
       </label>
       <label class="input-field">
-        <span class="micro-label">Monthly household need</span>
+        <span class="micro-label">Monthly financial need</span>
         <input id="monthly-need-input" type="number" min="0" step="100" value="${state.liquidityDetails.monthlyNeed}" />
       </label>
       <div class="action-row">
@@ -2744,8 +2744,8 @@ function renderAllocationView() {
     </div>
   `;
   document.getElementById("allocation-bars").innerHTML = `
-    <div class="eyebrow">Current household mix</div>
-    <h3>How the entered household assets are actually positioned</h3>
+    <div class="eyebrow">Current financial mix</div>
+    <h3>How the entered assets are actually positioned</h3>
     ${
       householdMix.length
         ? `
@@ -2766,7 +2766,7 @@ function renderAllocationView() {
               .join("")}
           </div>
         `
-        : `<div class="subpanel"><div class="panel-copy">Current household mix is not mapped yet. Enter liquid cash and asset values in the Financial Position panel first.</div></div>`
+        : `<div class="subpanel"><div class="panel-copy">Current financial mix is not mapped yet. Enter liquid cash and asset values in the Financial Position panel first.</div></div>`
     }
   `;
   document.getElementById("allocation-rules").innerHTML = `

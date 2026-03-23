@@ -3071,7 +3071,21 @@ function evaluateAssetCheck(query) {
     return directMatch;
   }
 
-  return getAssetCheckFallback(normalized);
+  const fallback = getAssetCheckFallback(normalized);
+  if (fallback) {
+    return fallback;
+  }
+
+  return {
+    ticker: normalized.toUpperCase(),
+    label: "Unmapped asset",
+    signal: "review carefully",
+    confidence: 41,
+    why: "TELAJ does not have a strong mapped signal for this asset yet, so it should not pretend to know more than it does.",
+    risk: "Acting on a weak or unknown signal can turn this into speculation instead of disciplined allocation.",
+    safer: "Stay with broad ETFs, gold, reserve assets, or a clearly researched idea until TELAJ has better coverage here.",
+    horizon: "Unclear",
+  };
 }
 
 function renderWatchlist() {

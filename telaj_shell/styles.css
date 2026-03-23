@@ -844,6 +844,7 @@ select:focus {
   justify-content: space-between;
   gap: 12px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .signal-live {
@@ -956,6 +957,7 @@ select:focus {
   justify-content: space-between;
   gap: 12px;
   align-items: center;
+  flex-wrap: wrap;
   padding-top: 10px;
   border-top: 2px solid var(--border);
 }
@@ -1038,6 +1040,7 @@ select:focus {
   border: 2px solid var(--border);
   background: var(--card-strong);
   padding: 12px;
+  min-width: 0;
 }
 
 .task-item {
@@ -1045,6 +1048,18 @@ select:focus {
   grid-template-columns: auto 1fr auto;
   gap: 12px;
   align-items: center;
+}
+
+.task-item > *,
+.leader-item > *,
+.history-item > *,
+.highlight-item > *,
+.tape-item > *,
+.insight-card > *,
+.profile-chip > *,
+.stat-box > *,
+.financial-plan-card > * {
+  min-width: 0;
 }
 
 .task-toggle {
@@ -1120,6 +1135,7 @@ select:focus {
   justify-content: space-between;
   gap: 12px;
   align-items: start;
+  flex-wrap: wrap;
 }
 
 .signal-badge,
@@ -1131,6 +1147,8 @@ select:focus {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .signal-badge.good,
@@ -1171,6 +1189,7 @@ select:focus {
   font-size: 1.1rem;
   font-weight: 700;
   letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
 }
 
 .highlight-title {
@@ -1178,6 +1197,7 @@ select:focus {
   font-weight: 700;
   letter-spacing: -0.03em;
   margin-top: 4px;
+  overflow-wrap: anywhere;
 }
 
 .sparkline {
@@ -1291,6 +1311,27 @@ select:focus {
 .financial-plan-amount {
   font-family: "JetBrains Mono", monospace;
   color: var(--accent-strong);
+  overflow-wrap: anywhere;
+}
+
+.panel-copy,
+.body-copy,
+.list-note,
+.history-meta,
+.task-copy,
+.task-meta,
+.account-email,
+.meta-line,
+.brand-title,
+.badge-name,
+.row-label,
+.stat-value,
+.leader-score,
+.financial-call-copy,
+.financial-call-title,
+.profile-chip-title {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .financial-reason-list {

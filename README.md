@@ -142,6 +142,10 @@ Set these in Streamlit Community Cloud or `.streamlit/secrets.toml`:
 FRED_API_KEY = "your_fred_key"
 DISCORD_WEBHOOK_URL = "your_discord_webhook"
 APP_URL = "https://your-app-url.streamlit.app"
+X_API_KEY = "your_x_api_key"
+X_API_SECRET = "your_x_api_secret"
+X_ACCESS_TOKEN = "your_x_access_token"
+X_ACCESS_TOKEN_SECRET = "your_x_access_token_secret"
 
 SUPABASE_URL = "https://your-project.supabase.co"
 SUPABASE_SERVICE_ROLE_KEY = "your_service_role_key"
@@ -160,6 +164,10 @@ Required for automation:
 FRED_API_KEY
 DISCORD_WEBHOOK_URL
 APP_URL
+X_API_KEY
+X_API_SECRET
+X_ACCESS_TOKEN
+X_ACCESS_TOKEN_SECRET
 SUPABASE_URL
 SUPABASE_SERVICE_ROLE_KEY
 BROKER_PROVIDER
@@ -185,6 +193,7 @@ Current deployment model:
 - GitHub Actions
 - Supabase
 - Discord webhook
+- optional X posting
 
 Current workflow:
 
@@ -195,6 +204,16 @@ Current workflow:
 Defined in:
 
 - [.github/workflows/heartbeat.yml](/Users/tonysoprano/Documents/New%20project/.github/workflows/heartbeat.yml)
+
+X publishing notes:
+
+- The signal worker can post a TELAJ market-pulse thread to X when all four X credentials are configured.
+- It uses app-owned credentials with OAuth 1.0a:
+  - `X_API_KEY`
+  - `X_API_SECRET`
+  - `X_ACCESS_TOKEN`
+  - `X_ACCESS_TOKEN_SECRET`
+- Discord and X can run together, or the worker can publish to X without Discord.
 
 ## Known Constraints
 

@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from .data import DataConfig, DataPipeline
 from .experiment_tracker import log_experiment_run
 from .intelligence import CreditLiquidityFactor, EnsembleDecisionEngine, EventRiskFilter, MarketInternalsFactory
-from .notifications import DiscordNotifier
+from .notifications import DiscordNotifier, XNotifier
 from .storage import load_signal_payload, save_signal_payload
 
 
@@ -217,19 +217,31 @@ def latest_state_payload() -> dict[str, object] | None:
     return payload
 
 
-def notify_if_changed(state: SignalState, notifier: DiscordNotifier) -> bool:
+def notify_if_changed(
+    state: SignalState,
+    *,
+    discord_notifier: DiscordNotifier | None = None,
+    x_notifier: XNotifier | None = None,
+) -> bool:
     previous = load_previous_state()
     save_state(state)
     if previous is not None and previous.mode == state.mode:
         return False
 
-    notifier.send_regime_change(
-        tickers=DEFAULT_TICKERS,
-        label=state.label,
-        message=state.message,
-        reason=state.reason,
-    )
-    notifier.send_top_signals(signals=state.top_signals, timestamp=pd.Timestamp(datetime.now(UTC)))
+    if discord_notifier:
+        discord_notifier.send_regime_change(
+            tickers=DEFAULT_TICKERS,
+            label=state.label,
+            message=state.message,
+            reason=state.reason,
+        )
+        discord_notifier.send_top_signals(signals=state.top_signals, timestamp=pd.Timestamp(datetime.now(UTC)))
+    if x_notifier:
+        x_notifier.send_top_signals_thread(
+            label=state.label,
+            message=state.message,
+            signals=state.top_signals,
+        )
     return True
 
 
@@ -237,19 +249,38 @@ def main() -> None:
     fred_api_key = os.getenv("FRED_API_KEY")
     discord_webhook = os.getenv("DISCORD_WEBHOOK_URL")
     app_url = os.getenv("APP_URL") or DEFAULT_APP_URL
+    x_api_key = os.getenv("X_API_KEY")
+    x_api_secret = os.getenv("X_API_SECRET")
+    x_access_token = os.getenv("X_ACCESS_TOKEN")
+    x_access_token_secret = os.getenv("X_ACCESS_TOKEN_SECRET")
 
     if not fred_api_key:
         raise RuntimeError("FRED_API_KEY is required for the signal worker.")
-    if not discord_webhook:
-        raise RuntimeError("DISCORD_WEBHOOK_URL is required for the signal worker.")
+    if not discord_webhook and not all((x_api_key, x_api_secret, x_access_token, x_access_token_secret)):
+        raise RuntimeError("Configure DISCORD_WEBHOOK_URL or the full X API credential set for the signal worker.")
 
     state = build_signal_state(fred_api_key=fred_api_key)
-    notifier = DiscordNotifier(
-        webhook_url=discord_webhook,
-        username="Sovereign AI",
-        app_url=app_url,
+    discord_notifier = (
+        DiscordNotifier(
+            webhook_url=discord_webhook,
+            username="Sovereign AI",
+            app_url=app_url,
+        )
+        if discord_webhook
+        else None
     )
-    changed = notify_if_changed(state, notifier)
+    x_notifier = (
+        XNotifier(
+            consumer_key=x_api_key,
+            consumer_secret=x_api_secret,
+            access_token=x_access_token,
+            access_token_secret=x_access_token_secret,
+            app_url=app_url,
+        )
+        if all((x_api_key, x_api_secret, x_access_token, x_access_token_secret))
+        else None
+    )
+    changed = notify_if_changed(state, discord_notifier=discord_notifier, x_notifier=x_notifier)
     log_experiment_run(
         {
             "timestamp": datetime.now(UTC).isoformat(),

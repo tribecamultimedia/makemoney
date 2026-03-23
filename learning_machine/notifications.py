@@ -1,9 +1,57 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
+import secrets
+import time
 from dataclasses import dataclass
+from urllib.parse import quote
 
 import pandas as pd
 import requests
+
+
+def _oauth_quote(value: str) -> str:
+    return quote(value, safe="~")
+
+
+def _build_oauth1_authorization_header(
+    *,
+    method: str,
+    url: str,
+    consumer_key: str,
+    consumer_secret: str,
+    access_token: str,
+    access_token_secret: str,
+) -> str:
+    oauth_params = {
+        "oauth_consumer_key": consumer_key,
+        "oauth_nonce": secrets.token_hex(16),
+        "oauth_signature_method": "HMAC-SHA1",
+        "oauth_timestamp": str(int(time.time())),
+        "oauth_token": access_token,
+        "oauth_version": "1.0",
+    }
+    encoded_pairs = sorted((_oauth_quote(key), _oauth_quote(value)) for key, value in oauth_params.items())
+    parameter_string = "&".join(f"{key}={value}" for key, value in encoded_pairs)
+    signature_base = "&".join(
+        [
+            method.upper(),
+            _oauth_quote(url),
+            _oauth_quote(parameter_string),
+        ]
+    )
+    signing_key = f"{_oauth_quote(consumer_secret)}&{_oauth_quote(access_token_secret)}"
+    signature = base64.b64encode(
+        hmac.new(signing_key.encode("utf-8"), signature_base.encode("utf-8"), hashlib.sha1).digest()
+    ).decode("utf-8")
+    oauth_params["oauth_signature"] = signature
+    header_value = ", ".join(
+        f'{_oauth_quote(key)}="{_oauth_quote(value)}"' for key, value in sorted(oauth_params.items())
+    )
+    return f"OAuth {header_value}"
 
 
 @dataclass(slots=True)
@@ -49,6 +97,99 @@ class DiscordNotifier:
             return True
         except requests.RequestException:
             return False
+
+
+@dataclass(slots=True)
+class XNotifier:
+    consumer_key: str | None
+    consumer_secret: str | None
+    access_token: str | None
+    access_token_secret: str | None
+    app_url: str = "http://localhost:8502"
+    endpoint: str = "https://api.x.com/2/tweets"
+
+    @property
+    def configured(self) -> bool:
+        return all(
+            (
+                self.consumer_key,
+                self.consumer_secret,
+                self.access_token,
+                self.access_token_secret,
+            )
+        )
+
+    def _post_tweet(self, *, text: str, reply_to_id: str | None = None) -> str | None:
+        if not self.configured:
+            return None
+
+        payload: dict[str, object] = {"text": text[:280]}
+        if reply_to_id:
+            payload["reply"] = {"in_reply_to_tweet_id": reply_to_id}
+
+        headers = {
+            "Authorization": _build_oauth1_authorization_header(
+                method="POST",
+                url=self.endpoint,
+                consumer_key=self.consumer_key or "",
+                consumer_secret=self.consumer_secret or "",
+                access_token=self.access_token or "",
+                access_token_secret=self.access_token_secret or "",
+            ),
+            "Content-Type": "application/json",
+        }
+        try:
+            response = requests.post(self.endpoint, headers=headers, data=json.dumps(payload), timeout=10)
+            response.raise_for_status()
+            body = response.json()
+            data = body.get("data", {})
+            tweet_id = data.get("id")
+            return str(tweet_id) if tweet_id else None
+        except (requests.RequestException, ValueError):
+            return None
+
+    def send_top_signals_thread(
+        self,
+        *,
+        label: str,
+        message: str,
+        signals: tuple[dict[str, object], ...],
+    ) -> bool:
+        if not self.configured or not signals:
+            return False
+
+        opener = (
+            f"TELAJ Market Pulse: {label}\n"
+            f"{message[:170]}\n"
+            f"More: {self.app_url}"
+        )[:280]
+        parent_id = self._post_tweet(text=opener)
+        if not parent_id:
+            return False
+
+        posted = 1
+        for item in signals[:4]:
+            ticker = str(item.get("ticker", "Asset"))
+            signal = str(item.get("signal", "hold")).upper()
+            confidence = item.get("confidence", "")
+            why = str(item.get("why", ""))
+            safer = str(item.get("safer", ""))
+            horizon = str(item.get("horizon", ""))
+            body = f"{ticker}: {signal}"
+            if confidence != "":
+                body += f" ({confidence}%)"
+            if why:
+                body += f"\n{why}"
+            if safer:
+                body += f"\nSafer: {safer}"
+            if horizon:
+                body += f"\nHorizon: {horizon}"
+            next_id = self._post_tweet(text=body, reply_to_id=parent_id)
+            if not next_id:
+                return False
+            parent_id = next_id
+            posted += 1
+        return posted > 1
 
     def send_regime_change(
         self,

@@ -1781,8 +1781,8 @@ function renderAuthShell() {
         <div>
           <img class="auth-logo" src="./assets/telaj-logo2.png" alt="TELAJ" />
           <div class="eyebrow">TELAJ ACCESS</div>
-          <h1 class="onboarding-title">Know where you stand. Know what to do next.</h1>
-          <p class="onboarding-copy">TELAJ maps your personal, business, or family finances, shows where your money sits, and gives one clear next move. Start as a guest or create an account to keep your progress.</p>
+          <h1 class="onboarding-title">TELAJ tells you what to do next with your cash, debt, and investments.</h1>
+          <p class="onboarding-copy">Built for self-directed professionals. Map your finances once, then get one clear next move in plain English.</p>
         </div>
         <div class="auth-status">${supabaseReady ? "Supabase ready" : "Guest mode ready"}</div>
       </div>
@@ -1809,15 +1809,15 @@ function renderAuthShell() {
       <div class="auth-options">
         <button class="auth-option ${mode === "guest" ? "is-selected" : ""}" id="auth-guest" ${betaUnlocked ? "" : "disabled"}>
           <div class="answer-title">Continue as guest</div>
-          <div class="answer-note">Fastest way to try TELAJ and see your financial position clearly.</div>
+          <div class="answer-note">Fastest way to see your financial position and today's recommended next move.</div>
         </button>
         <button class="auth-option ${mode === "signup" ? "is-selected" : ""}" id="auth-signup" ${betaUnlocked ? "" : "disabled"}>
           <div class="answer-title">Create account</div>
-          <div class="answer-note">Save your financial profile, real-estate work, and TELAJ decisions across devices.</div>
+          <div class="answer-note">Save your financial position, decision history, and market context across devices.</div>
         </button>
         <button class="auth-option ${mode === "login" ? "is-selected" : ""}" id="auth-login" ${betaUnlocked ? "" : "disabled"}>
           <div class="answer-title">Log in</div>
-          <div class="answer-note">Return to your saved financial map, capital plan, and daily TELAJ guidance.</div>
+          <div class="answer-note">Return to your financial map, next-move plan, and TELAJ guidance.</div>
         </button>
       </div>
       <div class="social-auth">
@@ -1847,7 +1847,7 @@ function renderAuthShell() {
           : `
             <div class="auth-note">
               <div class="micro-label">What TELAJ does</div>
-              <div class="panel-copy">See your assets, debts, liquidity, and capital allocation in one place. TELAJ then tells you what deserves attention first and where the next dollar should go.</div>
+              <div class="panel-copy">Map your cash, debt, and investments once. TELAJ then tells you the single smartest next move, instead of making you interpret another finance dashboard.</div>
             </div>
           `
       }
@@ -2485,10 +2485,10 @@ function renderMorningHero() {
     <div class="morning-layout">
       <div>
         <div class="signal-topline">
-          <div class="signal-live"><span class="live-dot"></span> Daily boss fight</div>
+          <div class="signal-live"><span class="live-dot"></span> Today's decision</div>
           <div class="risk-chip ${riskClass}">Risk ${signal.risk}</div>
         </div>
-        <div class="eyebrow">Morning signal</div>
+        <div class="eyebrow">Next move</div>
         <h2 class="signal-title">${signal.move}</h2>
         <p class="signal-rationale">${signal.rationale}</p>
       </div>
@@ -2507,12 +2507,12 @@ function renderMorningHero() {
         </div>
       </div>
       <div class="action-row">
-        <button class="action-button primary" id="signal-execute">Execute move</button>
-        <button class="action-button" id="signal-simulate">Simulate first</button>
+        <button class="action-button primary" id="signal-execute">Take this action</button>
+        <button class="action-button" id="signal-simulate">See decision feed</button>
         <button class="ghost-button" id="signal-snooze">Ignore for today</button>
       </div>
       <div class="hero-footer">
-        <div class="task-pill">Today: discipline beats urgency</div>
+        <div class="task-pill">Today: one clear move beats more noise</div>
         <div class="task-pill">Data source: ${state.dataSource}</div>
       </div>
     </div>
@@ -2544,7 +2544,7 @@ function renderSystemHealth() {
     .join("");
   panel.innerHTML = `
     <div class="eyebrow">System health</div>
-    <h3>Financial system health</h3>
+    <h3>Decision context</h3>
     <div class="stats-grid">${stats}</div>
   `;
 }
@@ -2777,7 +2777,7 @@ function renderAllocationSnapshot() {
   const advice = getFinancialAllocationAdvice();
   panel.innerHTML = `
     <div class="eyebrow">Allocation</div>
-    <h3>Position-based split</h3>
+    <h3>Position-based next move</h3>
     <p class="body-copy">${advice.summary}</p>
     <div class="bar-stack">
       ${advice.plan
@@ -2808,7 +2808,7 @@ function renderFinancialPosition() {
 
   panel.innerHTML = `
     <div class="eyebrow">Financial position</div>
-    <h3>Put the financial position at the center of every move</h3>
+    <h3>Map your finances first. Let TELAJ decide from there.</h3>
     <div class="task-pill">${state.syncStatus.financialPosition}</div>
     <div class="panel-copy">${state.syncStatus.financialPositionDetail}</div>
     <div class="micro-label">Start here</div>

@@ -18,6 +18,9 @@ const defaultState = {
     seat: "Founding tester",
     renewal: "Billing not live yet",
   },
+  syncStatus: {
+    financialPosition: "Local browser only",
+  },
   subscriberPreferences: {
     contactEmail: "",
     signalEmailOptIn: false,
@@ -633,6 +636,7 @@ const onboardingShell = document.getElementById("onboarding-shell");
 const railAccount = document.getElementById("rail-account");
 let supabaseClient = null;
 const DEFAULT_BETA_INVITE_CODES = ["TELAJ-BETA-7Q2M9X"];
+const FINANCIAL_POSITION_ENDPOINT = "/api/financial-position";
 
 const mockEndpoints = {
   familyDashboard: "./mock-api/family-dashboard.json",
@@ -891,6 +895,120 @@ function persistWealthInputs() {
       propertyAppraisal: state.propertyAppraisal,
     })
   );
+}
+
+async function getAccessToken() {
+  const client = initSupabaseClient();
+  if (!client) {
+    return "";
+  }
+  try {
+    const { data } = await client.auth.getSession();
+    return data?.session?.access_token || "";
+  } catch (error) {
+    console.warn("TELAJ could not resolve the auth token for financial sync.", error);
+    return "";
+  }
+}
+
+function normalizeFinancialPositionPayload(payload) {
+  const normalized = payload || {};
+  state.liquidityDetails = {
+    ...state.liquidityDetails,
+    liquidAssets: Number(normalized.liquid_cash ?? normalized.liquidAssets ?? state.liquidityDetails.liquidAssets ?? 0),
+    monthlyNeed: Number(normalized.monthly_need ?? normalized.monthlyNeed ?? state.liquidityDetails.monthlyNeed ?? 0),
+  };
+  state.financialPosition = {
+    ...state.financialPosition,
+    investments: Number(normalized.investments ?? state.financialPosition.investments ?? 0),
+    retirement: Number(normalized.retirement ?? state.financialPosition.retirement ?? 0),
+    realEstate: Number(normalized.real_estate ?? normalized.realEstate ?? state.financialPosition.realEstate ?? 0),
+    business: Number(normalized.business_assets ?? normalized.business ?? state.financialPosition.business ?? 0),
+    creditCardDebt: Number(normalized.credit_card_debt ?? normalized.creditCardDebt ?? state.financialPosition.creditCardDebt ?? 0),
+    loans: Number(normalized.loans ?? state.financialPosition.loans ?? 0),
+    mortgageDebt: Number(normalized.mortgage_debt ?? normalized.mortgageDebt ?? state.financialPosition.mortgageDebt ?? 0),
+  };
+}
+
+async function loadFinancialPositionFromApi() {
+  if (!state.auth.authenticated) {
+    return false;
+  }
+  const token = await getAccessToken();
+  if (!token) {
+    return false;
+  }
+  try {
+    const response = await fetch(FINANCIAL_POSITION_ENDPOINT, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Financial position load failed: ${response.status}`);
+    }
+    const payload = await response.json();
+    if (payload?.position) {
+      normalizeFinancialPositionPayload(payload.position);
+      persistWealthInputs();
+      state.syncStatus.financialPosition = "Cloud synced";
+      return true;
+    }
+    state.syncStatus.financialPosition = "No cloud record yet";
+    return false;
+  } catch (error) {
+    console.warn("TELAJ financial position API load failed, using local fallback.", error);
+    state.syncStatus.financialPosition = "Local fallback";
+    return false;
+  }
+}
+
+async function saveFinancialPositionToApi() {
+  if (!state.auth.authenticated) {
+    state.syncStatus.financialPosition = "Saved locally";
+    return false;
+  }
+  const token = await getAccessToken();
+  if (!token) {
+    state.syncStatus.financialPosition = "Saved locally";
+    return false;
+  }
+  try {
+    const response = await fetch(FINANCIAL_POSITION_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        liquid_cash: Number(state.liquidityDetails.liquidAssets || 0),
+        monthly_need: Number(state.liquidityDetails.monthlyNeed || 0),
+        investments: Number(state.financialPosition.investments || 0),
+        retirement: Number(state.financialPosition.retirement || 0),
+        real_estate: Number(state.financialPosition.realEstate || 0),
+        business_assets: Number(state.financialPosition.business || 0),
+        credit_card_debt: Number(state.financialPosition.creditCardDebt || 0),
+        loans: Number(state.financialPosition.loans || 0),
+        mortgage_debt: Number(state.financialPosition.mortgageDebt || 0),
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`Financial position save failed: ${response.status}`);
+    }
+    const payload = await response.json();
+    if (payload?.position) {
+      normalizeFinancialPositionPayload(payload.position);
+    }
+    persistWealthInputs();
+    state.syncStatus.financialPosition = "Cloud synced";
+    return true;
+  } catch (error) {
+    console.warn("TELAJ financial position API save failed, keeping local copy.", error);
+    state.syncStatus.financialPosition = "Saved locally";
+    persistWealthInputs();
+    return false;
+  }
 }
 
 async function fetchJson(url) {
@@ -1679,6 +1797,7 @@ async function handleAuthContinue() {
   state.auth.guest = false;
   state.auth.info = state.auth.mode === "signup" ? "Account created. Continue into TELAJ." : "Logged in.";
   persistAuthState();
+  await loadFinancialPositionFromApi();
   renderAuthShell();
   renderOnboarding();
 }
@@ -2472,6 +2591,7 @@ function renderFinancialPosition() {
   panel.innerHTML = `
     <div class="eyebrow">Financial position</div>
     <h3>Put the financial position at the center of every move</h3>
+    <div class="task-pill">${state.syncStatus.financialPosition}</div>
     <div class="micro-label">Start here</div>
     <div class="input-stack financial-input-stack">
       <label class="input-field">
@@ -2593,7 +2713,7 @@ function renderFinancialPosition() {
     </div>
   `;
 
-  document.getElementById("save-financial-position").addEventListener("click", () => {
+  document.getElementById("save-financial-position").addEventListener("click", async () => {
     state.liquidityDetails.liquidAssets = Number(document.getElementById("fp-liquid").value || 0);
     state.liquidityDetails.monthlyNeed = Number(document.getElementById("fp-monthly-need").value || 0);
     state.financialPosition.investments = Number(document.getElementById("fp-investments").value || 0);
@@ -2604,6 +2724,7 @@ function renderFinancialPosition() {
     state.financialPosition.loans = Number(document.getElementById("fp-loans").value || 0);
     state.financialPosition.mortgageDebt = Number(document.getElementById("fp-mortgage").value || 0);
     persistWealthInputs();
+    await saveFinancialPositionToApi();
     renderAll();
   });
   document.getElementById("financial-go-allocation").addEventListener("click", () => setView("allocation"));
@@ -2645,11 +2766,13 @@ function renderCashStatus() {
       </div>
     </div>
   `;
-  document.getElementById("save-liquidity").addEventListener("click", () => {
+  document.getElementById("save-liquidity").addEventListener("click", async () => {
     state.liquidityDetails.liquidAssets = Number(document.getElementById("liquid-assets-input").value || 0);
     state.liquidityDetails.monthlyNeed = Number(document.getElementById("monthly-need-input").value || 0);
     persistWealthInputs();
+    await saveFinancialPositionToApi();
     renderCashStatus();
+    renderFinancialPosition();
   });
   document.getElementById("go-allocation").addEventListener("click", () => setView("allocation"));
 }
@@ -3222,6 +3345,7 @@ async function bootstrap() {
         state.auth.guest = Boolean(data.session.user.is_anonymous);
         state.auth.email = data.session.user.email || "";
         syncSubscriberEmailFromAuth();
+        await loadFinancialPositionFromApi();
       }
     } catch (error) {
       console.warn("TELAJ auth session could not be restored.", error);

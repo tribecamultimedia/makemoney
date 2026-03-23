@@ -15,6 +15,7 @@ Static TELAJ product shell for drag-and-drop deployment on Netlify.
 - `mock-api/progress.json`
 - `mock-api/real-estate.json`
 - `mock-api/family-profile.json`
+- `api/financial-position.js`
 
 ## Deploy
 
@@ -61,3 +62,8 @@ Do not use the service role key in the frontend.
 - If no provider key is available, the route falls back to TELAJ's local heuristic analysis.
 - The auth shell reads Supabase frontend config from:
   - `config.js`
+- The financial-position route needs backend env vars in Vercel:
+  - `SUPABASE_URL`
+  - `SUPABASE_ANON_KEY`
+- The required table/policies are defined in:
+  - `../sql/financial_positions.sql`

@@ -3052,6 +3052,109 @@ function getAssetCheckFallback(query) {
     };
   }
 
+  const stockMap = {
+    aapl: {
+      ticker: "AAPL",
+      label: "Mega-cap quality",
+      signal: "add slowly",
+      confidence: 66,
+      why: "Apple is usually better treated as a measured quality allocation than a fast trade. TELAJ prefers adding it gradually rather than chasing short-term moves.",
+      risk: "A high-quality stock can still be expensive and underperform for long stretches.",
+      safer: "Use it as a smaller sleeve around a broad ETF core instead of replacing the core.",
+      horizon: "6-18 months",
+    },
+    apple: "aapl",
+    tsla: {
+      ticker: "TSLA",
+      label: "High-volatility single stock",
+      signal: "review carefully",
+      confidence: 57,
+      why: "Tesla can move on sentiment, execution, and macro conditions quickly. TELAJ does not want it treated like a core holding without a clear reason and position size.",
+      risk: "The stock is volatile enough to distort discipline and portfolio sizing.",
+      safer: "Keep single-stock exposure small and anchor the main plan in broad ETFs.",
+      horizon: "1-12 months",
+    },
+    tesla: "tsla",
+    nvda: {
+      ticker: "NVDA",
+      label: "Momentum leadership stock",
+      signal: "add slowly",
+      confidence: 64,
+      why: "NVIDIA can justify attention, but TELAJ still prefers disciplined entries because crowded momentum can reverse violently.",
+      risk: "High expectations make drawdowns sharper when momentum cools.",
+      safer: "Use tranches or broad semiconductor exposure instead of a large one-shot buy.",
+      horizon: "3-12 months",
+    },
+    nvidia: "nvda",
+    msft: {
+      ticker: "MSFT",
+      label: "Quality compounder",
+      signal: "add slowly",
+      confidence: 68,
+      why: "Microsoft fits better as a quality compounding sleeve than a trading vehicle. TELAJ likes measured exposure, not aggressive timing bets.",
+      risk: "Even strong businesses can be poor short-term entries if bought without valuation discipline.",
+      safer: "Build it as a modest sleeve alongside broad ETFs.",
+      horizon: "6-18 months",
+    },
+    microsoft: "msft",
+    meta: {
+      ticker: "META",
+      label: "Large-cap growth stock",
+      signal: "review carefully",
+      confidence: 60,
+      why: "META can work, but TELAJ sees it as a concentrated growth bet rather than a core allocation.",
+      risk: "Single-stock concentration and sentiment swings can overwhelm good fundamentals.",
+      safer: "Prefer a broad ETF core unless you have a clear single-name thesis.",
+      horizon: "3-12 months",
+    },
+    amazon: "amzn",
+    amzn: {
+      ticker: "AMZN",
+      label: "Large-cap platform stock",
+      signal: "add slowly",
+      confidence: 63,
+      why: "Amazon can fit a long-term growth sleeve, but TELAJ still wants broad exposure to do most of the heavy lifting.",
+      risk: "Execution remains strong, but concentrated single-name bets add avoidable portfolio risk.",
+      safer: "Use broad ETFs as the core and keep AMZN as a smaller add-on.",
+      horizon: "6-18 months",
+    },
+    googl: {
+      ticker: "GOOGL",
+      label: "Quality platform stock",
+      signal: "add slowly",
+      confidence: 65,
+      why: "Alphabet can fit a quality growth sleeve, but TELAJ prefers broad exposure first and individual names second.",
+      risk: "Regulatory, AI competition, and sentiment swings can still hit returns.",
+      safer: "Keep it as a small sleeve around a diversified core.",
+      horizon: "6-18 months",
+    },
+    google: "googl",
+    alphabet: "googl",
+  };
+
+  const mappedStock = stockMap[normalized];
+  if (typeof mappedStock === "string") {
+    return stockMap[mappedStock];
+  }
+  if (mappedStock) {
+    return mappedStock;
+  }
+
+  const tapeMatch = state.marketTape.find((item) => item.ticker.toLowerCase() === normalized);
+  if (tapeMatch) {
+    const positive = tapeMatch.changePct >= 0;
+    return {
+      ticker: tapeMatch.ticker,
+      label: "Market tape mover",
+      signal: positive ? "watch" : "review carefully",
+      confidence: 55,
+      why: `${tapeMatch.ticker} is on the tape because it is moving, but TELAJ does not want to confuse movement with a full investment thesis.`,
+      risk: "Fast movers can pull attention toward momentum chasing instead of disciplined allocation.",
+      safer: "Use movers as research prompts, not as automatic buys.",
+      horizon: "1-5 days",
+    };
+  }
+
   return null;
 }
 

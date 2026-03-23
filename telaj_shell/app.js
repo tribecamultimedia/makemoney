@@ -22,6 +22,14 @@ const defaultState = {
     financialPosition: "Local browser only",
     financialPositionDetail: "Sign in and connect the backend route to sync this panel.",
   },
+  homeApi: {
+    loading: false,
+    error: "",
+    whereIStand: null,
+    biggestIssue: null,
+    todayMove: null,
+    actionPlan: null,
+  },
   marketRegion: "US",
   subscriberPreferences: {
     contactEmail: "",
@@ -732,6 +740,10 @@ let navBound = false;
 const DEFAULT_BETA_INVITE_CODES = ["TELAJ-BETA-7Q2M9X"];
 const FINANCIAL_POSITION_ENDPOINT = "/api/financial-position";
 const ASSET_CHECK_ENDPOINT = "/api/asset-check";
+const WHERE_I_STAND_ENDPOINT = "/api/where-i-stand";
+const BIGGEST_ISSUE_ENDPOINT = "/api/biggest-issue";
+const TODAY_MOVE_ENDPOINT = "/api/today-move";
+const ACTION_PLAN_ENDPOINT = "/api/action-plan";
 
 const mockEndpoints = {
   familyDashboard: "./mock-api/family-dashboard.json",
@@ -849,6 +861,7 @@ function resetLocalSessionState() {
   state.onboarding.completed = false;
   state.onboarding.currentStep = 0;
   state.onboarding.stage = "questions";
+  state.homeApi = structuredClone(defaultState.homeApi);
 }
 
 async function handleLogout() {
@@ -952,6 +965,14 @@ function mergeState(payload) {
   Object.assign(state, payload);
 }
 
+function capitalizeWords(value) {
+  return String(value || "")
+    .split(/[\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function loadOnboardingState() {
   try {
     const raw = window.localStorage.getItem(ONBOARDING_STORAGE_KEY);
@@ -1053,6 +1074,70 @@ async function getAccessToken() {
   } catch (error) {
     console.warn("TELAJ could not resolve the auth token for financial sync.", error);
     return "";
+  }
+}
+
+async function fetchAuthedJson(url) {
+  if (!state.auth.authenticated) {
+    return null;
+  }
+  const token = await getAccessToken();
+  if (!token) {
+    return null;
+  }
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`${url} failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+async function loadHomeDecisionState() {
+  if (!state.auth.authenticated) {
+    state.homeApi = {
+      ...state.homeApi,
+      loading: false,
+      error: "",
+      whereIStand: null,
+      biggestIssue: null,
+      todayMove: null,
+      actionPlan: null,
+    };
+    return false;
+  }
+
+  state.homeApi.loading = true;
+  state.homeApi.error = "";
+
+  try {
+    const [whereIStand, biggestIssue, todayMove, actionPlan] = await Promise.all([
+      fetchAuthedJson(WHERE_I_STAND_ENDPOINT),
+      fetchAuthedJson(BIGGEST_ISSUE_ENDPOINT),
+      fetchAuthedJson(TODAY_MOVE_ENDPOINT),
+      fetchAuthedJson(ACTION_PLAN_ENDPOINT),
+    ]);
+
+    state.homeApi = {
+      ...state.homeApi,
+      loading: false,
+      error: "",
+      whereIStand,
+      biggestIssue,
+      todayMove,
+      actionPlan,
+    };
+    return true;
+  } catch (error) {
+    console.warn("TELAJ home decision routes failed, keeping local fallback rendering.", error);
+    state.homeApi.loading = false;
+    state.homeApi.error = error instanceof Error ? error.message : "TELAJ could not load the decision layer.";
+    return false;
   }
 }
 
@@ -1948,6 +2033,7 @@ async function handleAuthContinue() {
       state.auth.email = data?.user?.email || "";
       state.auth.info = "Guest session started.";
       await loadFinancialPositionFromApi();
+      await loadHomeDecisionState();
     } else {
       state.auth.authenticated = true;
       state.auth.guest = true;
@@ -1991,6 +2077,7 @@ async function handleAuthContinue() {
   state.auth.info = state.auth.mode === "signup" ? "Account created. Continue into TELAJ." : "Logged in.";
   persistAuthState();
   await loadFinancialPositionFromApi();
+  await loadHomeDecisionState();
   renderAuthShell();
   renderOnboarding();
 }
@@ -2396,6 +2483,87 @@ function getFinancialAllocationAdvice() {
   };
 }
 
+function getHomeDecisionData() {
+  const advice = getFinancialAllocationAdvice();
+  const position = getFinancialPosition();
+  const reserveMonths = calculateLiquidityMonths();
+  const reserveTargetMonths = advice.reserveTargetMonths || (state.liquidityDetails.monthlyNeed > 0 ? 6 : 0);
+  const reserveGap = Math.max((reserveTargetMonths || 0) - reserveMonths, 0);
+
+  const whereIStand =
+    state.homeApi.whereIStand || {
+      balanceSheet: {
+        totalAssets: position.totalAssets,
+        totalDebt: position.totalDebt,
+        netWorth: position.netWorth,
+        opinion: position.opinion,
+      },
+      liquidityState: {
+        reserveMonths,
+        reserveTargetMonths,
+        reserveGap,
+        liquidityPosture: reserveMonths >= 6 ? "stable" : reserveMonths >= 3 ? "watchful" : "fragile",
+        summary:
+          reserveMonths >= 6
+            ? "Your reserve coverage is in a healthier range. TELAJ can be more deliberate with the next dollar."
+            : reserveMonths >= 3
+              ? "Your reserve buffer exists, but it still deserves respect before extra risk."
+              : "Your reserve coverage is still thin, so protection comes before ambition.",
+      },
+    };
+
+  const biggestIssue =
+    state.homeApi.biggestIssue || {
+      biggestIssue: {
+        headline: advice.headline,
+        score: state.financialPosition.creditCardDebt > 0 ? 90 : reserveGap > 0 ? 78 : 58,
+        reasons: advice.reasons,
+      },
+    };
+
+  const todayMove =
+    state.homeApi.todayMove || {
+      todayMove: {
+        headline: advice.headline,
+        signal: advice.primaryAction,
+        primaryAction: advice.primaryAction,
+        why: advice.summary,
+        whatCouldGoWrong: advice.watchout,
+        saferOption: advice.secondaryAction,
+        confidence: state.financialPosition.creditCardDebt > 0 ? 90 : reserveGap > 0 ? 82 : 74,
+        timeHorizon: state.financialPosition.creditCardDebt > 0 ? "0-3 months" : reserveGap > 0 ? "1-6 months" : "3-12 months",
+        reasons: advice.reasons,
+      },
+    };
+
+  const actionPlan =
+    state.homeApi.actionPlan || {
+      actionPlan: {
+        headline: advice.headline,
+        summary: advice.summary,
+        primaryAction: advice.primaryAction,
+        secondaryAction: advice.secondaryAction,
+        growthSleeve: advice.growthSleeve,
+        watchout: advice.watchout,
+        plainEnglish: advice.plainEnglish,
+        reasons: advice.reasons,
+        steps: advice.plan.slice(0, 3).map((item) => ({
+          label: item.label,
+          percent: item.percent,
+          amount: item.amount,
+          note: item.note,
+        })),
+      },
+    };
+
+  return {
+    whereIStand,
+    biggestIssue,
+    todayMove,
+    actionPlan,
+  };
+}
+
 function getCurrentHouseholdMix() {
   const assets = [
     { label: "Liquid cash", value: Number(state.liquidityDetails.liquidAssets || 0), note: "Available reserve and optionality." },
@@ -2478,55 +2646,63 @@ function calculatePropertyAppraisal() {
 }
 
 function renderMorningHero() {
-  const signal = state.morningSignal;
-  const riskClass = signal.risk.toLowerCase();
+  const { todayMove, biggestIssue } = getHomeDecisionData();
+  const move = todayMove.todayMove;
+  const issue = biggestIssue.biggestIssue;
   const hero = document.getElementById("morning-hero");
   hero.innerHTML = `
-    <div class="morning-layout">
-      <div>
+    <div class="decision-hero-layout decision-hero-surface">
+      <div class="decision-hero-head">
         <div class="signal-topline">
-          <div class="signal-live"><span class="live-dot"></span> Today's decision</div>
-          <div class="risk-chip ${riskClass}">Risk ${signal.risk}</div>
+          <div class="signal-live"><span class="live-dot"></span> Today's move</div>
+          <div class="task-pill">${move.confidence}% confidence</div>
         </div>
-        <div class="eyebrow">Next move</div>
-        <h2 class="signal-title">${signal.move}</h2>
-        <p class="signal-rationale">${signal.rationale}</p>
+        <h2 class="signal-title">${move.signal || move.headline}</h2>
+        <p class="signal-rationale">${move.why}</p>
       </div>
-      <div class="ring-row">
-        <div class="confidence-ring" style="--ring-fill: ${signal.confidence}%">
-          <div class="ring-center">
-            <div class="ring-value">${signal.confidence}%</div>
-            <div class="ring-label">${signal.confidenceLabel}</div>
+      <div class="decision-meta-line">
+        <span>${move.confidence}% confidence</span>
+        <span>·</span>
+        <span>${move.timeHorizon}</span>
+      </div>
+      <div class="action-row home-hero-actions">
+        <button class="action-button primary" id="signal-execute">Execute</button>
+        <button class="action-button" id="signal-simulate">Simulate</button>
+      </div>
+      <details class="decision-details">
+        <summary>See why TELAJ is leaning this way</summary>
+        <div class="decision-summary-grid">
+          <div class="decision-summary-card">
+            <div class="micro-label">Why this matters</div>
+            <h3>${issue.headline}</h3>
+            <div class="issue-score">Issue score ${issue.score}/100</div>
+            <div class="decision-reason-list">
+              ${(issue.reasons || []).slice(0, 3).map((reason) => `<div class="financial-reason">${reason}</div>`).join("")}
+            </div>
+          </div>
+          <div class="decision-summary-card">
+            <div class="micro-label">What could go wrong</div>
+            <div class="panel-copy">${move.whatCouldGoWrong}</div>
+          </div>
+          <div class="decision-summary-card">
+            <div class="micro-label">Safer option</div>
+            <div class="panel-copy">${move.saferOption}</div>
           </div>
         </div>
-        <div class="body-copy">
-          <div class="micro-label">Why now</div>
-          <div class="panel-copy">${signal.rationaleShort}</div>
-          <div class="micro-label" style="margin-top: 14px;">Who this protects</div>
-          <div class="panel-copy">${signal.whoFor}</div>
-        </div>
-      </div>
-      <div class="action-row">
-        <button class="action-button primary" id="signal-execute">Take this action</button>
-        <button class="action-button" id="signal-simulate">See decision feed</button>
-        <button class="ghost-button" id="signal-snooze">Ignore for today</button>
-      </div>
-      <div class="hero-footer">
-        <div class="task-pill">Today: one clear move beats more noise</div>
-        <div class="task-pill">Data source: ${state.dataSource}</div>
-      </div>
+      </details>
     </div>
   `;
 
   document.getElementById("signal-execute").addEventListener("click", () => {
-    state.tasks[0].done = true;
-    renderTasks();
-    renderProgress();
+    setView("home");
+    document.getElementById("financial-position")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.requestAnimationFrame(() => {
+      document.getElementById("fp-liquid")?.focus();
+    });
   });
-  document.getElementById("signal-simulate").addEventListener("click", () => setView("signals"));
-  document.getElementById("signal-snooze").addEventListener("click", () => {
-    const note = hero.querySelector(".hero-footer");
-    note.innerHTML = `<div class="task-pill">Signal snoozed</div><div class="task-pill">TELAJ will keep the discipline streak intact if you review later.</div>`;
+  document.getElementById("signal-simulate").addEventListener("click", () => {
+    setView("home");
+    document.getElementById("allocation-snapshot")?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 }
 
@@ -2777,23 +2953,31 @@ function renderSubscriberPreferences() {
 
 function renderAllocationSnapshot() {
   const panel = document.getElementById("allocation-snapshot");
-  const advice = getFinancialAllocationAdvice();
+  const { actionPlan } = getHomeDecisionData();
+  const plan = actionPlan.actionPlan;
+  const steps = (plan.steps || []).slice(0, 3);
   panel.innerHTML = `
-    <div class="eyebrow">Allocation</div>
-    <h3>Position-based next move</h3>
-    <p class="body-copy">${advice.summary}</p>
-    <div class="bar-stack">
-      ${advice.plan
+    <div class="eyebrow">Action plan</div>
+    <h3 class="secondary-panel-title">Next 3 steps</h3>
+    <div class="minimal-step-list">
+      ${steps
         .map(
-          (item) => `
-            <div class="allocation-row">
-              <div class="row-label">${item.label}</div>
-              <div class="bar-track"><div class="bar-fill" style="width:${item.percent}%"></div></div>
-              <div class="allocation-number">${item.percent}%</div>
+          (step, index) => `
+            <div class="minimal-step">
+              <div class="minimal-step-index">${index + 1}</div>
+              <div>
+                <div class="minimal-step-title">${step.label}</div>
+                <div class="panel-copy">${step.note}</div>
+              </div>
+              <div class="minimal-step-meta">${step.percent}%</div>
             </div>
           `
         )
         .join("")}
+    </div>
+    <div class="action-plan-risk">
+      <div class="micro-label">Main risk</div>
+      <div class="panel-copy">${plan.watchout}</div>
     </div>
   `;
 }
@@ -2805,17 +2989,44 @@ function renderFinancialPosition() {
   }
 
   const position = getFinancialPosition();
-  const advice = getFinancialAllocationAdvice();
-  const debtPressure =
-    position.totalDebt === 0 ? "Clean" : position.debtRatio > 0.6 ? "Heavy" : position.debtRatio > 0.3 ? "Moderate" : "Controlled";
+  const { whereIStand } = getHomeDecisionData();
+  const balanceSheet = whereIStand.balanceSheet;
+  const liquidityState = whereIStand.liquidityState;
 
   panel.innerHTML = `
-    <div class="eyebrow">Financial position</div>
-    <h3>Map your finances first. Let TELAJ decide from there.</h3>
-    <div class="task-pill">${state.syncStatus.financialPosition}</div>
-    <div class="panel-copy">${state.syncStatus.financialPositionDetail}</div>
-    <div class="micro-label">Start here</div>
-    <div class="input-stack financial-input-stack">
+    <div class="eyebrow">Your position</div>
+    <h3 class="secondary-panel-title">Compact financial snapshot</h3>
+    <div class="financial-summary minimal-balance-summary compact-position-grid">
+      <div class="stat-box">
+        <div class="stat-label">Net worth</div>
+        <div class="stat-value accent-text">${formatEuro(balanceSheet.netWorth || 0)}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Reserve</div>
+        <div class="stat-value">${
+          Number.isFinite(liquidityState.reserveMonths) && liquidityState.reserveMonths > 0
+            ? `${Number(liquidityState.reserveMonths).toFixed(1)} months`
+            : "Map expenses"
+        }</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Liquidity posture</div>
+        <div class="stat-value">${capitalizeWords(liquidityState.liquidityPosture || "unknown")}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Debt</div>
+        <div class="stat-value">${formatEuro(balanceSheet.totalDebt || 0)}</div>
+      </div>
+    </div>
+    <p class="body-copy position-summary-copy">${liquidityState.summary || balanceSheet.opinion || position.opinion}</p>
+    <div class="position-utility-row">
+      <div class="utility-meta">${state.syncStatus.financialPosition}</div>
+      <div class="utility-meta">${state.syncStatus.financialPositionDetail}</div>
+      ${state.auth.authenticated ? `<button class="ghost-button subtle-utility-button" id="financial-refresh">Refresh</button>` : ""}
+    </div>
+    <details class="position-editor">
+      <summary>Update the source data</summary>
+      <div class="input-stack financial-input-stack">
       <label class="input-field">
         <span class="micro-label">Liquid cash</span>
         <input id="fp-liquid" type="number" min="0" step="1000" value="${state.liquidityDetails.liquidAssets}" />
@@ -2854,73 +3065,10 @@ function renderFinancialPosition() {
       </label>
       <div class="property-action-row input-span-2">
         <button class="action-button primary" id="save-financial-position">Update position</button>
-        <button class="action-button" id="financial-go-allocation">Use this in allocation</button>
-        ${state.auth.authenticated ? `<button class="ghost-button" id="financial-refresh">Refresh from cloud</button>` : ""}
+        <button class="action-button" id="financial-go-allocation">Refresh today's move</button>
       </div>
-    </div>
-    <div class="section-spacer"></div>
-    <div class="micro-label">Then see the map</div>
-    <div class="financial-layout">
-      <div class="financial-chart-wrap">
-        ${financialPieChart(position.assets)}
       </div>
-      <div class="financial-summary">
-        <div class="stat-box">
-          <div class="stat-label">Total assets</div>
-          <div class="stat-value">${formatEuro(position.totalAssets)}</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-label">Total debt</div>
-          <div class="stat-value">${formatEuro(position.totalDebt)}</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-label">Net worth</div>
-          <div class="stat-value accent-text">${formatEuro(position.netWorth)}</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-label">Debt pressure</div>
-          <div class="stat-value">${debtPressure}</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-label">Liquid runway</div>
-          <div class="stat-value">${advice.reserveMonths ? `${advice.reserveMonths.toFixed(1)} months` : "Map expenses"}</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-label">Reserve target</div>
-          <div class="stat-value">${state.liquidityDetails.monthlyNeed > 0 ? `${advice.reserveTargetMonths} months` : "Pending"}</div>
-        </div>
-      </div>
-      <div class="financial-callout">
-        <div class="financial-callout-card">
-          <div class="micro-label">TELAJ capital call</div>
-          <h4 class="financial-call-title">${advice.headline}</h4>
-          <div class="financial-call-copy">${advice.plainEnglish}</div>
-          <div class="task-pill">Primary: ${advice.primaryAction}</div>
-        </div>
-        <div class="financial-plan-grid">
-          ${advice.plan
-            .map(
-              (bucket) => `
-                <div class="financial-plan-card">
-                  <div class="micro-label">${bucket.label}</div>
-                  <div class="financial-plan-percent">${bucket.percent}%</div>
-                  <div class="financial-plan-amount">${formatEuro(bucket.amount)}</div>
-                  <div class="panel-copy">${bucket.note}</div>
-                </div>
-              `
-            )
-            .join("")}
-        </div>
-        <div class="financial-reason-list">
-          ${advice.reasons.map((item) => `<div class="financial-reason">${item}</div>`).join("")}
-        </div>
-        <div class="legal-note">
-          <div class="micro-label">Disclaimer</div>
-          <div class="panel-copy">This capital call is educational model guidance, not investment, legal, tax, or financial advice. Verify suitability for your own situation before acting.</div>
-        </div>
-      </div>
-    </div>
-    <p class="body-copy">${position.opinion}</p>
+    </details>
     <div class="financial-legend">
       ${position.assets
         .map(
@@ -2948,11 +3096,17 @@ function renderFinancialPosition() {
     state.financialPosition.mortgageDebt = Number(document.getElementById("fp-mortgage").value || 0);
     persistWealthInputs();
     await saveFinancialPositionToApi();
+    await loadHomeDecisionState();
     renderAll();
   });
-  document.getElementById("financial-go-allocation").addEventListener("click", () => setView("allocation"));
+  document.getElementById("financial-go-allocation").addEventListener("click", async () => {
+    await loadHomeDecisionState();
+    renderAll();
+    document.getElementById("morning-hero")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
   document.getElementById("financial-refresh")?.addEventListener("click", async () => {
     await loadFinancialPositionFromApi();
+    await loadHomeDecisionState();
     renderAll();
   });
 }
@@ -3967,6 +4121,7 @@ async function bootstrap() {
           state.auth.email = data.session.user.email || "";
           syncSubscriberEmailFromAuth();
           loadedFinancialPosition = await loadFinancialPositionFromApi();
+          await loadHomeDecisionState();
         }
       } catch (error) {
         console.warn("TELAJ auth session could not be restored.", error);

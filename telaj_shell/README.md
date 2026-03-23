@@ -17,6 +17,10 @@ Static TELAJ product shell for drag-and-drop deployment on Netlify.
 - `mock-api/family-profile.json`
 - `api/financial-position.js`
 - `api/asset-check.js`
+- `api/where-i-stand.js`
+- `api/biggest-issue.js`
+- `api/today-move.js`
+- `api/action-plan.js`
 
 ## Deploy
 
@@ -54,6 +58,11 @@ Do not use the service role key in the frontend.
   - `/api/intent-analysis`
 - The market-tape asset checker can now call:
   - `/api/asset-check`
+- The first TELAJ backend brain endpoints are now available:
+  - `/api/where-i-stand`
+  - `/api/biggest-issue`
+  - `/api/today-move`
+  - `/api/action-plan`
 - Supported model env vars for Vercel:
   - `TELAJ_MODEL_PROVIDER`
     - `openai`

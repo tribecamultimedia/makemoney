@@ -794,8 +794,8 @@ select:focus {
 }
 
 .morning-hero {
-  grid-column: span 4;
-  min-height: 360px;
+  grid-column: span 12;
+  min-height: 420px;
 }
 
 .health-panel {
@@ -803,15 +803,15 @@ select:focus {
 }
 
 .financial-position-panel {
-  grid-column: span 8;
-  min-height: 420px;
+  grid-column: span 6;
+  min-height: 320px;
 }
 
 .allocation-panel,
 .reserve-panel,
 .tasks-panel,
 .watchlist-panel {
-  grid-column: span 4;
+  grid-column: span 6;
 }
 
 .allocation-main,
@@ -884,6 +884,99 @@ select:focus {
   max-width: 60ch;
   color: var(--muted);
   font-size: 15px;
+}
+
+.decision-hero-layout {
+  display: grid;
+  gap: 18px;
+  height: 100%;
+}
+
+.decision-hero-surface {
+  padding: 28px;
+  background:
+    radial-gradient(circle at top right, rgba(31, 107, 255, 0.18), transparent 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+  border: 1px solid rgba(77, 145, 255, 0.24);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.28);
+}
+
+.decision-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.decision-summary-card {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.home-hero-actions {
+  grid-template-columns: repeat(2, minmax(0, max-content));
+  align-items: start;
+}
+
+.decision-meta-line {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.decision-issue-block {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.decision-details {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.decision-details summary {
+  cursor: pointer;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  list-style: none;
+}
+
+.decision-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.decision-details[open] summary {
+  margin-bottom: 14px;
+}
+
+.issue-score {
+  color: var(--accent-strong);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.decision-reason-list {
+  display: grid;
+  gap: 8px;
+}
+
+.secondary-panel-title {
+  font-size: 18px;
+  line-height: 1.15;
+  margin: 4px 0 0;
+  color: var(--text);
 }
 
 .ring-row {
@@ -1279,6 +1372,66 @@ select:focus {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.minimal-balance-summary {
+  margin: 10px 0 10px;
+}
+
+.sync-detail-line {
+  margin-bottom: 12px;
+}
+
+.compact-position-grid .stat-box {
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.position-summary-copy {
+  margin: 4px 0 10px;
+  max-width: 52ch;
+}
+
+.position-utility-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: center;
+  padding: 8px 0 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.utility-meta {
+  color: var(--muted);
+}
+
+.subtle-utility-button {
+  min-height: 36px;
+  padding: 8px 12px;
+}
+
+.position-editor {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  margin-top: 2px;
+}
+
+.position-editor summary {
+  cursor: pointer;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  list-style: none;
+  margin-bottom: 12px;
+}
+
+.position-editor summary::-webkit-details-marker {
+  display: none;
+}
+
+.position-editor[open] summary {
+  margin-bottom: 14px;
+}
+
 .financial-callout {
   display: grid;
   gap: 12px;
@@ -1316,6 +1469,46 @@ select:focus {
   padding: 12px;
   display: grid;
   gap: 8px;
+}
+
+.minimal-step-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.minimal-step {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: start;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.minimal-step:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.minimal-step-index,
+.minimal-step-meta {
+  font-family: "JetBrains Mono", monospace;
+  color: var(--accent-strong);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.minimal-step-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.action-plan-risk {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
 }
 
 .financial-plan-percent {
@@ -1465,6 +1658,7 @@ select:focus {
   .stats-grid,
   .financial-layout,
   .financial-summary,
+  .decision-summary-grid,
   .action-row,
   .property-action-row,
   .achievement-grid,

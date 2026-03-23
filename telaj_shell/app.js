@@ -1825,6 +1825,10 @@ function renderAuthShell() {
         <div class="micro-label">Important</div>
         <div class="panel-copy">TELAJ is not a broker, not an investment adviser, and not a fiduciary. Signals, scenarios, and allocation examples are informational only and do not guarantee future results.</div>
       </div>
+      <div class="legal-note">
+        <div class="micro-label">Privacy and cookies</div>
+        <div class="panel-copy">TELAJ uses essential browser storage and session data to keep you signed in, remember your progress, and save financial inputs. If analytics or marketing tracking are added later, TELAJ should ask for separate consent before using them.</div>
+      </div>
       <div class="onboarding-actions">
         <div class="task-pill">${state.subscription.plan} · ${state.subscription.status}</div>
         <button class="action-button primary" id="auth-continue" ${betaUnlocked ? "" : "disabled"}>${

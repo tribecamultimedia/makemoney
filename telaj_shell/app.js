@@ -720,6 +720,7 @@ const appShell = document.getElementById("app-shell");
 const authShell = document.getElementById("auth-shell");
 const onboardingShell = document.getElementById("onboarding-shell");
 const railAccount = document.getElementById("rail-account");
+const railFooter = document.getElementById("rail-footer");
 let supabaseClient = null;
 const DEFAULT_BETA_INVITE_CODES = ["TELAJ-BETA-7Q2M9X"];
 const FINANCIAL_POSITION_ENDPOINT = "/api/financial-position";
@@ -2585,6 +2586,26 @@ function renderRailAccount() {
   });
 }
 
+function renderRailFooter() {
+  if (!railFooter) {
+    return;
+  }
+  const deliveryStatus = state.subscriberPreferences.deliveryStatus || "Preferences only";
+  const accessStatus = state.auth.authenticated
+    ? state.auth.guest
+      ? "Beta guest"
+      : "Signed in"
+    : "Locked";
+  const regionLabel = MARKET_REGION_CONFIG[state.marketRegion]?.label || state.marketRegion;
+  railFooter.innerHTML = `
+    <div class="pill">LIVE STATUS</div>
+    <div class="meta-line">Access <span>${accessStatus}</span></div>
+    <div class="meta-line">Market region <span>${regionLabel}</span></div>
+    <div class="meta-line">Financial sync <span>${state.syncStatus.financialPosition}</span></div>
+    <div class="meta-line">Signal delivery <span>${deliveryStatus}</span></div>
+  `;
+}
+
 function renderXpLevel() {
   const panel = document.getElementById("xp-level");
   const progress = Math.min((state.profile.xp / state.profile.nextLevelXp) * 100, 100);
@@ -3509,6 +3530,7 @@ function renderAll() {
   try {
     applyProfilesToNarrative();
     renderRailAccount();
+    renderRailFooter();
     renderMorningHero();
     renderSystemHealth();
     renderXpLevel();

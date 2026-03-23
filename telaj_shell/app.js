@@ -630,6 +630,7 @@ const views = document.querySelectorAll(".view");
 const appShell = document.getElementById("app-shell");
 const authShell = document.getElementById("auth-shell");
 const onboardingShell = document.getElementById("onboarding-shell");
+const railAccount = document.getElementById("rail-account");
 let supabaseClient = null;
 const DEFAULT_BETA_INVITE_CODES = ["TELAJ-BETA-7Q2M9X"];
 
@@ -709,6 +710,32 @@ function persistAuthState() {
       info: state.auth.info,
     })
   );
+}
+
+function resetLocalSessionState() {
+  state.auth.authenticated = false;
+  state.auth.guest = false;
+  state.auth.mode = "guest";
+  state.auth.email = "";
+  state.auth.error = "";
+  state.auth.info = "";
+  state.onboarding.completed = false;
+  state.onboarding.currentStep = 0;
+  state.onboarding.stage = "questions";
+}
+
+async function handleLogout() {
+  const client = initSupabaseClient();
+  if (client) {
+    try {
+      await client.auth.signOut();
+    } catch (error) {
+      console.warn("TELAJ could not fully sign out of Supabase.", error);
+    }
+  }
+  resetLocalSessionState();
+  persistAuthState();
+  renderAll();
 }
 
 function loadSubscriberPreferences() {
@@ -2257,6 +2284,40 @@ function renderProfileMatrix() {
   `;
 }
 
+function renderRailAccount() {
+  if (!railAccount) {
+    return;
+  }
+  if (!state.auth.authenticated) {
+    railAccount.innerHTML = `
+      <div class="eyebrow">Access</div>
+      <h3>Signed out</h3>
+      <div class="panel-copy">Enter TELAJ with a beta code, guest access, or an account.</div>
+    `;
+    return;
+  }
+
+  const sessionLabel = state.auth.guest ? "Guest session" : "Account session";
+  const emailLabel = state.auth.email || (state.auth.guest ? "Anonymous beta guest" : "Email not available");
+  railAccount.innerHTML = `
+    <div class="eyebrow">Access</div>
+    <div class="account-status-row">
+      <h3>${sessionLabel}</h3>
+      <div class="task-pill">${state.subscription.plan}</div>
+    </div>
+    <div class="account-email">${emailLabel}</div>
+    <div class="panel-copy">${
+      state.auth.guest
+        ? "This is a beta guest session. Upgrade to an account later if you want durable cross-device access."
+        : "You are signed in. TELAJ can keep your progress, preferences, and profile tied to this session."
+    }</div>
+    <button class="action-button" id="rail-logout">Log out</button>
+  `;
+  document.getElementById("rail-logout")?.addEventListener("click", async () => {
+    await handleLogout();
+  });
+}
+
 function renderXpLevel() {
   const panel = document.getElementById("xp-level");
   const progress = Math.min((state.profile.xp / state.profile.nextLevelXp) * 100, 100);
@@ -3124,6 +3185,7 @@ function bindNav() {
 
 function renderAll() {
   applyProfilesToNarrative();
+  renderRailAccount();
   renderMorningHero();
   renderSystemHealth();
   renderXpLevel();

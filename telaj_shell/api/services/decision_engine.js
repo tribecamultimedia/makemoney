@@ -1,5 +1,44 @@
 require("../contracts");
 
+function slugifyDecisionKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function formatUtcDecisionDate(date = new Date()) {
+  return date.toISOString().slice(0, 10);
+}
+
+function buildDecisionKey(signalDecision, date = new Date()) {
+  return `${formatUtcDecisionDate(date)}::${slugifyDecisionKey(signalDecision?.signal || signalDecision?.headline)}`;
+}
+
+function buildAcknowledgment(action) {
+  if (action === "executed") {
+    return "You followed through. TELAJ will treat this as committed.";
+  }
+  if (action === "simulated") {
+    return "Simulation saved. TELAJ will treat this as a test path, not a committed move.";
+  }
+  return "Skipped for now. TELAJ is aware the risk is still present.";
+}
+
+function buildPriorBehaviorMessage(action) {
+  if (action === "executed") {
+    return "You followed through yesterday. Good move.";
+  }
+  if (action === "simulated") {
+    return "You simulated this yesterday. TELAJ can compare it to the live path.";
+  }
+  if (action === "skipped") {
+    return "You skipped this yesterday. The risk is still present.";
+  }
+  return "";
+}
+
 function allocatePercentages(rawSteps) {
   const total = rawSteps.reduce((sum, item) => sum + item.percent, 0);
   if (!total) {
@@ -147,6 +186,7 @@ function buildDecisionArtifacts({ balanceSheet, liquidityState }) {
       reasons: issueReasons,
     },
     signalDecision: {
+      decisionKey: buildDecisionKey({ signal: primaryAction, headline }),
       headline,
       signal: primaryAction,
       primaryAction,
@@ -176,5 +216,8 @@ function buildDecisionArtifacts({ balanceSheet, liquidityState }) {
 }
 
 module.exports = {
+  buildAcknowledgment,
+  buildDecisionKey,
+  buildPriorBehaviorMessage,
   buildDecisionArtifacts,
 };

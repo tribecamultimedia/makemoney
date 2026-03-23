@@ -68,10 +68,50 @@ async function getFinancialPositionRecord(accessToken, userId) {
   return Array.isArray(rows) ? rows[0] || null : null;
 }
 
+async function getLatestSignalAction(accessToken, userId) {
+  const rows = await requestSupabase(
+    `signal_actions?select=*&user_id=eq.${userId}&order=created_at.desc&limit=1`,
+    { accessToken }
+  );
+  return Array.isArray(rows) ? rows[0] || null : null;
+}
+
+async function getSignalActionForDecision(accessToken, userId, decisionKey) {
+  const rows = await requestSupabase(
+    `signal_actions?select=*&user_id=eq.${userId}&decision_key=eq.${encodeURIComponent(decisionKey)}&order=created_at.desc&limit=1`,
+    { accessToken }
+  );
+  return Array.isArray(rows) ? rows[0] || null : null;
+}
+
+async function insertSignalAction(accessToken, payload) {
+  const rows = await requestSupabase("signal_actions", {
+    method: "POST",
+    accessToken,
+    body: payload,
+    prefer: "return=representation",
+  });
+  return Array.isArray(rows) ? rows[0] || null : rows;
+}
+
+async function insertRecommendationHistory(accessToken, payload) {
+  const rows = await requestSupabase("recommendation_history", {
+    method: "POST",
+    accessToken,
+    body: payload,
+    prefer: "return=representation",
+  });
+  return Array.isArray(rows) ? rows[0] || null : rows;
+}
+
 module.exports = {
   getConfigError,
   getBearerToken,
   getSupabaseUser,
   requestSupabase,
   getFinancialPositionRecord,
+  getLatestSignalAction,
+  getSignalActionForDecision,
+  insertSignalAction,
+  insertRecommendationHistory,
 };

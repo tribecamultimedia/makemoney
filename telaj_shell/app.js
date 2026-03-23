@@ -744,6 +744,7 @@ const WHERE_I_STAND_ENDPOINT = "/api/where-i-stand";
 const BIGGEST_ISSUE_ENDPOINT = "/api/biggest-issue";
 const TODAY_MOVE_ENDPOINT = "/api/today-move";
 const ACTION_PLAN_ENDPOINT = "/api/action-plan";
+const SIGNAL_ACTION_ENDPOINT = "/api/signal-action";
 
 const mockEndpoints = {
   familyDashboard: "./mock-api/family-dashboard.json",
@@ -765,6 +766,14 @@ function initSupabaseClient() {
   }
 
   return supabaseClient;
+}
+
+function getCanonicalAppUrl() {
+  const configured = String(window.TELAJ_CONFIG?.appUrl || "").trim();
+  if (configured) {
+    return configured.replace(/\/+$/, "");
+  }
+  return "https://telaj.com";
 }
 
 function showFatalShellError(message) {
@@ -1139,6 +1148,28 @@ async function loadHomeDecisionState() {
     state.homeApi.error = error instanceof Error ? error.message : "TELAJ could not load the decision layer.";
     return false;
   }
+}
+
+async function recordTodayMoveAction(action) {
+  if (!state.auth.authenticated) {
+    return null;
+  }
+  const token = await getAccessToken();
+  if (!token) {
+    return null;
+  }
+  const response = await fetch(SIGNAL_ACTION_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ action }),
+  });
+  if (!response.ok) {
+    throw new Error(`Signal action failed: ${response.status}`);
+  }
+  return response.json();
 }
 
 function normalizeFinancialPositionPayload(payload) {
@@ -2108,7 +2139,7 @@ async function handleOAuth(provider) {
   const { error } = await client.auth.signInWithOAuth({
     provider,
     options: {
-      redirectTo: window.location.origin,
+      redirectTo: getCanonicalAppUrl(),
     },
   });
 
@@ -2649,6 +2680,8 @@ function renderMorningHero() {
   const { todayMove, biggestIssue } = getHomeDecisionData();
   const move = todayMove.todayMove;
   const issue = biggestIssue.biggestIssue;
+  const actionState = move.actionState || null;
+  const priorBehavior = move.priorBehavior || null;
   const hero = document.getElementById("morning-hero");
   hero.innerHTML = `
     <div class="decision-hero-layout decision-hero-surface">
@@ -2657,6 +2690,7 @@ function renderMorningHero() {
           <div class="signal-live"><span class="live-dot"></span> Today's move</div>
           <div class="task-pill">${move.confidence}% confidence</div>
         </div>
+        ${priorBehavior?.message ? `<div class="decision-memory-line">${priorBehavior.message}</div>` : ""}
         <h2 class="signal-title">${move.signal || move.headline}</h2>
         <p class="signal-rationale">${move.why}</p>
       </div>
@@ -2665,10 +2699,22 @@ function renderMorningHero() {
         <span>·</span>
         <span>${move.timeHorizon}</span>
       </div>
-      <div class="action-row home-hero-actions">
-        <button class="action-button primary" id="signal-execute">Execute</button>
-        <button class="action-button" id="signal-simulate">Simulate</button>
-      </div>
+      ${
+        actionState
+          ? `
+            <div class="decision-action-state">
+              <div class="task-pill">${capitalizeWords(actionState.status)}</div>
+              <div class="panel-copy">${actionState.message}</div>
+            </div>
+          `
+          : `
+            <div class="action-row home-hero-actions">
+              <button class="action-button primary" id="signal-execute">Execute</button>
+              <button class="action-button" id="signal-simulate">Simulate</button>
+              <button class="ghost-button" id="signal-skip">Not now</button>
+            </div>
+          `
+      }
       <details class="decision-details">
         <summary>See why TELAJ is leaning this way</summary>
         <div class="decision-summary-grid">
@@ -2693,16 +2739,60 @@ function renderMorningHero() {
     </div>
   `;
 
-  document.getElementById("signal-execute").addEventListener("click", () => {
-    setView("home");
-    document.getElementById("financial-position")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    window.requestAnimationFrame(() => {
-      document.getElementById("fp-liquid")?.focus();
-    });
+  document.getElementById("signal-execute")?.addEventListener("click", async () => {
+    try {
+      const payload = await recordTodayMoveAction("execute");
+      if (payload?.actionState) {
+        state.homeApi.todayMove = {
+          ...(state.homeApi.todayMove || {}),
+          todayMove: {
+            ...(state.homeApi.todayMove?.todayMove || move),
+            actionState: payload.actionState,
+            priorBehavior: null,
+          },
+        };
+      }
+      renderMorningHero();
+    } catch (error) {
+      console.warn("TELAJ could not record execute action.", error);
+    }
   });
-  document.getElementById("signal-simulate").addEventListener("click", () => {
-    setView("home");
-    document.getElementById("allocation-snapshot")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  document.getElementById("signal-simulate")?.addEventListener("click", async () => {
+    try {
+      const payload = await recordTodayMoveAction("simulate");
+      if (payload?.actionState) {
+        state.homeApi.todayMove = {
+          ...(state.homeApi.todayMove || {}),
+          todayMove: {
+            ...(state.homeApi.todayMove?.todayMove || move),
+            actionState: payload.actionState,
+            priorBehavior: null,
+          },
+        };
+      }
+      renderMorningHero();
+      document.getElementById("allocation-snapshot")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (error) {
+      console.warn("TELAJ could not record simulate action.", error);
+    }
+  });
+  document.getElementById("signal-skip")?.addEventListener("click", async () => {
+    try {
+      const payload = await recordTodayMoveAction("skip");
+      if (payload?.actionState) {
+        state.homeApi.todayMove = {
+          ...(state.homeApi.todayMove || {}),
+          todayMove: {
+            ...(state.homeApi.todayMove?.todayMove || move),
+            actionState: payload.actionState,
+            priorBehavior: null,
+          },
+        };
+      }
+      renderMorningHero();
+    } catch (error) {
+      console.warn("TELAJ could not record skipped action.", error);
+    }
   });
 }
 

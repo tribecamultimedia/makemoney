@@ -1,7 +1,14 @@
-const { getConfigError, getBearerToken, getSupabaseUser, getFinancialPositionRecord } = require("./_supabase");
+const {
+  getConfigError,
+  getBearerToken,
+  getSupabaseUser,
+  getFinancialPositionRecord,
+  getLatestSignalAction,
+  getSignalActionForDecision,
+} = require("./_supabase");
 const { buildBalanceSheet } = require("./services/balance_sheet_service");
 const { buildLiquidityState } = require("./services/liquidity_service");
-const { buildDecisionArtifacts } = require("./services/decision_engine");
+const { buildAcknowledgment, buildDecisionArtifacts, buildPriorBehaviorMessage } = require("./services/decision_engine");
 
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
@@ -27,9 +34,35 @@ module.exports = async function handler(req, res) {
     const balanceSheet = buildBalanceSheet(record);
     const liquidityState = buildLiquidityState(record);
     const artifacts = buildDecisionArtifacts({ balanceSheet, liquidityState });
+    let currentAction = null;
+    let priorAction = null;
+    try {
+      currentAction = await getSignalActionForDecision(accessToken, user.id, artifacts.signalDecision.decisionKey);
+      const latestAction = await getLatestSignalAction(accessToken, user.id);
+      priorAction = latestAction && latestAction.decision_key !== artifacts.signalDecision.decisionKey ? latestAction : null;
+    } catch (trackingError) {
+      console.warn("TELAJ action tracking lookup failed.", trackingError);
+    }
 
     res.status(200).json({
-      todayMove: artifacts.signalDecision,
+      todayMove: {
+        ...artifacts.signalDecision,
+        actionState: currentAction
+          ? {
+              status: currentAction.action_type,
+              acknowledgedAt: currentAction.created_at,
+              message: buildAcknowledgment(currentAction.action_type),
+            }
+          : null,
+        priorBehavior: priorAction
+          ? {
+              action: priorAction.action_type,
+              decisionKey: priorAction.decision_key,
+              message: buildPriorBehaviorMessage(priorAction.action_type),
+              at: priorAction.created_at,
+            }
+          : null,
+      },
     });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "Load failed" });

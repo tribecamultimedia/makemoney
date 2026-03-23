@@ -2532,6 +2532,9 @@ function renderMorningHero() {
 
 function renderSystemHealth() {
   const panel = document.getElementById("system-health");
+  if (!panel) {
+    return;
+  }
   const stats = Object.entries(state.systemHealth)
     .map(
       ([key, value]) => `
@@ -2956,6 +2959,9 @@ function renderFinancialPosition() {
 
 function renderCashStatus() {
   const panel = document.getElementById("cash-status");
+  if (!panel) {
+    return;
+  }
   const reserveMonths = calculateLiquidityMonths();
   const reserveTargetGap = Math.max(6 - reserveMonths, 0);
   const reserveStatus =
@@ -3003,6 +3009,9 @@ function renderCashStatus() {
 
 function renderTasks() {
   const panel = document.getElementById("daily-tasks");
+  if (!panel) {
+    return;
+  }
   panel.innerHTML = `
     <div class="eyebrow">Daily tasks</div>
     <h3>Today's priorities</h3>
@@ -3231,6 +3240,9 @@ function evaluateAssetCheck(query) {
 
 function renderWatchlist() {
   const panel = document.getElementById("watchlist");
+  if (!panel) {
+    return;
+  }
   const intel = state.investmentIntel;
   const assetResult = state.assetCheck.result;
   panel.innerHTML = `

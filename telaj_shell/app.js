@@ -20,7 +20,9 @@ const defaultState = {
   },
   syncStatus: {
     financialPosition: "Local browser only",
+    financialPositionDetail: "Sign in and connect the backend route to sync this panel.",
   },
+  marketRegion: "US",
   subscriberPreferences: {
     contactEmail: "",
     signalEmailOptIn: false,
@@ -333,6 +335,90 @@ const defaultState = {
 };
 
 const state = structuredClone(defaultState);
+const MARKET_REGION_CONFIG = {
+  US: {
+    label: "US markets",
+    marketTape: structuredClone(defaultState.marketTape),
+    investmentIntel: structuredClone(defaultState.investmentIntel),
+  },
+  EU: {
+    label: "European markets",
+    marketTape: [
+      { ticker: "ASML", price: 918.4, changePct: 1.1, trend: "up" },
+      { ticker: "SAP", price: 181.2, changePct: 0.8, trend: "up" },
+      { ticker: "MC", price: 802.1, changePct: -0.4, trend: "down" },
+      { ticker: "SIE", price: 176.9, changePct: 1.5, trend: "up" },
+      { ticker: "AIR", price: 164.7, changePct: -0.6, trend: "down" },
+      { ticker: "NESN", price: 96.3, changePct: 0.2, trend: "up" },
+    ],
+    investmentIntel: {
+      marketState: {
+        regime: "selective european accumulation",
+        distanceFromMonthLowPct: 3.4,
+        distanceFromMonthHighPct: 6.1,
+        breadth: "mixed-to-improving",
+        volatility: "moderate",
+        rates: "ecb easing bias",
+        riskLevel: "medium",
+        summary: "European risk assets are not euphoric, and softer ECB expectations are keeping diversified exposure more attractive than waiting for a perfect reset.",
+      },
+      newsDrivers: [
+        "ECB easing expectations are helping duration and broad equity risk in Europe.",
+        "Industrial and luxury leadership is narrower than in the US, so selectivity still matters.",
+        "Gold remains useful as a hedge while policy and growth signals remain uneven across the region.",
+      ],
+      assetSignals: [
+        {
+          ticker: "VGK",
+          label: "European broad equity core",
+          signal: "add slowly",
+          confidence: 72,
+          why: "Broad European exposure looks more attractive when rates are no longer tightening aggressively and valuations remain less stretched than high-beta US growth.",
+          risk: "European growth can still disappoint if industrial demand softens again.",
+          safer: "Build in tranches rather than moving all at once.",
+          horizon: "6-18 months",
+        },
+        {
+          ticker: "EUNL",
+          label: "Global developed core",
+          signal: "buy",
+          confidence: 69,
+          why: "A developed-markets core reduces single-region risk while still letting Europe participate in a softer-rate backdrop.",
+          risk: "Global exposure can dilute a sharper regional rebound.",
+          safer: "Use this as the core before adding narrower thematic bets.",
+          horizon: "6-18 months",
+        },
+        {
+          ticker: "SGLD",
+          label: "Gold hedge",
+          signal: "hold",
+          confidence: 74,
+          why: "Gold still works as a macro hedge while European policy and growth signals remain uneven.",
+          risk: "Gold can lag if growth and real yields both improve together.",
+          safer: "Keep it as ballast, not the center of the plan.",
+          horizon: "3-12 months",
+        },
+        {
+          ticker: "ERNE",
+          label: "Euro short-duration reserve sleeve",
+          signal: "hold",
+          confidence: 77,
+          why: "Short-duration euro exposure still fits reserve capital while market conviction is only selective.",
+          risk: "It preserves capital better than it compounds aggressively.",
+          safer: "Use it as reserve ballast, not as the whole allocation.",
+          horizon: "0-12 months",
+        },
+      ],
+      portfolioAction: {
+        title: "Add Europe slowly, keep reserves short duration, keep gold as ballast",
+        summary: "TELAJ would lean toward diversified European or developed-market exposure in tranches, keep the reserve sleeve defensive, and avoid over-concentrating in a single hot theme.",
+        primary: "Add broad Europe or developed-market ETF exposure in tranches",
+        secondary: "Keep gold and short-duration reserves in place",
+        avoid: "Concentrated regional or thematic chasing",
+      },
+    },
+  },
+};
 const AUTH_STORAGE_KEY = "telaj-auth-v1";
 const ONBOARDING_STORAGE_KEY = "telaj-onboarding-v1";
 const WEALTH_INPUTS_STORAGE_KEY = "telaj-wealth-inputs-v1";
@@ -773,6 +859,20 @@ function getAuthAvailability() {
   return Boolean(initSupabaseClient());
 }
 
+function applyMarketRegion(region) {
+  const key = region === "EU" ? "EU" : "US";
+  state.marketRegion = key;
+  const config = MARKET_REGION_CONFIG[key];
+  state.marketTape = structuredClone(config.marketTape);
+  state.investmentIntel = structuredClone(config.investmentIntel);
+  window.localStorage.setItem("telaj-market-region-v1", key);
+}
+
+function loadMarketRegion() {
+  const saved = window.localStorage.getItem("telaj-market-region-v1") || defaultState.marketRegion;
+  applyMarketRegion(saved);
+}
+
 function requiresBetaInvite() {
   return getBetaAccessConfig().inviteOnly;
 }
@@ -956,13 +1056,17 @@ async function loadFinancialPositionFromApi() {
       normalizeFinancialPositionPayload(payload.position);
       persistWealthInputs();
       state.syncStatus.financialPosition = "Cloud synced";
+      state.syncStatus.financialPositionDetail = "Financial position loaded from your Supabase record.";
       return true;
     }
     state.syncStatus.financialPosition = "No cloud record yet";
+    state.syncStatus.financialPositionDetail = "Signed in successfully, but this account does not have a saved financial position yet.";
     return false;
   } catch (error) {
     console.warn("TELAJ financial position API load failed, using local fallback.", error);
     state.syncStatus.financialPosition = "Local fallback";
+    state.syncStatus.financialPositionDetail =
+      error instanceof Error ? error.message : "TELAJ could not read the cloud record, so it kept the local copy.";
     return false;
   }
 }
@@ -1005,10 +1109,13 @@ async function saveFinancialPositionToApi() {
     }
     persistWealthInputs();
     state.syncStatus.financialPosition = "Cloud synced";
+    state.syncStatus.financialPositionDetail = "Financial position saved to your Supabase record.";
     return true;
   } catch (error) {
     console.warn("TELAJ financial position API save failed, keeping local copy.", error);
     state.syncStatus.financialPosition = "Saved locally";
+    state.syncStatus.financialPositionDetail =
+      error instanceof Error ? error.message : "TELAJ kept the local version because the cloud save failed.";
     persistWealthInputs();
     return false;
   }
@@ -2602,6 +2709,7 @@ function renderFinancialPosition() {
     <div class="eyebrow">Financial position</div>
     <h3>Put the financial position at the center of every move</h3>
     <div class="task-pill">${state.syncStatus.financialPosition}</div>
+    <div class="panel-copy">${state.syncStatus.financialPositionDetail}</div>
     <div class="micro-label">Start here</div>
     <div class="input-stack financial-input-stack">
       <label class="input-field">
@@ -2829,7 +2937,17 @@ function renderWatchlist() {
   const intel = state.investmentIntel;
   panel.innerHTML = `
     <div class="eyebrow">Market tape</div>
-    <h3>Live movers and top asset calls</h3>
+    <div class="account-status-row">
+      <h3>Live movers and top asset calls</h3>
+      <label class="input-field region-selector">
+        <span class="micro-label">Region</span>
+        <select id="market-region-select">
+          <option value="US" ${state.marketRegion === "US" ? "selected" : ""}>US</option>
+          <option value="EU" ${state.marketRegion === "EU" ? "selected" : ""}>Europe</option>
+        </select>
+      </label>
+    </div>
+    <div class="panel-copy">${MARKET_REGION_CONFIG[state.marketRegion].label}. TELAJ changes the tape and signal set to match the selected market context.</div>
     <div class="ticker-tape">
       ${state.marketTape
         .map(
@@ -2864,6 +2982,11 @@ function renderWatchlist() {
         .join("")}
     </div>
   `;
+  document.getElementById("market-region-select")?.addEventListener("change", (event) => {
+    applyMarketRegion(event.target.value);
+    renderWatchlist();
+    renderSignalsView();
+  });
 }
 
 function renderHistoryPreview() {
@@ -3008,6 +3131,7 @@ function renderSignalsView() {
   document.getElementById("signal-stats").innerHTML = `
     <div class="eyebrow">Market state</div>
     <h3>${intel.portfolioAction.title}</h3>
+    <div class="task-pill">${MARKET_REGION_CONFIG[state.marketRegion].label}</div>
     <p class="body-copy">${marketState.summary}</p>
     <div class="stats-grid">
       <div class="stat-box"><div class="stat-label">Regime</div><div class="stat-value accent-text">${marketState.regime}</div></div>
@@ -3374,6 +3498,7 @@ function renderAll() {
 
 async function bootstrap() {
   initSupabaseClient();
+  loadMarketRegion();
   loadAuthState();
   loadSubscriberPreferences();
   loadOnboardingState();

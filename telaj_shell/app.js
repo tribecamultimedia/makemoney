@@ -2959,7 +2959,7 @@ function renderTasks() {
   const panel = document.getElementById("daily-tasks");
   panel.innerHTML = `
     <div class="eyebrow">Daily tasks</div>
-    <h3>Discipline quests</h3>
+    <h3>Today's priorities</h3>
     <div class="quest-list">
       ${state.tasks
         .map(
@@ -2968,7 +2968,7 @@ function renderTasks() {
               <button class="task-toggle ${task.done ? "is-done" : ""}" data-task="${task.id}" aria-label="Toggle ${task.title}"></button>
               <div>
                 <div>${task.title}</div>
-                <div class="task-copy">${task.xp} XP</div>
+                <div class="task-copy">${task.done ? "Marked complete" : "Still open"}</div>
               </div>
               <div class="task-meta">${task.done ? "Complete" : "Open"}</div>
             </div>
@@ -3242,41 +3242,88 @@ function renderSignalsView() {
 
 function renderProgress() {
   const completed = state.tasks.filter((task) => task.done).length;
-  const totalXp = state.tasks.filter((task) => task.done).reduce((sum, task) => sum + task.xp, 0);
+  const openTasks = state.tasks.filter((task) => !task.done);
+  const completedTasks = state.tasks.filter((task) => task.done);
+  const nextTask = openTasks[0];
+  const lastAction = state.history[0];
+  const consistencyLabel =
+    state.profile.streak >= 21 ? "Strong" : state.profile.streak >= 7 ? "Building" : "Fragile";
+
   document.getElementById("progress-summary").innerHTML = `
-    <div class="eyebrow">Progress summary</div>
-    <h3>${completed}/${state.tasks.length} quests complete</h3>
-    <div class="stat-value accent-text">${totalXp} XP today</div>
-    <p class="body-copy">${state.profile.streak}-day discipline streak. The system rewards consistency, not adrenaline.</p>
+    <div class="eyebrow">Consistency</div>
+    <h3>${state.profile.streak}-day discipline streak</h3>
+    <div class="stats-grid">
+      <div class="stat-box"><div class="stat-label">Completed today</div><div class="stat-value accent-text">${completed}/${state.tasks.length}</div></div>
+      <div class="stat-box"><div class="stat-label">Consistency</div><div class="stat-value">${consistencyLabel}</div></div>
+      <div class="stat-box"><div class="stat-label">Next focus</div><div class="stat-value">${nextTask ? "1 task" : "Clear"}</div></div>
+    </div>
+    <p class="body-copy">TELAJ is tracking whether you follow through on calm, useful actions, not whether you stay busy.</p>
   `;
-  document.getElementById("quest-board").innerHTML = document.getElementById("daily-tasks").innerHTML;
-  document.getElementById("badge-case").innerHTML = `
-    <div class="eyebrow">Achievements</div>
-    <h3>Badges earned by discipline</h3>
-    <div class="achievement-grid">
-      ${state.badges
+
+  document.getElementById("quest-board").innerHTML = `
+    <div class="eyebrow">Today</div>
+    <h3>What deserves attention now</h3>
+    <div class="quest-list">
+      ${state.tasks
         .map(
-          (badge) => `
-            <div class="badge-card ${badge.earned ? "is-earned" : ""}">
-              <div class="badge-label">${badge.earned ? "Earned" : "Locked"}</div>
-              <div class="badge-name">${badge.name}</div>
-              <div class="body-copy">${badge.note}</div>
+          (task) => `
+            <div class="task-item">
+              <div class="task-toggle ${task.done ? "is-done" : ""}" aria-hidden="true"></div>
+              <div>
+                <div>${task.title}</div>
+                <div class="task-copy">${task.done ? "Already handled" : "Still needs attention"}</div>
+              </div>
+              <div class="task-meta">${task.done ? "Done" : "Next"}</div>
             </div>
           `
         )
         .join("")}
     </div>
   `;
-  document.getElementById("level-roadmap").innerHTML = `
-    <div class="eyebrow">Level path</div>
-    <h3>Allocator journey</h3>
-    <div class="level-list">
-      <div class="task-item"><div class="leader-rank">1</div><div>Starter</div><div class="task-meta">Learn the system</div></div>
-      <div class="task-item"><div class="leader-rank">2</div><div>Builder</div><div class="task-meta">Protect reserves</div></div>
-      <div class="task-item"><div class="leader-rank">3</div><div>Strategist</div><div class="task-meta">Allocate calmly</div></div>
-      <div class="task-item"><div class="leader-rank">4</div><div>Allocator</div><div class="task-meta">Balance growth and defense</div></div>
-      <div class="task-item"><div class="leader-rank">5</div><div>Wealth Architect</div><div class="task-meta">Operate a full family system</div></div>
+
+  document.getElementById("badge-case").innerHTML = `
+    <div class="eyebrow">Recent actions</div>
+    <h3>How discipline is showing up</h3>
+    <div class="history-list">
+      ${state.history
+        .slice(0, 3)
+        .map(
+          (item) => `
+            <div class="history-item">
+              <div class="history-top">
+                <div>
+                  <div class="row-label">${item.date}</div>
+                  <div>${item.title}</div>
+                </div>
+                <div class="signal-badge ${item.quality === "good" ? "good" : item.quality === "warn" ? "warn" : ""}">${item.action}</div>
+              </div>
+              <div class="history-meta">${item.outcome} · ${item.impact}</div>
+            </div>
+          `
+        )
+        .join("")}
+      ${
+        completedTasks.length
+          ? `
+            <div class="subpanel">
+              <div class="micro-label">Completed priorities</div>
+              <div class="panel-copy">${completedTasks.map((task) => task.title).join(" · ")}</div>
+            </div>
+          `
+          : ""
+      }
     </div>
+  `;
+
+  document.getElementById("level-roadmap").innerHTML = `
+    <div class="eyebrow">Discipline notes</div>
+    <h3>How TELAJ wants you to operate</h3>
+    <ul class="clean-list">
+      <li>Do the small protective action before reaching for the exciting one.</li>
+      <li>${nextTask ? `The next useful move is: ${nextTask.title}.` : "You cleared the current task list. Hold the line instead of inventing new moves."}</li>
+      <li>${lastAction ? `Most recent logged action: ${lastAction.title.toLowerCase()} on ${lastAction.date}.` : "No recent actions logged yet."}</li>
+      <li>Consistency matters more than checking TELAJ ten times a day.</li>
+    </ul>
   `;
 }
 

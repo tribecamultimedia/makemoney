@@ -166,6 +166,10 @@ const defaultState = {
       avoid: "Selling safety to chase fast momentum"
     }
   },
+  assetCheck: {
+    query: "",
+    result: null,
+  },
   highlightedSignals: [
     {
       ticker: "GLD",
@@ -2991,9 +2995,89 @@ function renderTasks() {
   });
 }
 
+function getAssetCheckFallback(query) {
+  const normalized = String(query || "").trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  const regionIntel = state.investmentIntel;
+  const broadSignal =
+    regionIntel.assetSignals.find((item) => ["SPY", "VGK", "EUNL"].includes(item.ticker)) || regionIntel.assetSignals[0];
+  const goldSignal = regionIntel.assetSignals.find((item) => item.label.toLowerCase().includes("gold"));
+  const reserveSignal =
+    regionIntel.assetSignals.find((item) => item.label.toLowerCase().includes("reserve")) ||
+    regionIntel.assetSignals.find((item) => item.ticker === "SGOV" || item.ticker === "ERNE");
+  const highBetaSignal = regionIntel.assetSignals.find((item) => item.label.toLowerCase().includes("high-beta"));
+
+  if (["gold", "xau", "xauusd", "gld", "sgld"].includes(normalized)) {
+    return goldSignal;
+  }
+
+  if (["spy", "s&p", "s&p 500", "etf", "broad etf", "index", "vgk", "eunl"].includes(normalized)) {
+    return broadSignal;
+  }
+
+  if (["sgov", "erne", "treasury", "treasuries", "cash", "short bonds", "short duration"].includes(normalized)) {
+    return reserveSignal;
+  }
+
+  if (["qqq", "nasdaq", "tech"].includes(normalized)) {
+    return highBetaSignal;
+  }
+
+  if (["eurusd", "usd", "eur", "gbpusd", "jpy", "currency", "forex"].includes(normalized)) {
+    return {
+      ticker: normalized.toUpperCase(),
+      label: "Currency trade",
+      signal: "avoid",
+      confidence: 63,
+      why: "TELAJ is not built to make fast directional currency calls for the core portfolio. Currency trades are usually weaker than fixing allocation, reserves, or broad exposure.",
+      risk: "Short-term FX moves can reverse quickly and are hard to size calmly.",
+      safer: "Keep currency exposure tied to travel, business needs, or diversified funds rather than short-term speculation.",
+      horizon: "0-3 months",
+    };
+  }
+
+  if (["oil", "brent", "wti", "commodity", "commodities", "silver"].includes(normalized)) {
+    return {
+      ticker: normalized.toUpperCase(),
+      label: "Cyclical commodity",
+      signal: "review carefully",
+      confidence: 58,
+      why: "Commodity trades can be highly event-driven. TELAJ wants a clearer macro reason before treating them as a strong action call.",
+      risk: "Commodities are volatile and often move on supply shocks rather than clean trend logic.",
+      safer: "Use a smaller sleeve or stay with gold and broad ETFs unless you have a specific thesis.",
+      horizon: "1-6 months",
+    };
+  }
+
+  return null;
+}
+
+function evaluateAssetCheck(query) {
+  const normalized = String(query || "").trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  const directMatch = state.investmentIntel.assetSignals.find((item) => {
+    const ticker = item.ticker.toLowerCase();
+    const label = item.label.toLowerCase();
+    return ticker === normalized || label === normalized || label.includes(normalized) || normalized.includes(ticker);
+  });
+
+  if (directMatch) {
+    return directMatch;
+  }
+
+  return getAssetCheckFallback(normalized);
+}
+
 function renderWatchlist() {
   const panel = document.getElementById("watchlist");
   const intel = state.investmentIntel;
+  const assetResult = state.assetCheck.result;
   panel.innerHTML = `
     <div class="eyebrow">Market tape</div>
     <div class="account-status-row">
@@ -3007,6 +3091,40 @@ function renderWatchlist() {
       </label>
     </div>
     <div class="panel-copy">${MARKET_REGION_CONFIG[state.marketRegion].label}. TELAJ changes the tape and signal set to match the selected market context.</div>
+    <div class="section-spacer"></div>
+    <div class="eyebrow">Instant asset check</div>
+    <div class="input-stack">
+      <label class="input-field input-span-2">
+        <span class="micro-label">Ticker or asset</span>
+        <input id="asset-check-input" type="text" value="${state.assetCheck.query}" placeholder="SPY, gold, QQQ, treasury, EURUSD" />
+      </label>
+      <div class="property-action-row input-span-2">
+        <button class="action-button primary" id="asset-check-run">Get TELAJ call</button>
+        <button class="ghost-button" id="asset-check-clear">Clear</button>
+      </div>
+    </div>
+    ${
+      assetResult
+        ? `
+          <div class="subpanel">
+            <div class="history-top">
+              <div>
+                <div class="row-label">${assetResult.ticker} · ${assetResult.label}</div>
+                <div>${assetResult.signal.toUpperCase()}</div>
+              </div>
+              <div class="signal-badge ${assetResult.signal.includes("avoid") ? "warn" : assetResult.signal.includes("hold") || assetResult.signal.includes("review") ? "" : "good"}">${assetResult.confidence}%</div>
+            </div>
+            <div class="panel-copy">${assetResult.why}</div>
+            <div class="history-meta">Risk: ${assetResult.risk} Safer option: ${assetResult.safer} Horizon: ${assetResult.horizon}.</div>
+          </div>
+        `
+        : `
+          <div class="subpanel">
+            <div class="micro-label">How this works</div>
+            <div class="panel-copy">Type a stock, ETF, commodity, or currency and TELAJ will give a quick call using the current region context and the live signal stack already on the page.</div>
+          </div>
+        `
+    }
     <div class="ticker-tape">
       ${state.marketTape
         .map(
@@ -3043,8 +3161,28 @@ function renderWatchlist() {
   `;
   document.getElementById("market-region-select")?.addEventListener("change", (event) => {
     applyMarketRegion(event.target.value);
+    state.assetCheck.result = evaluateAssetCheck(state.assetCheck.query);
     renderWatchlist();
     renderSignalsView();
+  });
+  document.getElementById("asset-check-run")?.addEventListener("click", () => {
+    state.assetCheck.query = document.getElementById("asset-check-input")?.value.trim() || "";
+    state.assetCheck.result = evaluateAssetCheck(state.assetCheck.query);
+    renderWatchlist();
+  });
+  document.getElementById("asset-check-clear")?.addEventListener("click", () => {
+    state.assetCheck.query = "";
+    state.assetCheck.result = null;
+    renderWatchlist();
+  });
+  document.getElementById("asset-check-input")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    event.preventDefault();
+    state.assetCheck.query = event.target.value.trim();
+    state.assetCheck.result = evaluateAssetCheck(state.assetCheck.query);
+    renderWatchlist();
   });
 }
 

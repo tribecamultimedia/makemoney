@@ -1075,6 +1075,41 @@ select:focus {
   line-height: 1.5;
 }
 
+.mini-candle-strip {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  min-height: 44px;
+  margin: 4px 0 2px;
+}
+
+.mini-candle {
+  position: relative;
+  width: 8px;
+  height: var(--wick, 26px);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.mini-candle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: var(--body, 14px);
+  transform: translate(-50%, -50%);
+  border-radius: 3px;
+}
+
+.mini-candle.up::after {
+  background: rgba(39, 209, 127, 0.95);
+}
+
+.mini-candle.down::after {
+  background: rgba(255, 209, 102, 0.95);
+}
+
 .typewriter-cursor {
   display: inline-block;
   margin-left: 2px;

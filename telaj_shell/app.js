@@ -185,6 +185,14 @@ const defaultState = {
     loading: false,
     error: "",
   },
+  marketRegime: {
+    live: false,
+    region: "US",
+    regime: "",
+    riskLevel: "",
+    summary: "",
+    features: [],
+  },
   highlightedSignals: [
     {
       ticker: "GLD",
@@ -773,6 +781,7 @@ const FINANCIAL_POSITION_ENDPOINT = "/api/financial-position";
 const ASSET_CHECK_ENDPOINT = "/api/asset-check";
 const HOME_ENDPOINT = "/api/home";
 const SIGNAL_ACTION_ENDPOINT = "/api/signal-action";
+const MARKET_REGIME_ENDPOINT = "/api/market-regime";
 const MARKET_FOCUS_TO_REGION = {
   US: "US",
   EU: "EU",
@@ -1425,6 +1434,33 @@ async function requestAssetCheck(query) {
   return evaluateAssetCheck(normalized);
 }
 
+async function loadMarketRegime() {
+  try {
+    const response = await fetch(`${MARKET_REGIME_ENDPOINT}?region=${encodeURIComponent(state.marketRegion)}`, {
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw new Error(`Market regime failed: ${response.status}`);
+    }
+    const payload = await response.json();
+    if (payload?.marketRegime) {
+      state.marketRegime = payload.marketRegime;
+      return payload.marketRegime;
+    }
+  } catch (error) {
+    console.warn("TELAJ market regime route unavailable, using local fallback.", error);
+    state.marketRegime = {
+      live: false,
+      region: state.marketRegion,
+      regime: state.investmentIntel.marketState.regime,
+      riskLevel: state.investmentIntel.marketState.riskLevel,
+      summary: state.investmentIntel.marketState.summary,
+      features: [],
+    };
+  }
+  return state.marketRegime;
+}
+
 async function loadMockApiState() {
   try {
     const [familyDashboard, allocation, signals, progress, realEstate, realEstateIntel] = await Promise.all([
@@ -1456,6 +1492,16 @@ async function loadMockApiState() {
       realEstateIntel: realEstateIntel ?? state.realEstateIntel,
       dataSource: "Mock API JSON",
     });
+    if (!state.marketRegime?.regime) {
+      state.marketRegime = {
+        live: false,
+        region: state.marketRegion,
+        regime: state.investmentIntel.marketState.regime,
+        riskLevel: state.investmentIntel.marketState.riskLevel,
+        summary: state.investmentIntel.marketState.summary,
+        features: [],
+      };
+    }
   } catch (error) {
     console.warn("TELAJ mock API load failed, using embedded fallback.", error);
     state.dataSource = "Embedded fallback";
@@ -3769,6 +3815,7 @@ function renderWatchlist() {
   }
   const intel = state.investmentIntel;
   const assetResult = state.assetCheck.result;
+  const liveRegime = state.marketRegime?.regime ? state.marketRegime : null;
   panel.innerHTML = `
     <div class="eyebrow">Market tape</div>
     <div class="account-status-row">
@@ -3781,7 +3828,7 @@ function renderWatchlist() {
         </select>
       </label>
     </div>
-    <div class="panel-copy">${MARKET_REGION_CONFIG[state.marketRegion].label}. TELAJ changes the tape and signal set to match the selected market context.</div>
+    <div class="panel-copy">${liveRegime?.summary || MARKET_REGION_CONFIG[state.marketRegion].label}. TELAJ changes the tape and signal set to match the selected market context.</div>
     <div class="section-spacer"></div>
     <div class="eyebrow">Instant asset check</div>
     <div class="input-stack">
@@ -3812,13 +3859,29 @@ function renderWatchlist() {
                   ? `<div class="history-meta">${assetResult.source}</div>`
                   : ""
             }
+            ${
+              Array.isArray(assetResult.candles) && assetResult.candles.length
+                ? `
+                  <div class="mini-candle-strip">
+                    ${assetResult.candles
+                      .map((bar) => {
+                        const direction = bar.close >= bar.open ? "up" : "down";
+                        const body = Math.max(8, Math.min(26, Math.round((Math.abs(bar.close - bar.open) / Math.max(bar.close, 0.0001)) * 180)));
+                        const wick = Math.max(18, Math.min(38, Math.round(((bar.high - bar.low) / Math.max(bar.close, 0.0001)) * 160)));
+                        return `<span class="mini-candle ${direction}" style="--body:${body}px; --wick:${wick}px"></span>`;
+                      })
+                      .join("")}
+                  </div>
+                `
+                : ""
+            }
             <div class="panel-copy">${assetResult.why}</div>
             ${
               assetResult.newsSummary
                 ? `<div class="panel-copy">${assetResult.newsSummary}</div>`
                 : ""
             }
-            <div class="history-meta">Risk: ${assetResult.risk} Safer option: ${assetResult.safer} Horizon: ${assetResult.horizon}.</div>
+            <div class="history-meta">Match ${assetResult.matchScore || "--"} · Model ${assetResult.modelScore || "--"} · Risk: ${assetResult.risk} Safer option: ${assetResult.safer} Horizon: ${assetResult.horizon}.</div>
           </div>
         `
         : `
@@ -3866,8 +3929,11 @@ function renderWatchlist() {
   document.getElementById("market-region-select")?.addEventListener("change", (event) => {
     applyMarketRegion(event.target.value);
     state.assetCheck.result = evaluateAssetCheck(state.assetCheck.query);
+    loadMarketRegime().then(() => {
+      renderWatchlist();
+      renderSignalsView();
+    });
     renderWatchlist();
-    renderSignalsView();
   });
   document.getElementById("asset-check-run")?.addEventListener("click", async () => {
     state.assetCheck.query = document.getElementById("asset-check-input")?.value.trim() || "";
@@ -4035,7 +4101,14 @@ function renderAllocationView() {
 
 function renderSignalsView() {
   const intel = state.investmentIntel;
-  const marketState = intel.marketState;
+  const marketState = state.marketRegime?.regime
+    ? {
+        ...intel.marketState,
+        regime: state.marketRegime.regime,
+        riskLevel: state.marketRegime.riskLevel || intel.marketState.riskLevel,
+        summary: state.marketRegime.summary || intel.marketState.summary,
+      }
+    : intel.marketState;
   const performanceSummary = state.homeApi.performanceSummary?.performanceSummary || null;
   document.getElementById("signal-stats").innerHTML = `
     <div class="eyebrow">Market state</div>
@@ -4499,6 +4572,7 @@ async function bootstrap() {
     loadSubscriberPreferences();
     loadOnboardingState();
     await loadMockApiState();
+    await loadMarketRegime();
     let loadedFinancialPosition = false;
     if (supabaseClient) {
       try {

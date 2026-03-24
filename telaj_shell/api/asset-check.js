@@ -47,19 +47,85 @@ function normalizeQuery(raw) {
   return String(raw || "").trim().toLowerCase();
 }
 
+function tokenize(text) {
+  return normalizeQuery(text)
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function levenshtein(a, b) {
+  const left = String(a || "");
+  const right = String(b || "");
+  const dp = Array.from({ length: left.length + 1 }, () => new Array(right.length + 1).fill(0));
+  for (let i = 0; i <= left.length; i += 1) dp[i][0] = i;
+  for (let j = 0; j <= right.length; j += 1) dp[0][j] = j;
+  for (let i = 1; i <= left.length; i += 1) {
+    for (let j = 1; j <= right.length; j += 1) {
+      const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  return dp[left.length][right.length];
+}
+
+function fuzzyScore(query, candidate) {
+  const normalizedQuery = normalizeQuery(query);
+  const normalizedCandidate = normalizeQuery(candidate);
+  if (!normalizedQuery || !normalizedCandidate) {
+    return 0;
+  }
+  if (normalizedQuery === normalizedCandidate) {
+    return 1;
+  }
+  if (normalizedCandidate.includes(normalizedQuery) || normalizedQuery.includes(normalizedCandidate)) {
+    return 0.92;
+  }
+  const queryTokens = tokenize(normalizedQuery);
+  const candidateTokens = tokenize(normalizedCandidate);
+  const overlap = queryTokens.filter((token) => candidateTokens.includes(token)).length;
+  const tokenScore = queryTokens.length ? overlap / queryTokens.length : 0;
+  const editDistance = levenshtein(normalizedQuery, normalizedCandidate);
+  const editScore = 1 - editDistance / Math.max(normalizedQuery.length, normalizedCandidate.length, 1);
+  return Math.max(0, Math.min(1, tokenScore * 0.55 + editScore * 0.45));
+}
+
 function resolveAsset(query) {
   const normalized = normalizeQuery(query);
   if (!normalized) {
     return null;
   }
   if (ASSET_ALIASES[normalized]) {
-    return ASSET_ALIASES[normalized];
+    return {
+      ...ASSET_ALIASES[normalized],
+      matchedOn: normalized,
+      matchScore: 1,
+    };
   }
+
+  const candidates = Object.entries(ASSET_ALIASES)
+    .map(([alias, asset]) => ({
+      alias,
+      asset,
+      score: Math.max(fuzzyScore(normalized, alias), fuzzyScore(normalized, asset.symbol), fuzzyScore(normalized, asset.label)),
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  if (candidates[0] && candidates[0].score >= 0.72) {
+    return {
+      ...candidates[0].asset,
+      matchedOn: candidates[0].alias,
+      matchScore: Number(candidates[0].score.toFixed(2)),
+    };
+  }
+
   if (/^[a-z]{1,5}$/.test(normalized)) {
     return {
       symbol: normalized.toUpperCase(),
       category: "single_stock",
       label: "Single stock",
+      matchedOn: normalized,
+      matchScore: 0.7,
     };
   }
   if (/^[a-z]{6}$/.test(normalized)) {
@@ -67,12 +133,16 @@ function resolveAsset(query) {
       symbol: `C:${normalized.toUpperCase()}`,
       category: "currency",
       label: `${normalized.slice(0, 3).toUpperCase()}/${normalized.slice(3).toUpperCase()}`,
+      matchedOn: normalized,
+      matchScore: 0.7,
     };
   }
   return {
     symbol: normalized.toUpperCase(),
     category: "unknown",
     label: "Unmapped asset",
+    matchedOn: normalized,
+    matchScore: 0.4,
   };
 }
 
@@ -236,6 +306,41 @@ async function fetchQuote(asset) {
   };
 }
 
+async function fetchRecentCandles(asset) {
+  if (!MASSIVE_API_KEY) {
+    return [];
+  }
+  try {
+    if (asset.category === "currency") {
+      const payload = await fetchMassiveJson(
+        `/v2/aggs/ticker/${encodeURIComponent(asset.symbol)}/range/1/day/${new Date(Date.now() - 1000 * 60 * 60 * 24 * 14).toISOString().slice(0, 10)}/${new Date().toISOString().slice(0, 10)}?adjusted=true&sort=asc&limit=12`
+      );
+      return (payload?.results || []).slice(-8).map((bar) => ({
+        open: Number(bar.o || 0),
+        high: Number(bar.h || 0),
+        low: Number(bar.l || 0),
+        close: Number(bar.c || 0),
+        volume: Number(bar.v || 0),
+        timestamp: bar.t || 0,
+      }));
+    }
+    const payload = await fetchMassiveJson(
+      `/v2/aggs/ticker/${encodeURIComponent(asset.symbol)}/range/1/day/${new Date(Date.now() - 1000 * 60 * 60 * 24 * 14).toISOString().slice(0, 10)}/${new Date().toISOString().slice(0, 10)}?adjusted=true&sort=asc&limit=12`
+    );
+    return (payload?.results || []).slice(-8).map((bar) => ({
+      open: Number(bar.o || 0),
+      high: Number(bar.h || 0),
+      low: Number(bar.l || 0),
+      close: Number(bar.c || 0),
+      volume: Number(bar.v || 0),
+      timestamp: bar.t || 0,
+    }));
+  } catch (error) {
+    console.warn("TELAJ candle lookup failed.", error);
+    return [];
+  }
+}
+
 async function fetchHeadlines(asset) {
   if (!MASSIVE_API_KEY || asset.category === "currency") {
     return [];
@@ -252,85 +357,146 @@ async function fetchHeadlines(asset) {
   }
 }
 
-function buildLiveOpinion(asset, quote, region) {
+function buildFeatures(asset, quote, candles) {
+  const closes = candles.map((item) => Number(item.close || 0)).filter((value) => Number.isFinite(value) && value > 0);
+  const firstClose = closes[0] || Number(quote?.price || 0);
+  const lastClose = closes[closes.length - 1] || Number(quote?.price || 0);
+  const candleChangePct = firstClose > 0 ? ((lastClose / firstClose) - 1) * 100 : Number(quote?.changePct || 0);
+  const positiveCandles = candles.filter((bar) => bar.close >= bar.open).length;
+  const candleWinRate = candles.length ? positiveCandles / candles.length : 0.5;
+  const ranges = candles.map((bar) => {
+    const base = Math.max(Number(bar.close || 0), 0.0001);
+    return ((Number(bar.high || 0) - Number(bar.low || 0)) / base) * 100;
+  });
+  const volatilityPct = ranges.length ? ranges.reduce((sum, value) => sum + value, 0) / ranges.length : Math.abs(Number(quote?.changePct || 0));
+  return {
+    shortMomentumPct: candleChangePct,
+    candleWinRate,
+    volatilityPct,
+    matchScore: Number(asset.matchScore || 0),
+  };
+}
+
+function classifyModelScore(asset, quote, candles, region) {
+  const features = buildFeatures(asset, quote, candles);
+  const regionBias = region === "EU" ? 0.08 : 0.12;
+  const categoryBias = {
+    broad_etf: 0.22,
+    reserve: 0.18,
+    gold: 0.12,
+    single_stock: -0.04,
+    high_beta: -0.12,
+    commodity_proxy: -0.08,
+    currency: -0.14,
+    unknown: -0.18,
+  }[asset.category] ?? -0.1;
+
+  const momentumScore = Math.max(-1, Math.min(1, features.shortMomentumPct / 4));
+  const candleScore = (features.candleWinRate - 0.5) * 1.2;
+  const volatilityPenalty = Math.max(0, (features.volatilityPct - 2.2) / 4.5);
+  const score =
+    0.5 +
+    regionBias +
+    categoryBias +
+    momentumScore * 0.16 +
+    candleScore * 0.12 -
+    volatilityPenalty * 0.22 +
+    (features.matchScore - 0.7) * 0.08;
+
+  return {
+    score: Math.max(0.05, Math.min(0.95, score)),
+    features,
+  };
+}
+
+function buildLiveOpinion(asset, quote, region, candles = []) {
   const bias = getRegionBias(region);
   const change = Number(quote?.changePct || 0);
+  const model = classifyModelScore(asset, quote, candles, region);
+  const baseConfidence = Math.round(model.score * 100);
 
   if (asset.category === "reserve") {
     return {
       signal: bias.reserve,
-      confidence: 78,
+      confidence: Math.max(68, baseConfidence),
       why: "Short-duration reserve capital is still serving a defensive role better than forcing unnecessary risk.",
       risk: "Reserve assets protect capital more than they compound aggressively.",
       safer: "Keep them as ballast rather than expecting them to drive long-term growth.",
       horizon: "0-12 months",
+      model,
     };
   }
 
   if (asset.category === "gold") {
     return {
       signal: bias.gold,
-      confidence: change > 1 ? 74 : 69,
+      confidence: Math.max(change > 1 ? 74 : 69, baseConfidence),
       why: "Gold still fits as a defensive hedge when macro conditions remain uneven and the portfolio needs ballast.",
       risk: "Gold can lag if real yields rise and risk appetite broadens cleanly.",
       safer: "Use it as a hedge sleeve rather than as the center of the portfolio.",
       horizon: "3-12 months",
+      model,
     };
   }
 
   if (asset.category === "broad_etf") {
-    const signal = change <= -1 ? "buy" : bias.broad;
+    const signal = model.score >= 0.68 ? "buy" : change <= -1 ? "buy" : bias.broad;
     return {
       signal,
-      confidence: change <= -1 ? 76 : 71,
+      confidence: Math.max(change <= -1 ? 76 : 71, baseConfidence),
       why: "Broad exposure is still the cleaner way to add risk when TELAJ wants participation without concentration.",
       risk: "A better entry can appear later if market breadth weakens again.",
       safer: "Build the position in tranches instead of trying to perfectly time one entry.",
       horizon: "6-18 months",
+      model,
     };
   }
 
   if (asset.category === "high_beta") {
     return {
-      signal: bias.highBeta,
-      confidence: 66,
+      signal: model.score >= 0.62 ? "add slowly" : bias.highBeta,
+      confidence: Math.max(58, baseConfidence),
       why: "High-beta growth still needs more selectivity than the core portfolio. TELAJ does not want momentum to replace discipline.",
       risk: "Crowded growth leadership can reverse quickly when momentum rolls over.",
       safer: "Prefer a broad ETF core before increasing concentrated beta.",
       horizon: "1-6 months",
+      model,
     };
   }
 
   if (asset.category === "currency") {
     return {
-      signal: "review carefully",
-      confidence: 58,
+      signal: model.score >= 0.62 ? "hold" : "review carefully",
+      confidence: Math.max(52, baseConfidence),
       why: "TELAJ does not treat directional currency trades as a core allocation move unless there is a specific business or hedging reason.",
       risk: "FX moves can reverse quickly and are often driven by short-term macro surprises.",
       safer: "Keep currency decisions tied to travel, business needs, or hedging rather than short-term speculation.",
       horizon: "0-3 months",
+      model,
     };
   }
 
   if (asset.category === "commodity_proxy") {
     return {
-      signal: "review carefully",
-      confidence: 56,
+      signal: model.score >= 0.64 ? "add slowly" : "review carefully",
+      confidence: Math.max(54, baseConfidence),
       why: "Commodity proxies can be useful, but they are more cyclical and event-driven than TELAJ’s core sleeves.",
       risk: "Supply shocks and macro swings can make commodity trades noisy and hard to size calmly.",
       safer: "Keep these as smaller tactical sleeves rather than core holdings.",
       horizon: "1-6 months",
+      model,
     };
   }
 
-  const signal = change <= -2 ? "add slowly" : change >= 3 ? "review carefully" : "review carefully";
+  const signal = model.score >= 0.68 ? "add slowly" : change <= -2 ? "add slowly" : "review carefully";
   return {
     signal,
-    confidence: change <= -2 ? 62 : 57,
+    confidence: Math.max(change <= -2 ? 62 : 57, baseConfidence),
     why: "TELAJ sees this as a single-name idea, not a core allocation. The bar for conviction should be higher than for broad ETFs.",
     risk: "Single-stock concentration can distort a calm portfolio plan very quickly.",
     safer: "Size individual names modestly and let diversified sleeves do most of the heavy lifting.",
     horizon: "1-12 months",
+    model,
   };
 }
 
@@ -351,16 +517,18 @@ module.exports = async function handler(req, res) {
 
   let quote = null;
   let headlines = [];
+  let candles = [];
   let liveError = "";
 
   try {
     quote = await fetchQuote(asset);
     headlines = await fetchHeadlines(asset);
+    candles = await fetchRecentCandles(asset);
   } catch (error) {
     liveError = error instanceof Error ? error.message : "Live data unavailable";
   }
 
-  const opinion = buildLiveOpinion(asset, quote, region);
+  const opinion = buildLiveOpinion(asset, quote, region, candles);
   const modelSummary = await maybeSummarizeWithModel(asset, quote, headlines, region);
   const newsSummary = modelSummary || summarizeNewsHeuristic(headlines, asset);
 
@@ -381,6 +549,11 @@ module.exports = async function handler(req, res) {
       liveError,
       region,
       regime: getRegionBias(region).regime,
+      matchScore: asset.matchScore,
+      matchedOn: asset.matchedOn,
+      modelScore: Math.round((opinion.model?.score || 0.5) * 100),
+      features: opinion.model?.features || null,
+      candles,
     },
   });
 };

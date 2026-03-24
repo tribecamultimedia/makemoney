@@ -82,13 +82,13 @@ select:focus {
 
 .auth-card {
   width: min(980px, 100%);
-  min-height: 70vh;
+  min-height: auto;
   border: 2px solid var(--border-strong);
   background: linear-gradient(180deg, rgba(31, 107, 255, 0.06), rgba(23, 24, 27, 1));
   box-shadow: 14px 14px 0 rgba(0, 0, 0, 0.4);
-  padding: 28px;
+  padding: 24px;
   display: grid;
-  gap: 22px;
+  gap: 16px;
   align-content: start;
 }
 
@@ -172,7 +172,7 @@ select:focus {
 }
 
 .auth-option {
-  min-height: 120px;
+  min-height: 100px;
   border: 2px solid var(--border);
   background: var(--card);
   color: var(--text);
@@ -222,6 +222,20 @@ select:focus {
   grid-template-columns: auto 1fr;
   gap: 12px;
   align-items: start;
+}
+
+.auth-primary-row {
+  display: grid;
+  gap: 12px;
+}
+
+.compact-legal-ack {
+  padding: 12px;
+}
+
+.compact-auth-actions {
+  padding-top: 0;
+  border-top: 0;
 }
 
 .legal-ack input {

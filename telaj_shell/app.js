@@ -1939,7 +1939,7 @@ function renderAuthShell() {
           <img class="auth-logo" src="./assets/telaj-logo2.png" alt="TELAJ" />
           <div class="eyebrow">TELAJ ACCESS</div>
           <h1 class="onboarding-title">TELAJ tells you what to do next with your cash, debt, and investments.</h1>
-          <p class="onboarding-copy">Built for self-directed professionals. Map your finances once, then get one clear next move in plain English.</p>
+          <p class="onboarding-copy"><span id="auth-hero-copy"></span></p>
         </div>
         <div class="auth-status">${supabaseReady ? "Supabase ready" : "Guest mode ready"}</div>
       </div>
@@ -2014,12 +2014,20 @@ function renderAuthShell() {
         ${!supabaseReady ? `<div class="auth-info">Supabase public config is not set yet, so email login is disabled and guest mode will use local preview access.</div>` : ""}
         ${requiresBetaInvite() && !betaUnlocked ? `<div class="auth-info">Beta access is required before TELAJ entry is enabled.</div>` : ""}
       </div>
-      <label class="legal-ack">
-        <input id="legal-accept" type="checkbox" ${state.auth.legalAccepted ? "checked" : ""} />
-        <span>
-          I understand TELAJ provides educational information, model-based guidance, and planning suggestions only. It is not investment, tax, legal, accounting, or financial advice, and I remain responsible for my own decisions.
-        </span>
-      </label>
+      <div class="auth-primary-row">
+        <label class="legal-ack compact-legal-ack">
+          <input id="legal-accept" type="checkbox" ${state.auth.legalAccepted ? "checked" : ""} />
+          <span>
+            I understand TELAJ provides educational information and model-based guidance only.
+          </span>
+        </label>
+        <div class="onboarding-actions compact-auth-actions">
+          <div class="task-pill">${state.subscription.plan} · ${state.subscription.status}</div>
+          <button class="action-button primary" id="auth-continue" ${betaUnlocked ? "" : "disabled"}>${
+            mode === "signup" ? "Create account" : mode === "login" ? "Log in" : "Continue as guest"
+          }</button>
+        </div>
+      </div>
       <div class="legal-note">
         <div class="micro-label">Important</div>
         <div class="panel-copy">TELAJ is not a broker, not an investment adviser, and not a fiduciary. Signals, scenarios, and allocation examples are informational only and do not guarantee future results.</div>
@@ -2028,14 +2036,19 @@ function renderAuthShell() {
         <div class="micro-label">Privacy and cookies</div>
         <div class="panel-copy">TELAJ uses essential browser storage and session data to keep you signed in, remember your progress, and save financial inputs. If analytics or marketing tracking are added later, TELAJ should ask for separate consent before using them.</div>
       </div>
-      <div class="onboarding-actions">
-        <div class="task-pill">${state.subscription.plan} · ${state.subscription.status}</div>
-        <button class="action-button primary" id="auth-continue" ${betaUnlocked ? "" : "disabled"}>${
-          mode === "signup" ? "Create account" : mode === "login" ? "Log in" : "Continue as guest"
-        }</button>
-      </div>
     </div>
   `;
+
+  applyTypewriterEffect(
+    document.getElementById("auth-hero-copy"),
+    "Built for self-directed professionals. Map your finances once, then get one clear next move in plain English.",
+    {
+      key: "auth-hero-copy:v1",
+      speed: 18,
+      delay: 360,
+      cursor: false,
+    }
+  );
 
   document.getElementById("auth-guest")?.addEventListener("click", () => {
     state.auth.mode = "guest";
@@ -2055,11 +2068,14 @@ function renderAuthShell() {
     state.auth.info = "";
     renderAuthShell();
   });
-  document.getElementById("legal-accept")?.addEventListener("change", (event) => {
-    state.auth.legalAccepted = Boolean(event.target.checked);
-    state.auth.error = "";
-    persistAuthState();
-  });
+  authShell.querySelectorAll("#legal-accept").forEach((input) =>
+    input.addEventListener("change", (event) => {
+      state.auth.legalAccepted = Boolean(event.target.checked);
+      state.auth.error = "";
+      persistAuthState();
+      renderAuthShell();
+    })
+  );
   document.getElementById("beta-unlock")?.addEventListener("click", () => {
     const betaCode = document.getElementById("beta-code")?.value || "";
     unlockBetaAccess(betaCode);

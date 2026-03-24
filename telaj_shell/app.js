@@ -3336,12 +3336,18 @@ function renderFinancialPosition() {
     </div>
     <p class="body-copy position-summary-copy">${liquidityState.summary || balanceSheet.opinion || position.opinion}</p>
     <div class="position-utility-row">
-      <div class="utility-meta">${state.syncStatus.financialPosition}</div>
-      <div class="utility-meta">${state.syncStatus.financialPositionDetail}</div>
-      ${state.auth.authenticated ? `<button class="ghost-button subtle-utility-button" id="financial-refresh">Refresh</button>` : ""}
+      <div class="position-utility-copy">
+        <div class="utility-meta utility-status">${state.syncStatus.financialPosition}</div>
+        <div class="utility-meta utility-detail">${state.syncStatus.financialPositionDetail}</div>
+      </div>
+      <div class="position-utility-actions">
+        ${state.auth.authenticated ? `<button class="ghost-button subtle-utility-button" id="financial-refresh">Sync from cloud</button>` : ""}
+        <button class="action-button subtle-action-button" id="position-edit-toggle">Edit your numbers</button>
+      </div>
     </div>
-    <details class="position-editor">
-      <summary>Update the source data</summary>
+    <details class="position-editor" id="position-editor" ${state.syncStatus.financialPosition === "No cloud record yet" ? "open" : ""}>
+      <summary>Financial inputs</summary>
+      <div class="position-editor-intro">Update the numbers TELAJ uses to generate today's move.</div>
       <div class="input-stack financial-input-stack">
       <label class="input-field">
         <span class="micro-label">Liquid cash</span>
@@ -3400,6 +3406,17 @@ function renderFinancialPosition() {
     </div>
   `;
 
+  document.getElementById("position-edit-toggle")?.addEventListener("click", () => {
+    const editor = document.getElementById("position-editor");
+    if (!(editor instanceof HTMLDetailsElement)) {
+      return;
+    }
+    editor.open = !editor.open;
+    if (editor.open) {
+      document.getElementById("fp-liquid")?.focus();
+      editor.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  });
   document.getElementById("save-financial-position").addEventListener("click", async () => {
     state.liquidityDetails.liquidAssets = Number(document.getElementById("fp-liquid").value || 0);
     state.liquidityDetails.monthlyNeed = Number(document.getElementById("fp-monthly-need").value || 0);

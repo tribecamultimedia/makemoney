@@ -2959,6 +2959,78 @@ function getCurrentHouseholdMix() {
   }));
 }
 
+function getRetirementPriorityAdvice() {
+  const answers = state.onboarding.answers || {};
+  const reserveMonths = calculateLiquidityMonths();
+  const hasExpensiveDebt = Number(state.financialPosition.creditCardDebt || 0) > 0;
+  const liquidCash = Number(state.liquidityDetails.liquidAssets || 0);
+  const retirementAssets = Number(state.financialPosition.retirement || 0);
+  const marketFocus = answers.marketFocus || state.marketRegion || "US";
+  const userCountry = answers.userCountry || "other";
+  const isUS = marketFocus === "US" || userCountry === "us";
+  const regionLabel = isUS ? "US retirement wrappers" : "European pension priorities";
+
+  if (liquidCash <= 0) {
+    return {
+      label: regionLabel,
+      headline: "Finish mapping cash flow before TELAJ pushes retirement optimization",
+      summary: "TELAJ should know your liquid position first, because retirement advice only makes sense once reserve and debt pressure are clear.",
+      priorities: [
+        "Map liquid cash and monthly need first.",
+        "Keep retirement optimization behind a visible reserve target.",
+        "Do not confuse long-term wrappers with emergency liquidity.",
+      ],
+      watchout: "Using retirement accounts to feel productive while the balance sheet is still unclear.",
+    };
+  }
+
+  if (hasExpensiveDebt || reserveMonths < 3) {
+    return {
+      label: regionLabel,
+      headline: "Retirement wrappers matter, but repair and liquidity come first",
+      summary: "TELAJ does not want to maximize retirement contributions while expensive debt or a thin reserve can still destabilize the whole system.",
+      priorities: isUS
+        ? [
+            "Take only the minimum 401(k) employer match if available.",
+            "Build reserve strength and reduce credit card drag before extra taxable or retirement reach.",
+            "Delay aggressive Roth IRA funding until the balance sheet is steadier.",
+          ]
+        : [
+            "Keep core pension contributions active if they are standard or employer-linked.",
+            "Prioritize reserve strength and debt repair before stretching into optional pension wrappers.",
+            "Use retirement products only after the liquidity base is real.",
+          ],
+      watchout: "Overfunding long-duration retirement wrappers while short-term fragility is still active.",
+    };
+  }
+
+  if (isUS) {
+    return {
+      label: regionLabel,
+      headline: "TELAJ would review 401(k) match and Roth IRA before extra taxable investing",
+      summary: "Once reserve and debt are under control, the usual next-dollar order is employer match first, then retirement wrapper quality, then taxable brokerage exposure.",
+      priorities: [
+        "Capture the full 401(k) match before adding more optional taxable risk.",
+        "Review whether Roth IRA or traditional tax treatment fits your income and time horizon better.",
+        `Treat your current retirement base of ${formatEuro(retirementAssets)} as part of the long-duration sleeve, not separate from the main plan.`,
+      ],
+      watchout: "Buying more taxable ETFs while free employer match or cleaner retirement-tax treatment is still unused.",
+    };
+  }
+
+  return {
+    label: regionLabel,
+    headline: "TELAJ would review pension funds and local retirement wrappers before extra taxable reach",
+    summary: "For European users, retirement decisions are more jurisdiction-specific, but pension wrappers and employer-linked plans still deserve review before extra optional investing.",
+    priorities: [
+      "Check employer or occupational pension contributions first.",
+      "Review whether local retirement wrappers or pension funds offer better long-term treatment than standard taxable investing.",
+      `Treat the existing retirement sleeve of ${formatEuro(retirementAssets)} as long-duration capital that should be coordinated with ETFs, reserves, and property.`,
+    ],
+    watchout: "Ignoring country-specific pension advantages and going straight to generic taxable investing.",
+  };
+}
+
 function polarPoint(cx, cy, radius, angle) {
   const radians = ((angle - 90) * Math.PI) / 180;
   return {
@@ -4273,6 +4345,7 @@ function renderLeaderboard() {
 
 function renderAllocationView() {
   const householdMix = getCurrentHouseholdMix();
+  const retirementAdvice = getRetirementPriorityAdvice();
   document.getElementById("allocation-main").innerHTML = `
     <div class="eyebrow">Capital call</div>
     <h3>${state.recommendation.headline}</h3>
@@ -4318,6 +4391,18 @@ function renderAllocationView() {
         `
         : `<div class="subpanel"><div class="panel-copy">Current financial mix is not mapped yet. Enter liquid cash and asset values in the Financial Position panel first.</div></div>`
     }
+  `;
+  document.getElementById("allocation-retirement").innerHTML = `
+    <div class="eyebrow">Retirement priorities</div>
+    <h3>${retirementAdvice.headline}</h3>
+    <div class="task-pill">${retirementAdvice.label}</div>
+    <p class="body-copy">${retirementAdvice.summary}</p>
+    <ul class="clean-list">
+      ${retirementAdvice.priorities.map((item) => `<li>${item}</li>`).join("")}
+    </ul>
+    <div class="section-spacer"></div>
+    <div class="micro-label">Main watchout</div>
+    <div class="panel-copy">${retirementAdvice.watchout}</div>
   `;
   document.getElementById("allocation-rules").innerHTML = `
     <div class="eyebrow">TELAJ logic</div>

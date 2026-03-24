@@ -47,7 +47,7 @@ const defaultState = {
   onboarding: {
     completed: false,
     currentStep: 0,
-    stage: "questions",
+    stage: "profile",
     answers: {},
     profiles: {
       householdProfile: null,
@@ -458,6 +458,24 @@ const ONBOARDING_STORAGE_KEY = "telaj-onboarding-v1";
 const WEALTH_INPUTS_STORAGE_KEY = "telaj-wealth-inputs-v1";
 const SUBSCRIBER_PREFERENCES_KEY = "telaj-subscriber-preferences-v1";
 const SOUND_PREFERENCE_STORAGE_KEY = "telaj-sound-enabled-v1";
+const ONBOARDING_PROFILE_FIELDS = [
+  "exactAge",
+  "countryName",
+  "marketFocus",
+  "householdRole",
+  "dependentsCount",
+  "healthConstraint",
+  "monthlyIncomeAmount",
+  "monthlyNeedAmount",
+  "liquidAssetsAmount",
+  "investmentsAmount",
+  "retirementAmount",
+  "realEstateAmount",
+  "businessAssetsAmount",
+  "creditCardDebtAmount",
+  "loansAmount",
+  "mortgageDebtAmount",
+];
 const questionBank = [
   {
     id: "userCountry",
@@ -982,7 +1000,7 @@ function resetLocalSessionState() {
   state.auth.info = "";
   state.onboarding.completed = false;
   state.onboarding.currentStep = 0;
-  state.onboarding.stage = "questions";
+  state.onboarding.stage = "profile";
   state.homeApi = structuredClone(defaultState.homeApi);
   state.activeView = "home";
 }
@@ -1120,7 +1138,14 @@ function loadOnboardingState() {
     state.onboarding = {
       completed: Boolean(parsed.completed),
       currentStep: Number(parsed.currentStep ?? 0),
-      stage: parsed.stage === "complete" ? "complete" : parsed.stage === "intent" ? "intent" : "questions",
+      stage:
+        parsed.stage === "complete"
+          ? "complete"
+          : parsed.stage === "intent"
+            ? "intent"
+            : parsed.stage === "profile"
+              ? "profile"
+              : "questions",
       answers: typeof parsed.answers === "object" && parsed.answers ? parsed.answers : {},
       profiles:
         typeof parsed.profiles === "object" && parsed.profiles
@@ -1136,12 +1161,19 @@ function loadOnboardingState() {
             }
           : structuredClone(defaultState.onboarding.intent),
     };
+    if (!isOnboardingProfileComplete()) {
+      state.onboarding.completed = false;
+      state.onboarding.stage = "profile";
+      state.onboarding.currentStep = 0;
+    } else {
+      syncProfileAnswersToState();
+    }
     const firstMissing = getFirstMissingQuestionIndex();
-    if (firstMissing >= 0) {
+    if (isOnboardingProfileComplete() && firstMissing >= 0) {
       state.onboarding.completed = false;
       state.onboarding.stage = "questions";
       state.onboarding.currentStep = firstMissing;
-    } else if (!state.onboarding.intent?.analysis) {
+    } else if (isOnboardingProfileComplete() && !state.onboarding.intent?.analysis) {
       state.onboarding.completed = false;
       state.onboarding.stage = "intent";
     } else if (state.onboarding.completed) {
@@ -1596,9 +1628,123 @@ function getSelectedOption(questionId) {
   return state.onboarding.answers[questionId] ?? null;
 }
 
+function getOnboardingNumber(field, fallback = 0) {
+  const raw = state.onboarding.answers?.[field];
+  if (raw === "" || raw === null || raw === undefined) {
+    return Number(fallback || 0);
+  }
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : Number(fallback || 0);
+}
+
+function isOnboardingProfileComplete() {
+  const answers = state.onboarding.answers || {};
+  return ONBOARDING_PROFILE_FIELDS.every((field) => {
+    const value = answers[field];
+    return value !== undefined && value !== null && value !== "";
+  });
+}
+
+function syncProfileAnswersToState() {
+  state.liquidityDetails.monthlyNeed = getOnboardingNumber("monthlyNeedAmount", state.liquidityDetails.monthlyNeed);
+  state.liquidityDetails.liquidAssets = getOnboardingNumber("liquidAssetsAmount", state.liquidityDetails.liquidAssets);
+  state.financialPosition.investments = getOnboardingNumber("investmentsAmount", state.financialPosition.investments);
+  state.financialPosition.retirement = getOnboardingNumber("retirementAmount", state.financialPosition.retirement);
+  state.financialPosition.realEstate = getOnboardingNumber("realEstateAmount", state.financialPosition.realEstate);
+  state.financialPosition.business = getOnboardingNumber("businessAssetsAmount", state.financialPosition.business);
+  state.financialPosition.creditCardDebt = getOnboardingNumber("creditCardDebtAmount", state.financialPosition.creditCardDebt);
+  state.financialPosition.loans = getOnboardingNumber("loansAmount", state.financialPosition.loans);
+  state.financialPosition.mortgageDebt = getOnboardingNumber("mortgageDebtAmount", state.financialPosition.mortgageDebt);
+}
+
+function deriveAgeBandFromAge(age) {
+  if (!Number.isFinite(age) || age <= 0) return "unknown";
+  if (age < 30) return "20s";
+  if (age < 40) return "30s";
+  if (age < 50) return "40s";
+  return "50plus";
+}
+
+function deriveNetWorthBandFromValue(value) {
+  if (value < 50000) return "under-50k";
+  if (value < 250000) return "50k-250k";
+  if (value < 1000000) return "250k-1m";
+  return "1m-plus";
+}
+
+function deriveIncomeBandFromMonthly(monthlyIncome) {
+  if (monthlyIncome < 2500) return "low";
+  if (monthlyIncome < 7000) return "middle";
+  if (monthlyIncome < 18000) return "high";
+  return "very-high";
+}
+
+function deriveLiquidityProfileFromValues(liquidAssets, totalAssets) {
+  const ratio = totalAssets > 0 ? liquidAssets / totalAssets : 0;
+  if (ratio < 0.1) return "very-low";
+  if (ratio < 0.25) return "moderate";
+  if (ratio < 0.5) return "healthy";
+  return "very-strong";
+}
+
+function deriveAssetLocationFromValues(values) {
+  const buckets = [
+    { key: "cash", value: values.liquidAssets },
+    { key: "markets", value: values.investments + values.retirement },
+    { key: "primary-home", value: values.realEstate },
+    { key: "investment-property", value: values.businessAssets },
+  ];
+  return buckets.sort((a, b) => b.value - a.value)[0]?.key || "cash";
+}
+
+function deriveOwnedAssetsFromValues(values) {
+  const active = [
+    values.liquidAssets > 0 ? "cash" : null,
+    values.investments + values.retirement > 0 ? "investments" : null,
+    values.realEstate > 0 || values.businessAssets > 0 ? "property" : null,
+  ].filter(Boolean);
+  if (active.length >= 2) return "mixed";
+  if (active.includes("property")) return "property";
+  if (active.includes("investments")) return "investments";
+  return "mostly-cash";
+}
+
+function getStructuredProfileInputs(answers) {
+  const liquidAssets = Number(answers.liquidAssetsAmount || 0);
+  const investments = Number(answers.investmentsAmount || 0);
+  const retirement = Number(answers.retirementAmount || 0);
+  const realEstate = Number(answers.realEstateAmount || 0);
+  const businessAssets = Number(answers.businessAssetsAmount || 0);
+  const creditCardDebt = Number(answers.creditCardDebtAmount || 0);
+  const loans = Number(answers.loansAmount || 0);
+  const mortgageDebt = Number(answers.mortgageDebtAmount || 0);
+  const totalAssets = liquidAssets + investments + retirement + realEstate + businessAssets;
+  const totalDebt = creditCardDebt + loans + mortgageDebt;
+  return {
+    exactAge: Number(answers.exactAge || 0),
+    monthlyIncome: Number(answers.monthlyIncomeAmount || 0),
+    monthlyNeed: Number(answers.monthlyNeedAmount || 0),
+    liquidAssets,
+    investments,
+    retirement,
+    realEstate,
+    businessAssets,
+    creditCardDebt,
+    loans,
+    mortgageDebt,
+    totalAssets,
+    totalDebt,
+    netWorth: totalAssets - totalDebt,
+  };
+}
+
 function getLifeMatrixQuestions() {
   const answers = state.onboarding.answers;
+  const derivedOwnedAssets = deriveOwnedAssetsFromValues(getStructuredProfileInputs(answers));
   return questionBank.filter((question) => {
+    if (["userCountry", "marketFocus", "netWorthBand", "liquidity", "assetLocation", "ageBand", "householdRole", "dependents", "ownedAssets", "incomeBand", "healthConstraint"].includes(question.id)) {
+      return false;
+    }
     if (question.id === "dependents" && answers.householdRole === "single") {
       return false;
     }
@@ -1609,16 +1755,16 @@ function getLifeMatrixQuestions() {
       return answers.primaryResidenceStatus === "own-mortgage";
     }
     if (question.id === "propertyCount") {
-      return ["property", "mixed"].includes(answers.ownedAssets) || ["existing", "active"].includes(answers.propertyIntent);
+      return ["property", "mixed"].includes(derivedOwnedAssets) || ["existing", "active"].includes(answers.propertyIntent);
     }
     if (question.id === "propertyType") {
       return (
-        (["property", "mixed"].includes(answers.ownedAssets) || ["existing", "active"].includes(answers.propertyIntent)) &&
+        (["property", "mixed"].includes(derivedOwnedAssets) || ["existing", "active"].includes(answers.propertyIntent)) &&
         Boolean(answers.propertyCount) &&
         answers.propertyCount !== "0"
       );
     }
-    if (question.id === "propertyIntent" && answers.ownedAssets === "mostly-cash" && answers.goal === "safety") {
+    if (question.id === "propertyIntent" && derivedOwnedAssets === "mostly-cash" && answers.goal === "safety") {
       return false;
     }
     return true;
@@ -1631,41 +1777,51 @@ function getFirstMissingQuestionIndex() {
 }
 
 function deriveHouseholdProfile(answers) {
+  const structured = getStructuredProfileInputs(answers);
+  const derivedOwnedAssets = deriveOwnedAssetsFromValues(structured);
+  const derivedAssetLocation = deriveAssetLocationFromValues(structured);
+  const derivedAgeBand = deriveAgeBandFromAge(structured.exactAge);
+  const derivedNetWorthBand = deriveNetWorthBandFromValue(structured.netWorth);
+  const derivedLiquidity = deriveLiquidityProfileFromValues(structured.liquidAssets, structured.totalAssets);
   const assetBase =
-    answers.assetLocation === "investment-property"
+    derivedAssetLocation === "investment-property"
       ? "Business and investment property profile"
-      : answers.assetLocation === "primary-home"
+      : derivedAssetLocation === "primary-home"
         ? "Home-equity-led profile"
-      : answers.ownedAssets === "mixed"
+      : derivedOwnedAssets === "mixed"
       ? "Multi-asset profile"
-      : answers.ownedAssets === "property"
+      : derivedOwnedAssets === "property"
         ? "Property-centered profile"
-        : answers.ownedAssets === "investments"
+        : derivedOwnedAssets === "investments"
           ? "Investment-led profile"
           : "Liquidity-led profile";
-  const propertyExposure = ["property", "mixed"].includes(answers.ownedAssets) || ["existing", "active"].includes(answers.propertyIntent);
+  const propertyExposure = ["property", "mixed"].includes(derivedOwnedAssets) || ["existing", "active"].includes(answers.propertyIntent);
   const archetype =
     answers.householdRole === "parent" || answers.householdRole === "multi"
       ? "Family Stabilizer"
-      : answers.incomeBand === "very-high" && answers.spendingStyle === "spender"
+      : deriveIncomeBandFromMonthly(structured.monthlyIncome) === "very-high" && answers.spendingStyle === "spender"
         ? "High Earner, Low Friction Control"
         : answers.goal === "legacy"
           ? "Legacy Builder"
           : "Independent Builder";
   return {
-    userCountry: answers.userCountry ?? "unknown",
+    userCountry: answers.countryName ?? answers.userCountry ?? "unknown",
     marketFocus: answers.marketFocus ?? "US",
-    ageBand: answers.ageBand ?? "unknown",
+    age: structured.exactAge || null,
+    ageBand: derivedAgeBand,
     householdRole: answers.householdRole ?? "unknown",
-    dependents: answers.dependents ?? "0",
-    incomeBand: answers.incomeBand ?? "unknown",
+    dependents: answers.dependentsCount ?? answers.dependents ?? "0",
+    incomeBand: deriveIncomeBandFromMonthly(structured.monthlyIncome),
+    monthlyIncome: structured.monthlyIncome,
     incomeStability: answers.incomeStability ?? "unknown",
     healthConstraint: answers.healthConstraint ?? "prefer-not",
-    netWorthBand: answers.netWorthBand ?? "unknown",
-    assetLocation: answers.assetLocation ?? "unknown",
+    netWorthBand: derivedNetWorthBand,
+    netWorth: structured.netWorth,
+    assetLocation: derivedAssetLocation,
+    ownedAssets: derivedOwnedAssets,
     assetBase,
     liabilityPressure: answers.liabilities ?? "unknown",
-    liquidityProfile: answers.liquidity ?? "unknown",
+    liquidityProfile: derivedLiquidity,
     primaryResidenceStatus: answers.primaryResidenceStatus ?? "unknown",
     primaryHomeEquity: answers.primaryHomeEquity ?? "unknown",
     primaryHomeDebtRate: answers.primaryHomeDebtRate ?? "unknown",
@@ -1702,6 +1858,8 @@ function deriveBehaviorProfile(answers) {
 }
 
 function deriveGoalProfile(answers) {
+  const structured = getStructuredProfileInputs(answers);
+  const derivedLiquidity = deriveLiquidityProfileFromValues(structured.liquidAssets, structured.totalAssets);
   const goalArchetype =
     answers.goal === "legacy"
       ? "Long-duration family builder"
@@ -1711,7 +1869,7 @@ function deriveGoalProfile(answers) {
           ? "Cash-flow builder"
           : "Compounder";
   const recommendedPosture =
-    answers.goal === "safety" || answers.liabilities === "heavy" || answers.liquidity === "very-low"
+    answers.goal === "safety" || answers.liabilities === "heavy" || derivedLiquidity === "very-low"
       ? "Reserves first"
       : answers.goal === "legacy"
         ? "Long-horizon family allocation"
@@ -2013,6 +2171,11 @@ function renderOnboarding() {
     return;
   }
 
+  if (!isOnboardingProfileComplete() || state.onboarding.stage === "profile") {
+    renderProfileStage();
+    return;
+  }
+
   if (state.onboarding.stage === "intent") {
     renderIntentStage();
     return;
@@ -2102,6 +2265,128 @@ function renderOnboarding() {
       return;
     }
     state.onboarding.currentStep += 1;
+    persistOnboardingState();
+    renderOnboarding();
+  });
+}
+
+function renderProfileStage() {
+  const answers = state.onboarding.answers || {};
+  onboardingShell.classList.add("is-active");
+  appShell.classList.add("is-hidden");
+  onboardingShell.innerHTML = `
+    <div class="onboarding-card">
+      <div class="onboarding-head">
+        <div>
+          <div class="eyebrow">TELAJ PROFILE</div>
+          <h1 class="onboarding-title">Complete your profile before TELAJ gives opinions.</h1>
+          <p class="onboarding-copy">Enter the real profile once: age, country, income, liquidity, assets, and debts. TELAJ should optimize from exact values, not decade buckets and rough guesses.</p>
+        </div>
+        <div class="onboarding-step">Profile | exact inputs first</div>
+      </div>
+      <div class="question-stage">
+        <div class="micro-label">Identity</div>
+        <div class="input-stack">
+          <label class="input-field">
+            <span class="micro-label">Age</span>
+            <input id="profile-age" type="number" min="18" max="120" step="1" value="${answers.exactAge ?? ""}" placeholder="80" />
+          </label>
+          <label class="input-field">
+            <span class="micro-label">Country</span>
+            <input id="profile-country" type="text" value="${answers.countryName ?? ""}" placeholder="Italy" />
+          </label>
+          <label class="input-field">
+            <span class="micro-label">Market focus</span>
+            <select id="profile-market-focus">
+              <option value="US" ${answers.marketFocus === "US" ? "selected" : ""}>US</option>
+              <option value="EU" ${answers.marketFocus === "EU" ? "selected" : ""}>Europe</option>
+              <option value="GLOBAL" ${answers.marketFocus === "GLOBAL" ? "selected" : ""}>Global</option>
+            </select>
+          </label>
+          <label class="input-field">
+            <span class="micro-label">Household</span>
+            <select id="profile-household-role">
+              <option value="single" ${answers.householdRole === "single" ? "selected" : ""}>Single</option>
+              <option value="couple" ${answers.householdRole === "couple" ? "selected" : ""}>Couple</option>
+              <option value="parent" ${answers.householdRole === "parent" ? "selected" : ""}>Parent household</option>
+              <option value="multi" ${answers.householdRole === "multi" ? "selected" : ""}>Multi-generational</option>
+            </select>
+          </label>
+          <label class="input-field">
+            <span class="micro-label">Dependents</span>
+            <input id="profile-dependents" type="number" min="0" step="1" value="${answers.dependentsCount ?? "0"}" />
+          </label>
+          <label class="input-field">
+            <span class="micro-label">Health / caregiving constraint</span>
+            <select id="profile-health">
+              <option value="none" ${answers.healthConstraint === "none" ? "selected" : ""}>No major issue</option>
+              <option value="mild" ${answers.healthConstraint === "mild" ? "selected" : ""}>Some constraints</option>
+              <option value="significant" ${answers.healthConstraint === "significant" ? "selected" : ""}>Significant</option>
+              <option value="prefer-not" ${answers.healthConstraint === "prefer-not" ? "selected" : ""}>Prefer not to say</option>
+            </select>
+          </label>
+        </div>
+        <div class="section-spacer"></div>
+        <div class="micro-label">Cash flow</div>
+        <div class="input-stack">
+          <label class="input-field">
+            <span class="micro-label">Monthly income</span>
+            <input id="profile-income" type="number" min="0" step="100" value="${answers.monthlyIncomeAmount ?? ""}" placeholder="4000" />
+          </label>
+          <label class="input-field">
+            <span class="micro-label">Monthly need</span>
+            <input id="profile-need" type="number" min="0" step="100" value="${answers.monthlyNeedAmount ?? ""}" placeholder="2500" />
+          </label>
+        </div>
+        <div class="section-spacer"></div>
+        <div class="micro-label">Assets and debts</div>
+        <div class="input-stack">
+          <label class="input-field"><span class="micro-label">Liquid cash</span><input id="profile-liquid" type="number" min="0" step="1000" value="${answers.liquidAssetsAmount ?? "0"}" placeholder="150000" /></label>
+          <label class="input-field"><span class="micro-label">Investments</span><input id="profile-investments" type="number" min="0" step="1000" value="${answers.investmentsAmount ?? "0"}" /></label>
+          <label class="input-field"><span class="micro-label">Retirement</span><input id="profile-retirement" type="number" min="0" step="1000" value="${answers.retirementAmount ?? "0"}" /></label>
+          <label class="input-field"><span class="micro-label">Real estate</span><input id="profile-real-estate" type="number" min="0" step="1000" value="${answers.realEstateAmount ?? "0"}" /></label>
+          <label class="input-field"><span class="micro-label">Business assets</span><input id="profile-business" type="number" min="0" step="1000" value="${answers.businessAssetsAmount ?? "0"}" /></label>
+          <label class="input-field"><span class="micro-label">Credit card debt</span><input id="profile-credit-card" type="number" min="0" step="100" value="${answers.creditCardDebtAmount ?? "0"}" /></label>
+          <label class="input-field"><span class="micro-label">Loans</span><input id="profile-loans" type="number" min="0" step="1000" value="${answers.loansAmount ?? "0"}" /></label>
+          <label class="input-field"><span class="micro-label">Mortgage debt</span><input id="profile-mortgage" type="number" min="0" step="1000" value="${answers.mortgageDebtAmount ?? "0"}" /></label>
+        </div>
+      </div>
+      <div class="onboarding-actions">
+        <div class="task-pill">TELAJ will use these exact values as the base profile.</div>
+        <button class="action-button primary" id="profile-continue">Continue</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("profile-continue")?.addEventListener("click", () => {
+    state.onboarding.answers.exactAge = document.getElementById("profile-age")?.value.trim() || "";
+    state.onboarding.answers.countryName = document.getElementById("profile-country")?.value.trim() || "";
+    state.onboarding.answers.userCountry = state.onboarding.answers.countryName;
+    state.onboarding.answers.marketFocus = document.getElementById("profile-market-focus")?.value || "US";
+    state.onboarding.answers.householdRole = document.getElementById("profile-household-role")?.value || "single";
+    state.onboarding.answers.dependentsCount = document.getElementById("profile-dependents")?.value || "0";
+    state.onboarding.answers.dependents = state.onboarding.answers.dependentsCount;
+    state.onboarding.answers.healthConstraint = document.getElementById("profile-health")?.value || "none";
+    state.onboarding.answers.monthlyIncomeAmount = document.getElementById("profile-income")?.value || "0";
+    state.onboarding.answers.monthlyNeedAmount = document.getElementById("profile-need")?.value || "0";
+    state.onboarding.answers.liquidAssetsAmount = document.getElementById("profile-liquid")?.value || "0";
+    state.onboarding.answers.investmentsAmount = document.getElementById("profile-investments")?.value || "0";
+    state.onboarding.answers.retirementAmount = document.getElementById("profile-retirement")?.value || "0";
+    state.onboarding.answers.realEstateAmount = document.getElementById("profile-real-estate")?.value || "0";
+    state.onboarding.answers.businessAssetsAmount = document.getElementById("profile-business")?.value || "0";
+    state.onboarding.answers.creditCardDebtAmount = document.getElementById("profile-credit-card")?.value || "0";
+    state.onboarding.answers.loansAmount = document.getElementById("profile-loans")?.value || "0";
+    state.onboarding.answers.mortgageDebtAmount = document.getElementById("profile-mortgage")?.value || "0";
+
+    if (!isOnboardingProfileComplete()) {
+      return;
+    }
+
+    syncProfileAnswersToState();
+    syncMarketRegionFromOnboarding();
+    state.onboarding.stage = "questions";
+    state.onboarding.currentStep = 0;
+    persistWealthInputs();
     persistOnboardingState();
     renderOnboarding();
   });
@@ -3288,6 +3573,7 @@ function renderProfileMatrix() {
       <div class="profile-chip">
         <div class="micro-label">HouseholdProfile</div>
         <div class="profile-chip-title">${profiles.householdProfile.archetype}</div>
+        <div class="panel-copy">${profiles.householdProfile.userCountry} | Age ${profiles.householdProfile.age || "--"} | Income ${formatEuro(profiles.householdProfile.monthlyIncome || 0)} / mo</div>
         <div class="panel-copy">Worth ${profiles.householdProfile.netWorthBand} | Liquidity ${profiles.householdProfile.liquidityProfile} | Core ${profiles.householdProfile.assetLocation}</div>
         <div class="panel-copy">Primary home ${profiles.householdProfile.primaryResidenceStatus} | Equity ${profiles.householdProfile.primaryHomeEquity}</div>
         <div class="panel-copy">Investment property ${profiles.householdProfile.propertyCount} | Type ${profiles.householdProfile.propertyType}</div>

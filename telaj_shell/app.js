@@ -984,6 +984,7 @@ function resetLocalSessionState() {
   state.onboarding.currentStep = 0;
   state.onboarding.stage = "questions";
   state.homeApi = structuredClone(defaultState.homeApi);
+  state.activeView = "home";
 }
 
 async function handleLogout() {
@@ -997,7 +998,13 @@ async function handleLogout() {
   }
   resetLocalSessionState();
   persistAuthState();
-  renderAll();
+  renderAuthShell();
+  renderOnboarding();
+  authShell.classList.add("is-active");
+  appShell.classList.add("is-hidden");
+  onboardingShell.classList.remove("is-active");
+  onboardingShell.innerHTML = "";
+  window.scrollTo({ top: 0, behavior: "auto" });
 }
 
 function loadSubscriberPreferences() {
@@ -3648,6 +3655,131 @@ function renderCashStatus() {
   document.getElementById("go-allocation").addEventListener("click", () => setView("allocation"));
 }
 
+function renderAssetsArea() {
+  const ledgerPanel = document.getElementById("assets-ledger");
+  const summaryPanel = document.getElementById("assets-balance-summary");
+  if (!ledgerPanel || !summaryPanel) {
+    return;
+  }
+
+  const position = getFinancialPosition();
+  const reserveMonths = calculateLiquidityMonths();
+
+  ledgerPanel.innerHTML = `
+    <div class="eyebrow">Asset inputs</div>
+    <h3>Tell TELAJ what you actually own and owe</h3>
+    <div class="panel-copy">This is the source layer for TELAJ's decisions. Update assets and liabilities here, then let the engine recalculate.</div>
+    <div class="input-stack financial-input-stack">
+      <label class="input-field">
+        <span class="micro-label">Liquid cash</span>
+        <input id="asset-liquid" type="number" min="0" step="1000" value="${state.liquidityDetails.liquidAssets}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Monthly financial need</span>
+        <input id="asset-monthly-need" type="number" min="0" step="100" value="${state.liquidityDetails.monthlyNeed}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Investments</span>
+        <input id="asset-investments" type="number" min="0" step="1000" value="${state.financialPosition.investments}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Retirement</span>
+        <input id="asset-retirement" type="number" min="0" step="1000" value="${state.financialPosition.retirement}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Real estate</span>
+        <input id="asset-real-estate" type="number" min="0" step="1000" value="${state.financialPosition.realEstate}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Business assets</span>
+        <input id="asset-business" type="number" min="0" step="1000" value="${state.financialPosition.business}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Credit card debt</span>
+        <input id="asset-credit-card" type="number" min="0" step="100" value="${state.financialPosition.creditCardDebt}" />
+      </label>
+      <label class="input-field">
+        <span class="micro-label">Loans</span>
+        <input id="asset-loans" type="number" min="0" step="100" value="${state.financialPosition.loans}" />
+      </label>
+      <label class="input-field input-span-2">
+        <span class="micro-label">Mortgage debt</span>
+        <input id="asset-mortgage" type="number" min="0" step="1000" value="${state.financialPosition.mortgageDebt}" />
+      </label>
+      <div class="property-action-row input-span-2">
+        <button class="action-button primary" id="assets-save">Save assets</button>
+        <button class="action-button" id="assets-refresh-decision">Refresh TELAJ decision</button>
+      </div>
+    </div>
+  `;
+
+  summaryPanel.innerHTML = `
+    <div class="eyebrow">Balance sheet summary</div>
+    <h3>What TELAJ sees right now</h3>
+    <div class="stats-grid compact-position-grid">
+      <div class="stat-box">
+        <div class="stat-label">Net worth</div>
+        <div class="stat-value">${formatEuro(position.netWorth)}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Total assets</div>
+        <div class="stat-value">${formatEuro(position.totalAssets)}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Total debt</div>
+        <div class="stat-value">${formatEuro(position.totalDebt)}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Reserve</div>
+        <div class="stat-value">${reserveMonths > 0 ? `${reserveMonths.toFixed(1)} months` : "Map expenses"}</div>
+      </div>
+    </div>
+    <div class="section-spacer"></div>
+    <div class="micro-label">Asset mix</div>
+    <div class="financial-legend">
+      ${position.assets.length
+        ? position.assets
+            .map(
+              (item) => `
+                <div class="legend-item">
+                  <span class="legend-swatch" style="background:${item.color}"></span>
+                  <span>${item.label}</span>
+                  <span class="legend-value">${formatEuro(item.value)}</span>
+                </div>
+              `
+            )
+            .join("")
+        : `<div class="panel-copy">No assets mapped yet. Start with liquid cash and investments.</div>`}
+    </div>
+    <div class="section-spacer"></div>
+    <div class="micro-label">Future document intelligence</div>
+    <div class="panel-copy">This is where TELAJ can later attach deeds, liens, contracts, visure catastali, and other property documents to the right asset record.</div>
+  `;
+
+  document.getElementById("assets-save")?.addEventListener("click", async () => {
+    state.liquidityDetails.liquidAssets = Number(document.getElementById("asset-liquid").value || 0);
+    state.liquidityDetails.monthlyNeed = Number(document.getElementById("asset-monthly-need").value || 0);
+    state.financialPosition.investments = Number(document.getElementById("asset-investments").value || 0);
+    state.financialPosition.retirement = Number(document.getElementById("asset-retirement").value || 0);
+    state.financialPosition.realEstate = Number(document.getElementById("asset-real-estate").value || 0);
+    state.financialPosition.business = Number(document.getElementById("asset-business").value || 0);
+    state.financialPosition.creditCardDebt = Number(document.getElementById("asset-credit-card").value || 0);
+    state.financialPosition.loans = Number(document.getElementById("asset-loans").value || 0);
+    state.financialPosition.mortgageDebt = Number(document.getElementById("asset-mortgage").value || 0);
+    persistWealthInputs();
+    await saveFinancialPositionToApi();
+    await loadHomeDecisionState();
+    renderAll();
+  });
+
+  document.getElementById("assets-refresh-decision")?.addEventListener("click", async () => {
+    await loadHomeDecisionState();
+    renderAll();
+    setView("home");
+    document.getElementById("morning-hero")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
 function renderTasks() {
   const panel = document.getElementById("daily-tasks");
   if (!panel) {
@@ -4660,6 +4792,7 @@ function renderAll() {
     renderSystemHealth();
     renderXpLevel();
     renderFinancialPosition();
+    renderAssetsArea();
     renderAllocationSnapshot();
     renderCashStatus();
     renderTasks();

@@ -1,5 +1,7 @@
 const MASSIVE_API_BASE = process.env.MASSIVE_API_BASE || "https://api.massive.com";
 const MASSIVE_API_KEY = process.env.MASSIVE_API_KEY || process.env.POLYGON_API_KEY || process.env.POLYGON_API_TOKEN;
+const FINNHUB_API_BASE = "https://finnhub.io/api/v1";
+const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY || "";
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -267,55 +269,106 @@ async function fetchMassiveJson(path) {
   return response.json();
 }
 
-async function fetchQuote(asset) {
-  if (!MASSIVE_API_KEY) {
+async function fetchFinnhubJson(path) {
+  if (!FINNHUB_API_KEY) {
     return null;
   }
+  const separator = path.includes("?") ? "&" : "?";
+  const response = await fetch(`${FINNHUB_API_BASE}${path}${separator}token=${encodeURIComponent(FINNHUB_API_KEY)}`);
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`Finnhub request failed: ${response.status} ${message}`);
+  }
+  return response.json();
+}
 
+function getFinnhubSymbol(asset) {
   if (asset.category === "currency") {
-    const snapshot = await fetchMassiveJson(`/v2/snapshot/locale/global/markets/forex/tickers/${encodeURIComponent(asset.symbol)}`);
-    const ticker = snapshot?.ticker;
-    const day = ticker?.day || {};
-    const lastQuote = ticker?.lastQuote || {};
-    const price = Number(day.close ?? lastQuote.ask ?? lastQuote.bid ?? 0);
-    const open = Number(day.open ?? 0);
-    const changePct = open ? ((price - open) / open) * 100 : 0;
-    return {
-      price,
-      changePct,
-      source: "Live Massive forex snapshot",
-    };
+    const raw = asset.symbol.replace(/^C:/, "");
+    return `OANDA:${raw.slice(0, 3)}_${raw.slice(3)}`;
+  }
+  return asset.symbol.replace(/^C:/, "");
+}
+
+async function fetchQuote(asset) {
+  let lastError = null;
+
+  if (MASSIVE_API_KEY) {
+    try {
+      if (asset.category === "currency") {
+        const snapshot = await fetchMassiveJson(`/v2/snapshot/locale/global/markets/forex/tickers/${encodeURIComponent(asset.symbol)}`);
+        const ticker = snapshot?.ticker;
+        const day = ticker?.day || {};
+        const lastQuote = ticker?.lastQuote || {};
+        const price = Number(day.close ?? lastQuote.ask ?? lastQuote.bid ?? 0);
+        const open = Number(day.open ?? 0);
+        const changePct = open ? ((price - open) / open) * 100 : 0;
+        if (price > 0) {
+          return {
+            price,
+            changePct,
+            source: "Live Massive forex snapshot",
+          };
+        }
+      } else {
+        const [snapshot, previous] = await Promise.all([
+          fetchMassiveJson(`/v2/snapshot/locale/us/markets/stocks/tickers/${encodeURIComponent(asset.symbol)}`),
+          fetchMassiveJson(`/v2/aggs/ticker/${encodeURIComponent(asset.symbol)}/prev?adjusted=true`),
+        ]);
+
+        const ticker = snapshot?.ticker || {};
+        const day = ticker?.day || {};
+        const previousBar = previous?.results?.[0] || {};
+        const price = Number(day.close ?? previousBar.c ?? 0);
+        const open = Number(day.open ?? previousBar.o ?? 0);
+        const changePct = open ? ((price - open) / open) * 100 : 0;
+        if (price > 0) {
+          return {
+            price,
+            changePct,
+            source: "Live Massive market data",
+          };
+        }
+      }
+    } catch (error) {
+      lastError = error;
+    }
   }
 
-  const [snapshot, previous] = await Promise.all([
-    fetchMassiveJson(`/v2/snapshot/locale/us/markets/stocks/tickers/${encodeURIComponent(asset.symbol)}`),
-    fetchMassiveJson(`/v2/aggs/ticker/${encodeURIComponent(asset.symbol)}/prev?adjusted=true`),
-  ]);
+  if (FINNHUB_API_KEY) {
+    try {
+      const payload = await fetchFinnhubJson(`/quote?symbol=${encodeURIComponent(getFinnhubSymbol(asset))}`);
+      const price = Number(payload?.c || 0);
+      const previousClose = Number(payload?.pc || 0);
+      const changePct = previousClose ? ((price - previousClose) / previousClose) * 100 : 0;
+      if (price > 0) {
+        return {
+          price,
+          changePct,
+          source: asset.category === "currency" ? "Live Finnhub forex data" : "Live Finnhub market data",
+        };
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
 
-  const ticker = snapshot?.ticker || {};
-  const day = ticker?.day || {};
-  const previousBar = previous?.results?.[0] || {};
-  const price = Number(day.close ?? previousBar.c ?? 0);
-  const open = Number(day.open ?? previousBar.o ?? 0);
-  const changePct = open ? ((price - open) / open) * 100 : 0;
-
-  return {
-    price,
-    changePct,
-    source: "Live Massive market data",
-  };
+  if (lastError) {
+    throw lastError;
+  }
+  return null;
 }
 
 async function fetchRecentCandles(asset) {
-  if (!MASSIVE_API_KEY) {
-    return [];
-  }
+  const fromDate = new Date(Date.now() - 1000 * 60 * 60 * 24 * 14);
+  const toDate = new Date();
+
   try {
-    if (asset.category === "currency") {
+    if (MASSIVE_API_KEY) {
       const payload = await fetchMassiveJson(
-        `/v2/aggs/ticker/${encodeURIComponent(asset.symbol)}/range/1/day/${new Date(Date.now() - 1000 * 60 * 60 * 24 * 14).toISOString().slice(0, 10)}/${new Date().toISOString().slice(0, 10)}?adjusted=true&sort=asc&limit=12`
+        `/v2/aggs/ticker/${encodeURIComponent(asset.symbol)}/range/1/day/${fromDate.toISOString().slice(0, 10)}/${toDate.toISOString().slice(0, 10)}?adjusted=true&sort=asc&limit=12`
       );
-      return (payload?.results || []).slice(-8).map((bar) => ({
+      const mapped = (payload?.results || []).slice(-8).map((bar) => ({
         open: Number(bar.o || 0),
         high: Number(bar.h || 0),
         low: Number(bar.l || 0),
@@ -323,36 +376,76 @@ async function fetchRecentCandles(asset) {
         volume: Number(bar.v || 0),
         timestamp: bar.t || 0,
       }));
+      if (mapped.length) {
+        return mapped;
+      }
     }
-    const payload = await fetchMassiveJson(
-      `/v2/aggs/ticker/${encodeURIComponent(asset.symbol)}/range/1/day/${new Date(Date.now() - 1000 * 60 * 60 * 24 * 14).toISOString().slice(0, 10)}/${new Date().toISOString().slice(0, 10)}?adjusted=true&sort=asc&limit=12`
+  } catch (error) {
+    console.warn("TELAJ candle lookup via Massive failed.", error);
+  }
+
+  if (!FINNHUB_API_KEY) {
+    return [];
+  }
+
+  try {
+    const endpoint = asset.category === "currency" ? "/forex/candle" : "/stock/candle";
+    const payload = await fetchFinnhubJson(
+      `${endpoint}?symbol=${encodeURIComponent(getFinnhubSymbol(asset))}&resolution=D&from=${Math.floor(fromDate.getTime() / 1000)}&to=${Math.floor(toDate.getTime() / 1000)}`
     );
-    return (payload?.results || []).slice(-8).map((bar) => ({
-      open: Number(bar.o || 0),
-      high: Number(bar.h || 0),
-      low: Number(bar.l || 0),
-      close: Number(bar.c || 0),
-      volume: Number(bar.v || 0),
-      timestamp: bar.t || 0,
+    if (payload?.s !== "ok" || !Array.isArray(payload?.c)) {
+      return [];
+    }
+    return payload.c.slice(-8).map((close, index) => ({
+      open: Number(payload.o?.[payload.c.length - Math.min(8, payload.c.length) + index] || 0),
+      high: Number(payload.h?.[payload.c.length - Math.min(8, payload.c.length) + index] || 0),
+      low: Number(payload.l?.[payload.c.length - Math.min(8, payload.c.length) + index] || 0),
+      close: Number(close || 0),
+      volume: Number(payload.v?.[payload.c.length - Math.min(8, payload.c.length) + index] || 0),
+      timestamp: Number(payload.t?.[payload.c.length - Math.min(8, payload.c.length) + index] || 0),
     }));
   } catch (error) {
-    console.warn("TELAJ candle lookup failed.", error);
+    console.warn("TELAJ candle lookup via Finnhub failed.", error);
     return [];
   }
 }
 
 async function fetchHeadlines(asset) {
-  if (!MASSIVE_API_KEY || asset.category === "currency") {
+  if (asset.category === "currency") {
     return [];
   }
+
+  if (MASSIVE_API_KEY) {
+    try {
+      const payload = await fetchMassiveJson(`/v2/reference/news?ticker=${encodeURIComponent(asset.symbol)}&limit=3&order=desc&sort=published_utc`);
+      const headlines = (payload?.results || [])
+        .map((item) => item?.title)
+        .filter(Boolean)
+        .slice(0, 3);
+      if (headlines.length) {
+        return headlines;
+      }
+    } catch (error) {
+      console.warn("TELAJ asset-check news lookup via Massive failed.", error);
+    }
+  }
+
+  if (!FINNHUB_API_KEY) {
+    return [];
+  }
+
   try {
-    const payload = await fetchMassiveJson(`/v2/reference/news?ticker=${encodeURIComponent(asset.symbol)}&limit=3&order=desc&sort=published_utc`);
-    return (payload?.results || [])
-      .map((item) => item?.title)
+    const toDate = new Date().toISOString().slice(0, 10);
+    const fromDate = new Date(Date.now() - 1000 * 60 * 60 * 24 * 10).toISOString().slice(0, 10);
+    const payload = await fetchFinnhubJson(
+      `/company-news?symbol=${encodeURIComponent(getFinnhubSymbol(asset))}&from=${fromDate}&to=${toDate}`
+    );
+    return (Array.isArray(payload) ? payload : [])
+      .map((item) => item?.headline)
       .filter(Boolean)
       .slice(0, 3);
   } catch (error) {
-    console.warn("TELAJ asset-check news lookup failed.", error);
+    console.warn("TELAJ asset-check news lookup via Finnhub failed.", error);
     return [];
   }
 }

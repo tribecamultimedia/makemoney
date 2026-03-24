@@ -1,5 +1,7 @@
 const MASSIVE_API_BASE = process.env.MASSIVE_API_BASE || "https://api.massive.com";
 const MASSIVE_API_KEY = process.env.MASSIVE_API_KEY || process.env.POLYGON_API_KEY || process.env.POLYGON_API_TOKEN;
+const FINNHUB_API_BASE = "https://finnhub.io/api/v1";
+const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY || "";
 
 const REGIME_BASKETS = {
   US: ["SPY", "QQQ", "GLD", "SGOV"],
@@ -19,16 +21,54 @@ async function fetchMassiveJson(path) {
   return response.json();
 }
 
+async function fetchFinnhubJson(path) {
+  if (!FINNHUB_API_KEY) {
+    return null;
+  }
+  const separator = path.includes("?") ? "&" : "?";
+  const response = await fetch(`${FINNHUB_API_BASE}${path}${separator}token=${encodeURIComponent(FINNHUB_API_KEY)}`);
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`Finnhub request failed: ${response.status} ${message}`);
+  }
+  return response.json();
+}
+
 async function fetchTickerFeatures(symbol) {
-  const payload = await fetchMassiveJson(
-    `/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/1/day/${new Date(Date.now() - 1000 * 60 * 60 * 24 * 45).toISOString().slice(0, 10)}/${new Date().toISOString().slice(0, 10)}?adjusted=true&sort=asc&limit=40`
-  );
-  const bars = (payload?.results || []).map((bar) => ({
-    close: Number(bar.c || 0),
-    open: Number(bar.o || 0),
-    high: Number(bar.h || 0),
-    low: Number(bar.l || 0),
-  }));
+  const fromDate = new Date(Date.now() - 1000 * 60 * 60 * 24 * 45);
+  const toDate = new Date();
+  let bars = [];
+
+  if (MASSIVE_API_KEY) {
+    try {
+      const payload = await fetchMassiveJson(
+        `/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/1/day/${fromDate.toISOString().slice(0, 10)}/${toDate.toISOString().slice(0, 10)}?adjusted=true&sort=asc&limit=40`
+      );
+      bars = (payload?.results || []).map((bar) => ({
+        close: Number(bar.c || 0),
+        open: Number(bar.o || 0),
+        high: Number(bar.h || 0),
+        low: Number(bar.l || 0),
+      }));
+    } catch (error) {
+      bars = [];
+    }
+  }
+
+  if (!bars.length && FINNHUB_API_KEY) {
+    const payload = await fetchFinnhubJson(
+      `/stock/candle?symbol=${encodeURIComponent(symbol)}&resolution=D&from=${Math.floor(fromDate.getTime() / 1000)}&to=${Math.floor(toDate.getTime() / 1000)}`
+    );
+    if (payload?.s === "ok" && Array.isArray(payload?.c)) {
+      bars = payload.c.map((close, index) => ({
+        close: Number(close || 0),
+        open: Number(payload.o?.[index] || 0),
+        high: Number(payload.h?.[index] || 0),
+        low: Number(payload.l?.[index] || 0),
+      }));
+    }
+  }
+
   const closes = bars.map((bar) => bar.close).filter((value) => value > 0);
   if (closes.length < 5) {
     return { symbol, momentum20: 0, winRate: 0.5, volatility: 0, aboveTrend: false };
@@ -96,7 +136,7 @@ module.exports = async function handler(req, res) {
   }
 
   const region = req.query?.region === "EU" ? "EU" : "US";
-  if (!MASSIVE_API_KEY) {
+  if (!MASSIVE_API_KEY && !FINNHUB_API_KEY) {
     res.status(200).json({
       marketRegime: {
         live: false,

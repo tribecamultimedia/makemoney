@@ -1,5 +1,7 @@
 const MASSIVE_API_BASE = process.env.MASSIVE_API_BASE || "https://api.massive.com";
 const MASSIVE_API_KEY = process.env.MASSIVE_API_KEY || process.env.POLYGON_API_KEY || process.env.POLYGON_API_TOKEN;
+const FINNHUB_API_BASE = "https://finnhub.io/api/v1";
+const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY || "";
 
 const {
   getConfigError,
@@ -22,21 +24,69 @@ async function fetchMassiveJson(path) {
   return response.json();
 }
 
-async function fetchCurrentPrice(symbol) {
-  if (!MASSIVE_API_KEY) {
+async function fetchFinnhubJson(path) {
+  if (!FINNHUB_API_KEY) {
     return null;
   }
-  if (String(symbol).startsWith("C:")) {
-    const snapshot = await fetchMassiveJson(`/v2/snapshot/locale/global/markets/forex/tickers/${encodeURIComponent(symbol)}`);
-    const ticker = snapshot?.ticker;
-    const day = ticker?.day || {};
-    const lastQuote = ticker?.lastQuote || {};
-    return Number(day.close ?? lastQuote.ask ?? lastQuote.bid ?? 0) || null;
+  const separator = path.includes("?") ? "&" : "?";
+  const response = await fetch(`${FINNHUB_API_BASE}${path}${separator}token=${encodeURIComponent(FINNHUB_API_KEY)}`);
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`Finnhub request failed: ${response.status} ${message}`);
   }
-  const snapshot = await fetchMassiveJson(`/v2/snapshot/locale/us/markets/stocks/tickers/${encodeURIComponent(symbol)}`);
-  const ticker = snapshot?.ticker || {};
-  const day = ticker?.day || {};
-  return Number(day.close || day.lastTrade?.p || 0) || null;
+  return response.json();
+}
+
+function getFinnhubSymbol(symbol) {
+  const normalized = String(symbol || "");
+  if (normalized.startsWith("C:") && normalized.length >= 8) {
+    const raw = normalized.replace(/^C:/, "");
+    return `OANDA:${raw.slice(0, 3)}_${raw.slice(3)}`;
+  }
+  return normalized.replace(/^C:/, "");
+}
+
+async function fetchCurrentPrice(symbol) {
+  let lastError = null;
+
+  if (MASSIVE_API_KEY) {
+    try {
+      if (String(symbol).startsWith("C:")) {
+        const snapshot = await fetchMassiveJson(`/v2/snapshot/locale/global/markets/forex/tickers/${encodeURIComponent(symbol)}`);
+        const ticker = snapshot?.ticker;
+        const day = ticker?.day || {};
+        const lastQuote = ticker?.lastQuote || {};
+        const price = Number(day.close ?? lastQuote.ask ?? lastQuote.bid ?? 0) || null;
+        if (price) {
+          return price;
+        }
+      } else {
+        const snapshot = await fetchMassiveJson(`/v2/snapshot/locale/us/markets/stocks/tickers/${encodeURIComponent(symbol)}`);
+        const ticker = snapshot?.ticker || {};
+        const day = ticker?.day || {};
+        const price = Number(day.close || day.lastTrade?.p || 0) || null;
+        if (price) {
+          return price;
+        }
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (FINNHUB_API_KEY) {
+    try {
+      const payload = await fetchFinnhubJson(`/quote?symbol=${encodeURIComponent(getFinnhubSymbol(symbol))}`);
+      return Number(payload?.c || 0) || null;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+  return null;
 }
 
 function buildTrackView(track, currentPrice) {

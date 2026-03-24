@@ -1,10 +1,18 @@
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY =
   process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_PUBLIC_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 function getConfigError() {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     return "SUPABASE_URL and SUPABASE_ANON_KEY (or SUPABASE_ANON_PUBLIC_KEY) are required.";
+  }
+  return "";
+}
+
+function getServiceRoleConfigError() {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    return "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.";
   }
   return "";
 }
@@ -61,6 +69,37 @@ async function requestSupabase(path, { method = "GET", accessToken, body, prefer
   return response.json();
 }
 
+async function requestSupabaseAdmin(path, { method = "GET", body, prefer } = {}) {
+  const headers = {
+    apikey: SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+  };
+
+  if (body) {
+    headers["Content-Type"] = "application/json";
+  }
+  if (prefer) {
+    headers.Prefer = prefer;
+  }
+
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`Supabase admin request failed: ${response.status} ${message}`);
+  }
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  return response.json();
+}
+
 async function getFinancialPositionRecord(accessToken, userId) {
   const rows = await requestSupabase(`financial_positions?select=*&user_id=eq.${userId}&limit=1`, {
     accessToken,
@@ -106,9 +145,11 @@ async function insertRecommendationHistory(accessToken, payload) {
 
 module.exports = {
   getConfigError,
+  getServiceRoleConfigError,
   getBearerToken,
   getSupabaseUser,
   requestSupabase,
+  requestSupabaseAdmin,
   getFinancialPositionRecord,
   getLatestSignalAction,
   getSignalActionForDecision,

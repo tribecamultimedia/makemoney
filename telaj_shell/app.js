@@ -29,6 +29,7 @@ const defaultState = {
     biggestIssue: null,
     todayMove: null,
     actionPlan: null,
+    performanceSummary: null,
   },
   sound: {
     enabled: false,
@@ -775,6 +776,7 @@ const BIGGEST_ISSUE_ENDPOINT = "/api/biggest-issue";
 const TODAY_MOVE_ENDPOINT = "/api/today-move";
 const ACTION_PLAN_ENDPOINT = "/api/action-plan";
 const SIGNAL_ACTION_ENDPOINT = "/api/signal-action";
+const PERFORMANCE_SUMMARY_ENDPOINT = "/api/performance-summary";
 const MARKET_FOCUS_TO_REGION = {
   US: "US",
   EU: "EU",
@@ -1225,6 +1227,7 @@ async function loadHomeDecisionState() {
       biggestIssue: null,
       todayMove: null,
       actionPlan: null,
+      performanceSummary: null,
     };
     return false;
   }
@@ -1233,11 +1236,12 @@ async function loadHomeDecisionState() {
   state.homeApi.error = "";
 
   try {
-    const [whereIStand, biggestIssue, todayMove, actionPlan] = await Promise.all([
+    const [whereIStand, biggestIssue, todayMove, actionPlan, performanceSummary] = await Promise.all([
       fetchAuthedJson(WHERE_I_STAND_ENDPOINT),
       fetchAuthedJson(BIGGEST_ISSUE_ENDPOINT),
       fetchAuthedJson(TODAY_MOVE_ENDPOINT),
       fetchAuthedJson(ACTION_PLAN_ENDPOINT),
+      fetchAuthedJson(PERFORMANCE_SUMMARY_ENDPOINT),
     ]);
 
     state.homeApi = {
@@ -1248,6 +1252,7 @@ async function loadHomeDecisionState() {
       biggestIssue,
       todayMove,
       actionPlan,
+      performanceSummary,
     };
     return true;
   } catch (error) {
@@ -4041,6 +4046,7 @@ function renderAllocationView() {
 function renderSignalsView() {
   const intel = state.investmentIntel;
   const marketState = intel.marketState;
+  const performanceSummary = state.homeApi.performanceSummary?.performanceSummary || null;
   document.getElementById("signal-stats").innerHTML = `
     <div class="eyebrow">Market state</div>
     <h3>${intel.portfolioAction.title}</h3>
@@ -4089,12 +4095,28 @@ function renderSignalsView() {
     </ul>
     <div class="section-spacer"></div>
     <div class="eyebrow">Outcome summary</div>
-    <div class="stats-grid">
-      <div class="stat-box"><div class="stat-label">YTD vs benchmark</div><div class="stat-value accent-text">${state.stats.ytd}</div><div class="list-note">Benchmark ${state.stats.benchmark}</div></div>
-      <div class="stat-box"><div class="stat-label">Signals taken</div><div class="stat-value">${state.stats.signalsTaken}</div></div>
-      <div class="stat-box"><div class="stat-label">Win rate</div><div class="stat-value">${state.stats.winRate}</div></div>
-      <div class="stat-box"><div class="stat-label">Drawdowns avoided</div><div class="stat-value">4</div></div>
-    </div>
+    ${
+      performanceSummary?.hasLiveData
+        ? `
+          <div class="panel-copy">${performanceSummary.summary}</div>
+          <div class="stats-grid">
+            ${performanceSummary.metrics
+              .map(
+                (item) => `
+                  <div class="stat-box">
+                    <div class="stat-label">${item.label}</div>
+                    <div class="stat-value accent-text">${item.value}</div>
+                    <div class="list-note">${item.note}</div>
+                  </div>
+                `
+              )
+              .join("")}
+          </div>
+        `
+        : `
+          <div class="panel-copy">TELAJ does not have enough live execution history yet to show trusted performance numbers here. Static placeholders have been removed.</div>
+        `
+    }
   `;
 }
 

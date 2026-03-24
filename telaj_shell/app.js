@@ -3053,6 +3053,104 @@ function summarizeAssetLedger(items) {
   );
 }
 
+function classifyAssetLedgerItem(item) {
+  const category = String(item?.category || "other").toLowerCase();
+  const value = Number(item?.estimatedValue || 0);
+  const debt = Number(item?.debt || 0);
+  const monthlyCost = Number(item?.monthlyCost || 0);
+  const monthlyIncome = Number(item?.monthlyIncome || 0);
+  const monthlyNet = monthlyIncome - monthlyCost;
+  const leverageRatio = value > 0 ? debt / value : debt > 0 ? 1 : 0;
+
+  if (category === "liability") {
+    return {
+      key: "liability",
+      label: "Liability drag",
+      summary: "This item is behaving like a direct obligation, not a productive asset.",
+      detail:
+        monthlyCost > 0 || debt > 0
+          ? `It is costing about ${formatEuro(monthlyCost)} a month and carries ${formatEuro(debt)} of debt.`
+          : "It does not create income and should be watched as a drag on flexibility.",
+    };
+  }
+
+  if (["car", "aircraft", "boat"].includes(category)) {
+    if (monthlyIncome > monthlyCost && monthlyIncome > 0) {
+      return {
+        key: "productive",
+        label: "Productive asset",
+        summary: "This item is at least covering its carrying cost right now.",
+        detail: `It is net positive by about ${formatEuro(monthlyNet)} per month.`,
+      };
+    }
+    return {
+      key: "liability",
+      label: "Liability drag",
+      summary: "TELAJ sees this as a lifestyle or operating item with ongoing cost.",
+      detail:
+        monthlyCost > 0
+          ? `It is draining about ${formatEuro(Math.max(monthlyCost - monthlyIncome, 0))} per month after any income.`
+          : "It does not appear to produce income right now.",
+    };
+  }
+
+  if (category === "property") {
+    if (monthlyNet > 0 && leverageRatio <= 0.75) {
+      return {
+        key: "productive",
+        label: "Productive asset",
+        summary: "This property is currently adding cash flow to the system.",
+        detail: `It is net positive by about ${formatEuro(monthlyNet)} per month.`,
+      };
+    }
+    if (monthlyIncome <= 0 && monthlyCost > 0) {
+      return {
+        key: "liability",
+        label: "Liability drag",
+        summary: "This property is carrying cost without producing income.",
+        detail: `It is draining about ${formatEuro(monthlyCost)} per month before major repairs or taxes.`,
+      };
+    }
+    return {
+      key: "neutral",
+      label: "Neutral holding",
+      summary: "This property is not clearly helping or hurting cash flow yet.",
+      detail:
+        leverageRatio > 0.75
+          ? "Debt is still heavy relative to value, so TELAJ would monitor it closely."
+          : "The item may still be strategically valuable, but the cash outcome is mixed.",
+    };
+  }
+
+  if (monthlyNet > 0) {
+    return {
+      key: "productive",
+      label: "Productive asset",
+      summary: "This item is contributing more cash than it consumes.",
+      detail: `It is net positive by about ${formatEuro(monthlyNet)} per month.`,
+    };
+  }
+
+  if (monthlyCost > monthlyIncome || debt > 0) {
+    return {
+      key: "liability",
+      label: "Liability drag",
+      summary: "This item is consuming flexibility faster than it is producing value.",
+      detail:
+        monthlyCost > 0
+          ? `It is draining about ${formatEuro(Math.max(monthlyCost - monthlyIncome, 0))} per month.`
+          : `It carries ${formatEuro(debt)} of debt without visible income support.`,
+    };
+  }
+
+  return {
+    key: "neutral",
+    label: "Neutral holding",
+    summary: "This item looks mostly stable, but its role is not clearly productive yet.",
+    detail: "TELAJ would keep it on the sheet, but not count on it for cash flow.",
+  };
+}
+
 function createRecurringExpenseItem(kind = "household") {
   return {
     id: `expense-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -4217,11 +4315,24 @@ function renderAssetsArea() {
   const reserveMonths = calculateLiquidityMonths();
   const ledgerItems = state.assetLedger.items || [];
   const ledgerSummary = summarizeAssetLedger(ledgerItems);
+  const ledgerVerdicts = ledgerItems.map((item) => classifyAssetLedgerItem(item));
+  const productiveCount = ledgerVerdicts.filter((item) => item.key === "productive").length;
+  const liabilityCount = ledgerVerdicts.filter((item) => item.key === "liability").length;
 
   ledgerPanel.innerHTML = `
     <div class="eyebrow">Asset inputs</div>
     <h3>Tell TELAJ what you actually own and owe</h3>
     <div class="panel-copy">This is the source layer for TELAJ's decisions. Update assets, liabilities, and carrying costs here, then let the engine recalculate.</div>
+    <div class="asset-save-bar">
+      <div>
+        <div class="micro-label">Save and recalculate</div>
+        <div class="panel-copy">Save this asset record after changes so TELAJ can use the latest numbers.</div>
+      </div>
+      <div class="asset-save-actions">
+        <button class="action-button primary" id="assets-save">Save to TELAJ</button>
+        <button class="action-button" id="assets-refresh-decision">Refresh TELAJ decision</button>
+      </div>
+    </div>
     <div class="input-stack financial-input-stack">
       <label class="input-field">
         <span class="micro-label">Liquid cash</span>
@@ -4263,10 +4374,6 @@ function renderAssetsArea() {
         <div class="micro-label">Monthly carrying cost</div>
         <div class="panel-copy">${formatEuro(ledgerSummary.monthlyCarryingCost)} / mo</div>
       </div>
-      <div class="property-action-row input-span-2">
-        <button class="action-button primary" id="assets-save">Save assets</button>
-        <button class="action-button" id="assets-refresh-decision">Refresh TELAJ decision</button>
-      </div>
     </div>
     <div class="section-spacer"></div>
     <div class="eyebrow">Itemized assets and liabilities</div>
@@ -4282,7 +4389,9 @@ function renderAssetsArea() {
         ledgerItems.length
           ? ledgerItems
               .map(
-                (item, index) => `
+                (item, index) => {
+                  const verdict = classifyAssetLedgerItem(item);
+                  return `
                   <div class="asset-ledger-item" data-asset-index="${index}" data-asset-id="${item.id || ""}">
                     <div class="asset-ledger-head">
                       <div>
@@ -4332,12 +4441,25 @@ function renderAssetsArea() {
                         <input class="asset-item-note" type="text" value="${item.note || ""}" placeholder="Property taxes, maintenance, hangar, insurance, HOA, no rental income" />
                       </label>
                     </div>
+                    <div class="asset-verdict asset-verdict-${verdict.key}">
+                      <div class="asset-verdict-head">
+                        <span class="micro-label">TELAJ verdict</span>
+                        <span class="asset-verdict-pill">${verdict.label}</span>
+                      </div>
+                      <div class="panel-copy">${verdict.summary}</div>
+                      <div class="history-meta">${verdict.detail}</div>
+                    </div>
                   </div>
                 `
+                }
               )
               .join("")
           : `<div class="subpanel"><div class="panel-copy">No itemized holdings yet. Add a property, car, aircraft or vessel, or liability so TELAJ can track its value and carrying cost.</div></div>`
       }
+    </div>
+    <div class="property-action-row asset-save-footer">
+      <button class="action-button primary" id="assets-save-bottom">Save to TELAJ</button>
+      <button class="ghost-button" id="assets-refresh-decision-bottom">Refresh TELAJ decision</button>
     </div>
   `;
 
@@ -4394,10 +4516,12 @@ function renderAssetsArea() {
       <div class="legend-item"><span>Property debt</span><span class="legend-value">${formatEuro(ledgerSummary.propertyDebt)}</span></div>
       <div class="legend-item"><span>Cars / aircraft / vessels / costly items</span><span class="legend-value">${formatEuro(ledgerSummary.vehicleAndLuxuryValue)}</span></div>
       <div class="legend-item"><span>Net monthly drag</span><span class="legend-value">${formatEuro(ledgerSummary.netItemCashDrag)} / mo</span></div>
+      <div class="legend-item"><span>Productive items</span><span class="legend-value">${productiveCount}</span></div>
+      <div class="legend-item"><span>Liability drags</span><span class="legend-value">${liabilityCount}</span></div>
     </div>
   `;
 
-  document.getElementById("assets-save")?.addEventListener("click", async () => {
+  const handleAssetsSave = async () => {
     state.assetLedger.items = Array.from(ledgerPanel.querySelectorAll(".asset-ledger-item")).map((row) => ({
       id: row.dataset.assetId || createAssetLedgerItem().id,
       category: row.querySelector(".asset-item-category")?.value || "property",
@@ -4423,7 +4547,10 @@ function renderAssetsArea() {
     await saveFinancialPositionToApi();
     await loadHomeDecisionState();
     renderAll();
-  });
+  };
+
+  document.getElementById("assets-save")?.addEventListener("click", handleAssetsSave);
+  document.getElementById("assets-save-bottom")?.addEventListener("click", handleAssetsSave);
 
   document.getElementById("asset-add-property")?.addEventListener("click", () => {
     state.assetLedger.items.push(createAssetLedgerItem("property"));
@@ -4454,12 +4581,15 @@ function renderAssetsArea() {
     });
   });
 
-  document.getElementById("assets-refresh-decision")?.addEventListener("click", async () => {
+  const handleAssetsRefresh = async () => {
     await loadHomeDecisionState();
     renderAll();
     setView("home");
     document.getElementById("morning-hero")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
+  };
+
+  document.getElementById("assets-refresh-decision")?.addEventListener("click", handleAssetsRefresh);
+  document.getElementById("assets-refresh-decision-bottom")?.addEventListener("click", handleAssetsRefresh);
 }
 
 function renderExpensesArea() {

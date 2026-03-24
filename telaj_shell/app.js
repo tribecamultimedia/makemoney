@@ -4134,6 +4134,11 @@ function renderWatchlist() {
                 <div class="telaj-asset-price">${formatAssetCheckPrice(assetResult.currentPrice, assetResult.ticker)}</div>
                 <div class="history-meta">${assetResult.priceLine || "Live price unavailable right now."}</div>
                 ${
+                  assetResult.liveError
+                    ? `<div class="history-meta">Live data error: ${assetResult.liveError}</div>`
+                    : ""
+                }
+                ${
                   assetResult.source
                     ? `<div class="history-meta">Source ${assetResult.source}</div>`
                     : ""

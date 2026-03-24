@@ -315,6 +315,9 @@ const defaultState = {
     loans: 0,
     mortgageDebt: 0,
   },
+  assetLedger: {
+    items: [],
+  },
   propertyAppraisal: {
     address: "",
     size: 90,
@@ -1212,6 +1215,12 @@ function loadWealthInputs() {
     if (parsed.financialPosition) {
       state.financialPosition = { ...state.financialPosition, ...parsed.financialPosition };
     }
+    if (parsed.assetLedger?.items) {
+      state.assetLedger = {
+        ...state.assetLedger,
+        items: Array.isArray(parsed.assetLedger.items) ? parsed.assetLedger.items : [],
+      };
+    }
     if (parsed.propertyAppraisal) {
       state.propertyAppraisal = { ...state.propertyAppraisal, ...parsed.propertyAppraisal };
     }
@@ -1229,6 +1238,7 @@ function persistWealthInputs() {
     JSON.stringify({
       liquidityDetails: state.liquidityDetails,
       financialPosition: state.financialPosition,
+      assetLedger: state.assetLedger,
       propertyAppraisal: state.propertyAppraisal,
     })
   );
@@ -2934,6 +2944,90 @@ function formatEuro(value) {
   return `€${Math.round(Number(value) || 0).toLocaleString()}`;
 }
 
+function createAssetLedgerItem(kind = "property") {
+  const id = `asset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const defaults = {
+    property: {
+      category: "property",
+      label: "Property",
+      status: "not-rented",
+      estimatedValue: 0,
+      debt: 0,
+      monthlyCost: 0,
+      monthlyIncome: 0,
+      note: "",
+    },
+    car: {
+      category: "car",
+      label: "Car",
+      status: "owned",
+      estimatedValue: 0,
+      debt: 0,
+      monthlyCost: 0,
+      monthlyIncome: 0,
+      note: "",
+    },
+    aircraft: {
+      category: "aircraft",
+      label: "Aircraft",
+      status: "owned",
+      estimatedValue: 0,
+      debt: 0,
+      monthlyCost: 0,
+      monthlyIncome: 0,
+      note: "",
+    },
+    liability: {
+      category: "liability",
+      label: "Liability",
+      status: "active",
+      estimatedValue: 0,
+      debt: 0,
+      monthlyCost: 0,
+      monthlyIncome: 0,
+      note: "",
+    },
+  };
+  return {
+    id,
+    ...(defaults[kind] || defaults.property),
+  };
+}
+
+function summarizeAssetLedger(items) {
+  const safeItems = Array.isArray(items) ? items : [];
+  return safeItems.reduce(
+    (summary, item) => {
+      const value = Number(item.estimatedValue || 0);
+      const debt = Number(item.debt || 0);
+      const monthlyCost = Number(item.monthlyCost || 0);
+      const monthlyIncome = Number(item.monthlyIncome || 0);
+      summary.monthlyCarryingCost += monthlyCost;
+      summary.monthlyAssetIncome += monthlyIncome;
+      summary.netItemCashDrag += monthlyCost - monthlyIncome;
+      if (item.category === "property") {
+        summary.propertyValue += value;
+        summary.propertyDebt += debt;
+      } else if (["car", "aircraft", "boat", "liability"].includes(item.category)) {
+        summary.otherDebt += debt;
+        summary.vehicleAndLuxuryValue += value;
+      } else {
+        summary.otherDebt += debt;
+      }
+      return summary;
+    },
+    {
+      propertyValue: 0,
+      propertyDebt: 0,
+      otherDebt: 0,
+      vehicleAndLuxuryValue: 0,
+      monthlyCarryingCost: 0,
+      monthlyAssetIncome: 0,
+      netItemCashDrag: 0,
+    }
+  );
+}
+
 function getFinancialPosition() {
   const assets = [
     { key: "liquid", label: "Cash", value: Number(state.liquidityDetails.liquidAssets || 0), color: "#1f6bff" },
@@ -4022,11 +4116,13 @@ function renderAssetsArea() {
 
   const position = getFinancialPosition();
   const reserveMonths = calculateLiquidityMonths();
+  const ledgerItems = state.assetLedger.items || [];
+  const ledgerSummary = summarizeAssetLedger(ledgerItems);
 
   ledgerPanel.innerHTML = `
     <div class="eyebrow">Asset inputs</div>
     <h3>Tell TELAJ what you actually own and owe</h3>
-    <div class="panel-copy">This is the source layer for TELAJ's decisions. Update assets and liabilities here, then let the engine recalculate.</div>
+    <div class="panel-copy">This is the source layer for TELAJ's decisions. Update assets, liabilities, and carrying costs here, then let the engine recalculate.</div>
     <div class="input-stack financial-input-stack">
       <label class="input-field">
         <span class="micro-label">Liquid cash</span>
@@ -4045,10 +4141,6 @@ function renderAssetsArea() {
         <input id="asset-retirement" type="number" min="0" step="1000" value="${state.financialPosition.retirement}" />
       </label>
       <label class="input-field">
-        <span class="micro-label">Real estate</span>
-        <input id="asset-real-estate" type="number" min="0" step="1000" value="${state.financialPosition.realEstate}" />
-      </label>
-      <label class="input-field">
         <span class="micro-label">Business assets</span>
         <input id="asset-business" type="number" min="0" step="1000" value="${state.financialPosition.business}" />
       </label>
@@ -4056,18 +4148,97 @@ function renderAssetsArea() {
         <span class="micro-label">Credit card debt</span>
         <input id="asset-credit-card" type="number" min="0" step="100" value="${state.financialPosition.creditCardDebt}" />
       </label>
-      <label class="input-field">
-        <span class="micro-label">Loans</span>
-        <input id="asset-loans" type="number" min="0" step="100" value="${state.financialPosition.loans}" />
-      </label>
-      <label class="input-field input-span-2">
-        <span class="micro-label">Mortgage debt</span>
-        <input id="asset-mortgage" type="number" min="0" step="1000" value="${state.financialPosition.mortgageDebt}" />
-      </label>
+      <div class="insight-card">
+        <div class="micro-label">Real estate from itemized ledger</div>
+        <div class="panel-copy">${formatEuro(ledgerSummary.propertyValue)}</div>
+      </div>
+      <div class="insight-card">
+        <div class="micro-label">Mortgage debt from itemized ledger</div>
+        <div class="panel-copy">${formatEuro(ledgerSummary.propertyDebt)}</div>
+      </div>
+      <div class="insight-card">
+        <div class="micro-label">Other debt from itemized ledger</div>
+        <div class="panel-copy">${formatEuro(ledgerSummary.otherDebt)}</div>
+      </div>
+      <div class="insight-card">
+        <div class="micro-label">Monthly carrying cost</div>
+        <div class="panel-copy">${formatEuro(ledgerSummary.monthlyCarryingCost)} / mo</div>
+      </div>
       <div class="property-action-row input-span-2">
         <button class="action-button primary" id="assets-save">Save assets</button>
         <button class="action-button" id="assets-refresh-decision">Refresh TELAJ decision</button>
       </div>
+    </div>
+    <div class="section-spacer"></div>
+    <div class="eyebrow">Itemized assets and liabilities</div>
+    <div class="panel-copy">Record each property, car, aircraft, or costly liability with value, debt, and monthly cost so TELAJ understands what each item really carries.</div>
+    <div class="property-action-row ledger-add-row">
+      <button class="action-button" id="asset-add-property">Add property</button>
+      <button class="action-button" id="asset-add-car">Add car</button>
+      <button class="action-button" id="asset-add-aircraft">Add aircraft</button>
+      <button class="ghost-button" id="asset-add-liability">Add liability</button>
+    </div>
+    <div class="asset-ledger-list">
+      ${
+        ledgerItems.length
+          ? ledgerItems
+              .map(
+                (item, index) => `
+                  <div class="asset-ledger-item" data-asset-index="${index}" data-asset-id="${item.id || ""}">
+                    <div class="asset-ledger-head">
+                      <div>
+                        <div class="row-label">${item.label || "Unnamed item"}</div>
+                        <div class="history-meta">${capitalizeWords(item.category)} · ${item.status || "active"}</div>
+                      </div>
+                      <button class="ghost-button asset-remove-button" data-remove-asset="${index}">Remove</button>
+                    </div>
+                    <div class="input-stack financial-input-stack">
+                      <label class="input-field">
+                        <span class="micro-label">Type</span>
+                        <select class="asset-item-category">
+                          <option value="property" ${item.category === "property" ? "selected" : ""}>Property</option>
+                          <option value="car" ${item.category === "car" ? "selected" : ""}>Car</option>
+                          <option value="aircraft" ${item.category === "aircraft" ? "selected" : ""}>Aircraft</option>
+                          <option value="boat" ${item.category === "boat" ? "selected" : ""}>Boat</option>
+                          <option value="liability" ${item.category === "liability" ? "selected" : ""}>Liability</option>
+                          <option value="other" ${item.category === "other" ? "selected" : ""}>Other</option>
+                        </select>
+                      </label>
+                      <label class="input-field">
+                        <span class="micro-label">Name</span>
+                        <input class="asset-item-label" type="text" value="${item.label || ""}" placeholder="Lake house, Porsche, Cessna, tax debt" />
+                      </label>
+                      <label class="input-field">
+                        <span class="micro-label">Status</span>
+                        <input class="asset-item-status" type="text" value="${item.status || ""}" placeholder="not-rented, primary-home, financed, active" />
+                      </label>
+                      <label class="input-field">
+                        <span class="micro-label">Estimated value</span>
+                        <input class="asset-item-value" type="number" min="0" step="1000" value="${Number(item.estimatedValue || 0)}" />
+                      </label>
+                      <label class="input-field">
+                        <span class="micro-label">Debt on this item</span>
+                        <input class="asset-item-debt" type="number" min="0" step="1000" value="${Number(item.debt || 0)}" />
+                      </label>
+                      <label class="input-field">
+                        <span class="micro-label">Monthly cost</span>
+                        <input class="asset-item-monthly-cost" type="number" min="0" step="50" value="${Number(item.monthlyCost || 0)}" />
+                      </label>
+                      <label class="input-field">
+                        <span class="micro-label">Monthly income</span>
+                        <input class="asset-item-monthly-income" type="number" min="0" step="50" value="${Number(item.monthlyIncome || 0)}" />
+                      </label>
+                      <label class="input-field input-span-2">
+                        <span class="micro-label">Notes</span>
+                        <input class="asset-item-note" type="text" value="${item.note || ""}" placeholder="Property taxes, maintenance, hangar, insurance, HOA, no rental income" />
+                      </label>
+                    </div>
+                  </div>
+                `
+              )
+              .join("")
+          : `<div class="subpanel"><div class="panel-copy">No itemized holdings yet. Add a property, car, aircraft, or liability so TELAJ can track its value and carrying cost.</div></div>`
+      }
     </div>
   `;
 
@@ -4091,6 +4262,14 @@ function renderAssetsArea() {
         <div class="stat-label">Reserve</div>
         <div class="stat-value">${reserveMonths > 0 ? `${reserveMonths.toFixed(1)} months` : "Map expenses"}</div>
       </div>
+      <div class="stat-box">
+        <div class="stat-label">Itemized cost</div>
+        <div class="stat-value">${formatEuro(ledgerSummary.monthlyCarryingCost)} / mo</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Itemized income</div>
+        <div class="stat-value">${formatEuro(ledgerSummary.monthlyAssetIncome)} / mo</div>
+      </div>
     </div>
     <div class="section-spacer"></div>
     <div class="micro-label">Asset mix</div>
@@ -4110,24 +4289,70 @@ function renderAssetsArea() {
         : `<div class="panel-copy">No assets mapped yet. Start with liquid cash and investments.</div>`}
     </div>
     <div class="section-spacer"></div>
-    <div class="micro-label">Future document intelligence</div>
-    <div class="panel-copy">This is where TELAJ can later attach deeds, liens, contracts, visure catastali, and other property documents to the right asset record.</div>
+    <div class="micro-label">Itemized ledger view</div>
+    <div class="financial-legend">
+      <div class="legend-item"><span>Property value</span><span class="legend-value">${formatEuro(ledgerSummary.propertyValue)}</span></div>
+      <div class="legend-item"><span>Property debt</span><span class="legend-value">${formatEuro(ledgerSummary.propertyDebt)}</span></div>
+      <div class="legend-item"><span>Cars / aircraft / costly items</span><span class="legend-value">${formatEuro(ledgerSummary.vehicleAndLuxuryValue)}</span></div>
+      <div class="legend-item"><span>Net monthly drag</span><span class="legend-value">${formatEuro(ledgerSummary.netItemCashDrag)} / mo</span></div>
+    </div>
   `;
 
   document.getElementById("assets-save")?.addEventListener("click", async () => {
+    state.assetLedger.items = Array.from(ledgerPanel.querySelectorAll(".asset-ledger-item")).map((row) => ({
+      id: row.dataset.assetId || createAssetLedgerItem().id,
+      category: row.querySelector(".asset-item-category")?.value || "property",
+      label: row.querySelector(".asset-item-label")?.value.trim() || "Unnamed item",
+      status: row.querySelector(".asset-item-status")?.value.trim() || "active",
+      estimatedValue: Number(row.querySelector(".asset-item-value")?.value || 0),
+      debt: Number(row.querySelector(".asset-item-debt")?.value || 0),
+      monthlyCost: Number(row.querySelector(".asset-item-monthly-cost")?.value || 0),
+      monthlyIncome: Number(row.querySelector(".asset-item-monthly-income")?.value || 0),
+      note: row.querySelector(".asset-item-note")?.value.trim() || "",
+    }));
+    const nextLedgerSummary = summarizeAssetLedger(state.assetLedger.items);
     state.liquidityDetails.liquidAssets = Number(document.getElementById("asset-liquid").value || 0);
     state.liquidityDetails.monthlyNeed = Number(document.getElementById("asset-monthly-need").value || 0);
     state.financialPosition.investments = Number(document.getElementById("asset-investments").value || 0);
     state.financialPosition.retirement = Number(document.getElementById("asset-retirement").value || 0);
-    state.financialPosition.realEstate = Number(document.getElementById("asset-real-estate").value || 0);
+    state.financialPosition.realEstate = nextLedgerSummary.propertyValue;
     state.financialPosition.business = Number(document.getElementById("asset-business").value || 0);
     state.financialPosition.creditCardDebt = Number(document.getElementById("asset-credit-card").value || 0);
-    state.financialPosition.loans = Number(document.getElementById("asset-loans").value || 0);
-    state.financialPosition.mortgageDebt = Number(document.getElementById("asset-mortgage").value || 0);
+    state.financialPosition.loans = nextLedgerSummary.otherDebt;
+    state.financialPosition.mortgageDebt = nextLedgerSummary.propertyDebt;
     persistWealthInputs();
     await saveFinancialPositionToApi();
     await loadHomeDecisionState();
     renderAll();
+  });
+
+  document.getElementById("asset-add-property")?.addEventListener("click", () => {
+    state.assetLedger.items.push(createAssetLedgerItem("property"));
+    persistWealthInputs();
+    renderAssetsArea();
+  });
+  document.getElementById("asset-add-car")?.addEventListener("click", () => {
+    state.assetLedger.items.push(createAssetLedgerItem("car"));
+    persistWealthInputs();
+    renderAssetsArea();
+  });
+  document.getElementById("asset-add-aircraft")?.addEventListener("click", () => {
+    state.assetLedger.items.push(createAssetLedgerItem("aircraft"));
+    persistWealthInputs();
+    renderAssetsArea();
+  });
+  document.getElementById("asset-add-liability")?.addEventListener("click", () => {
+    state.assetLedger.items.push(createAssetLedgerItem("liability"));
+    persistWealthInputs();
+    renderAssetsArea();
+  });
+  ledgerPanel.querySelectorAll("[data-remove-asset]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = Number(button.dataset.removeAsset);
+      state.assetLedger.items.splice(index, 1);
+      persistWealthInputs();
+      renderAssetsArea();
+    });
   });
 
   document.getElementById("assets-refresh-decision")?.addEventListener("click", async () => {

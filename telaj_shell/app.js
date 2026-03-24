@@ -4431,7 +4431,7 @@ function renderWatchlist() {
                 }
               </div>
               <div class="telaj-asset-candles-block">
-                <div class="micro-label">Mini candles</div>
+                <div class="micro-label">Recent price action</div>
                 ${
                   Array.isArray(assetResult.candles) && assetResult.candles.length
                     ? `
@@ -4445,6 +4445,8 @@ function renderWatchlist() {
                           })
                           .join("")}
                       </div>
+                      <div class="history-meta">Green means the asset finished the day higher. Yellow means it finished lower.</div>
+                      <div class="panel-copy telaj-candle-summary">${describeRecentPriceAction(assetResult.candles)}</div>
                     `
                     : `<div class="history-meta">Recent candle data is not available yet.</div>`
                 }
@@ -4593,6 +4595,24 @@ function formatAssetCheckPrice(value, ticker) {
     minimumFractionDigits: precision,
     maximumFractionDigits: precision,
   });
+}
+
+function describeRecentPriceAction(candles) {
+  if (!Array.isArray(candles) || !candles.length) {
+    return "Recent price action is not available yet.";
+  }
+  const upDays = candles.filter((bar) => Number(bar.close || 0) >= Number(bar.open || 0)).length;
+  const downDays = candles.length - upDays;
+  const firstClose = Number(candles[0]?.close || 0);
+  const lastClose = Number(candles[candles.length - 1]?.close || 0);
+  const movePct = firstClose > 0 ? ((lastClose - firstClose) / firstClose) * 100 : 0;
+  const direction =
+    movePct > 1
+      ? "Price has been trending up overall."
+      : movePct < -1
+        ? "Price has been trending down overall."
+        : "Price has been moving mostly sideways.";
+  return `Last ${candles.length} daily sessions: ${upDays} up, ${downDays} down. ${direction}`;
 }
 
 function renderHistoryPreview() {

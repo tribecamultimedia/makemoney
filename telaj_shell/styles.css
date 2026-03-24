@@ -1170,10 +1170,16 @@ select:focus {
 .telaj-candle-strip {
   min-height: 58px;
   padding-top: 6px;
+  gap: 8px;
 }
 
 .telaj-asset-opinion-block {
   padding-top: 2px;
+}
+
+.telaj-candle-summary {
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .compact-track-row {

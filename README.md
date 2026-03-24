@@ -194,12 +194,14 @@ Current deployment model:
 - Supabase
 - Discord webhook
 - optional X posting
+- optional LinkedIn page posting
 
 Current workflow:
 
 - hourly signal worker
 - every 15 minutes execution worker
 - weekday report worker
+- daily LinkedIn worker
 
 Defined in:
 
@@ -214,6 +216,18 @@ X publishing notes:
   - `X_ACCESS_TOKEN`
   - `X_ACCESS_TOKEN_SECRET`
 - Discord and X can run together, or the worker can publish to X without Discord.
+
+LinkedIn publishing notes:
+
+- The LinkedIn worker posts one TELAJ update per day using the LinkedIn Posts API.
+- Required env vars:
+  - `LINKEDIN_ACCESS_TOKEN`
+  - `LINKEDIN_ORGANIZATION_URN`
+- Optional env vars:
+  - `LINKEDIN_VERSION` default `202601`
+  - `LINKEDIN_POST_TIMEZONE` default `Europe/Rome`
+  - `LINKEDIN_DRY_RUN` set to `true` to validate formatting without publishing
+- The worker keeps a small local `.state` guard so the scheduled job does not publish more than once per local day unless forced manually.
 
 ## Known Constraints
 

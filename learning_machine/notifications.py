@@ -7,6 +7,7 @@ import json
 import secrets
 import time
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import quote
 
 import pandas as pd
@@ -224,6 +225,78 @@ class XNotifier:
             return True
         except requests.RequestException:
             return False
+
+
+@dataclass(slots=True)
+class LinkedInNotifier:
+    access_token: str | None
+    organization_urn: str | None
+    app_url: str = "https://telaj.com"
+    version: str = "202601"
+    endpoint: str = "https://api.linkedin.com/rest/posts"
+    dry_run: bool = False
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.access_token and self.organization_urn)
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.access_token}",
+            "Linkedin-Version": self.version,
+            "X-Restli-Protocol-Version": "2.0.0",
+            "Content-Type": "application/json",
+        }
+
+    def post_organization_update(
+        self,
+        *,
+        commentary: str,
+        article_url: str | None = None,
+        article_title: str | None = None,
+        article_description: str | None = None,
+    ) -> dict[str, Any] | None:
+        if not self.configured:
+            return None
+
+        payload: dict[str, Any] = {
+            "author": self.organization_urn,
+            "commentary": commentary[:3000],
+            "visibility": "PUBLIC",
+            "distribution": {
+                "feedDistribution": "MAIN_FEED",
+                "targetEntities": [],
+                "thirdPartyDistributionChannels": [],
+            },
+            "lifecycleState": "PUBLISHED",
+            "isReshareDisabledByAuthor": False,
+        }
+        if article_url:
+            payload["content"] = {
+                "article": {
+                    "source": article_url,
+                    "title": article_title or "TELAJ",
+                    "description": article_description or "TELAJ daily decision engine update.",
+                }
+            }
+
+        if self.dry_run:
+            return {"ok": True, "dry_run": True, "payload": payload}
+
+        try:
+            response = requests.post(self.endpoint, headers=self._headers(), data=json.dumps(payload), timeout=15)
+            response.raise_for_status()
+            return {
+                "ok": True,
+                "status_code": response.status_code,
+                "post_id": response.headers.get("x-restli-id", ""),
+            }
+        except requests.RequestException as exc:
+            body = ""
+            response = getattr(exc, "response", None)
+            if response is not None:
+                body = response.text[:500]
+            return {"ok": False, "error": str(exc), "body": body}
 
     def send_top_signals(self, *, signals: tuple[dict[str, object], ...], timestamp: pd.Timestamp) -> bool:
         if not self.webhook_url or not signals:

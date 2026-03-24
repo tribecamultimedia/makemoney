@@ -14,6 +14,7 @@ LEDGER_PATH = STATE_DIR / "trade_ledger.jsonl"
 EQUITY_PATH = STATE_DIR / "equity_curve.jsonl"
 SIGNAL_PATH = STATE_DIR / "latest_signal.json"
 FAMILY_WEALTH_PATH = STATE_DIR / "family_wealth_state.json"
+LINKEDIN_POST_PATH = STATE_DIR / "linkedin_daily_post.json"
 
 
 LEDGER_COLUMNS = ["timestamp", "symbol", "mode", "action", "status", "reason", "notional", "equity", "cash"]
@@ -209,3 +210,14 @@ def load_family_wealth_state() -> dict[str, object] | None:
     if not FAMILY_WEALTH_PATH.exists():
         return None
     return json.loads(FAMILY_WEALTH_PATH.read_text(encoding="utf-8"))
+
+
+def save_linkedin_post_state(payload: dict[str, object]) -> None:
+    _ensure_state_dir()
+    LINKEDIN_POST_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def load_linkedin_post_state() -> dict[str, object] | None:
+    if not LINKEDIN_POST_PATH.exists():
+        return None
+    return json.loads(LINKEDIN_POST_PATH.read_text(encoding="utf-8"))

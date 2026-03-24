@@ -5,6 +5,7 @@ on:
     - cron: "0 * * * *"
     - cron: "*/15 * * * *"
     - cron: "5 21 * * 1-5"
+    - cron: "10 7 * * *"
   workflow_dispatch:
 
 env:
@@ -151,3 +152,48 @@ jobs:
         with:
           path: .state
           key: sovereign-worker-state-${{ github.ref_name }}-${{ github.run_id }}-report
+
+  linkedin-worker:
+    if: github.event.schedule == '10 7 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Restore state cache
+        id: restore-state
+        uses: actions/cache/restore@v4
+        with:
+          path: .state
+          key: sovereign-worker-state-${{ github.ref_name }}-${{ github.run_id }}-linkedin
+          restore-keys: |
+            sovereign-worker-state-${{ github.ref_name }}-
+
+      - name: Run LinkedIn worker
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          APP_URL: ${{ secrets.APP_URL }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_ORGANIZATION_URN: ${{ secrets.LINKEDIN_ORGANIZATION_URN }}
+          LINKEDIN_VERSION: ${{ secrets.LINKEDIN_VERSION }}
+          LINKEDIN_POST_TIMEZONE: ${{ secrets.LINKEDIN_POST_TIMEZONE }}
+          LINKEDIN_DRY_RUN: ${{ secrets.LINKEDIN_DRY_RUN }}
+        run: uv run python -m learning_machine.linkedin_worker
+
+      - name: Save state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state
+          key: sovereign-worker-state-${{ github.ref_name }}-${{ github.run_id }}-linkedin

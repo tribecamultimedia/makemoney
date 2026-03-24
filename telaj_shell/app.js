@@ -444,6 +444,29 @@ const SUBSCRIBER_PREFERENCES_KEY = "telaj-subscriber-preferences-v1";
 const SOUND_PREFERENCE_STORAGE_KEY = "telaj-sound-enabled-v1";
 const questionBank = [
   {
+    id: "userCountry",
+    category: "Market setup",
+    prompt: "Where are you based right now?",
+    helper: "TELAJ should know where you live or operate so the language, context, and future planning start in the right place.",
+    options: [
+      { value: "us", title: "United States", note: "US-based personal or business finances." },
+      { value: "europe", title: "Europe", note: "EU, UK, or Europe-based planning context." },
+      { value: "international", title: "International", note: "Cross-border or multi-country context." },
+      { value: "other", title: "Other region", note: "Outside the US and Europe for now." },
+    ],
+  },
+  {
+    id: "marketFocus",
+    category: "Market setup",
+    prompt: "Which market should TELAJ optimize for first?",
+    helper: "You may live in one place and invest in another. TELAJ should know which market deserves the main decision engine.",
+    options: [
+      { value: "US", title: "US markets", note: "US equities, rates, and market context first." },
+      { value: "EU", title: "European markets", note: "European equities, ECB context, and euro reserve framing." },
+      { value: "GLOBAL", title: "Global first", note: "Keep the framing broad, then narrow later." },
+    ],
+  },
+  {
     id: "netWorthBand",
     category: "Balance sheet",
     prompt: "Roughly how much are you worth today?",
@@ -752,6 +775,11 @@ const BIGGEST_ISSUE_ENDPOINT = "/api/biggest-issue";
 const TODAY_MOVE_ENDPOINT = "/api/today-move";
 const ACTION_PLAN_ENDPOINT = "/api/action-plan";
 const SIGNAL_ACTION_ENDPOINT = "/api/signal-action";
+const MARKET_FOCUS_TO_REGION = {
+  US: "US",
+  EU: "EU",
+  GLOBAL: "US",
+};
 
 const mockEndpoints = {
   familyDashboard: "./mock-api/family-dashboard.json",
@@ -1007,6 +1035,14 @@ function loadMarketRegion() {
   }
 }
 
+function syncMarketRegionFromOnboarding() {
+  const focus = state.onboarding.answers?.marketFocus;
+  const mappedRegion = MARKET_FOCUS_TO_REGION[focus];
+  if (mappedRegion) {
+    applyMarketRegion(mappedRegion);
+  }
+}
+
 function requiresBetaInvite() {
   return getBetaAccessConfig().inviteOnly;
 }
@@ -1089,6 +1125,7 @@ function loadOnboardingState() {
     } else if (state.onboarding.completed) {
       state.onboarding.stage = "complete";
     }
+    syncMarketRegionFromOnboarding();
   } catch (error) {
     console.warn("TELAJ onboarding state could not be restored.", error);
   }
@@ -1497,6 +1534,8 @@ function deriveHouseholdProfile(answers) {
           ? "Legacy Builder"
           : "Independent Builder";
   return {
+    userCountry: answers.userCountry ?? "unknown",
+    marketFocus: answers.marketFocus ?? "US",
     ageBand: answers.ageBand ?? "unknown",
     householdRole: answers.householdRole ?? "unknown",
     dependents: answers.dependents ?? "0",
@@ -1915,6 +1954,9 @@ function renderOnboarding() {
   onboardingShell.querySelectorAll(".answer-button").forEach((button) => {
     button.addEventListener("click", () => {
       state.onboarding.answers[question.id] = button.dataset.answer;
+      if (question.id === "marketFocus") {
+        syncMarketRegionFromOnboarding();
+      }
       persistOnboardingState();
       renderOnboarding();
     });

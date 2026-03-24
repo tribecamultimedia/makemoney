@@ -1,7 +1,16 @@
 const {
+  getConfigError,
   getServiceRoleConfigError,
+  getBearerToken,
+  getSupabaseUser,
+  getFinancialPositionRecord,
+  getLatestSignalAction,
+  getSignalActionForDecision,
   requestSupabaseAdmin,
 } = require("./_supabase");
+const { buildBalanceSheet } = require("./services/balance_sheet_service");
+const { buildLiquidityState } = require("./services/liquidity_service");
+const { buildAcknowledgment, buildDecisionArtifacts, buildPriorBehaviorMessage } = require("./services/decision_engine");
 
 function toNumber(value) {
   const numeric = Number(value);
@@ -26,8 +35,7 @@ function buildPerformanceSummary({ ledgerRows, equityRows }) {
   startOfYear.setUTCMonth(0, 1);
   startOfYear.setUTCHours(0, 0, 0, 0);
 
-  const ytdStartPoint =
-    sortedEquity.find((row) => new Date(row.timestamp) >= startOfYear) || sortedEquity[0];
+  const ytdStartPoint = sortedEquity.find((row) => new Date(row.timestamp) >= startOfYear) || sortedEquity[0];
   const latestPoint = sortedEquity[sortedEquity.length - 1];
   const startEquity = toNumber(ytdStartPoint?.equity);
   const latestEquity = toNumber(latestPoint?.equity);
@@ -104,25 +112,103 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const configError = getServiceRoleConfigError();
-  if (configError) {
-    res.status(500).json({ error: configError });
+  const authConfigError = getConfigError();
+  if (authConfigError) {
+    res.status(500).json({ error: authConfigError });
+    return;
+  }
+
+  const serviceRoleConfigError = getServiceRoleConfigError();
+  if (serviceRoleConfigError) {
+    res.status(500).json({ error: serviceRoleConfigError });
+    return;
+  }
+
+  const accessToken = getBearerToken(req);
+  if (!accessToken) {
+    res.status(401).json({ error: "Missing bearer token" });
     return;
   }
 
   try {
+    const user = await getSupabaseUser(accessToken);
+    const record = await getFinancialPositionRecord(accessToken, user.id);
+    const balanceSheet = buildBalanceSheet(record);
+    const liquidityState = buildLiquidityState(record);
+    const artifacts = buildDecisionArtifacts({ balanceSheet, liquidityState });
+
+    let currentAction = null;
+    let priorAction = null;
+    try {
+      currentAction = await getSignalActionForDecision(accessToken, user.id, artifacts.signalDecision.decisionKey);
+      const latestAction = await getLatestSignalAction(accessToken, user.id);
+      priorAction = latestAction && latestAction.decision_key !== artifacts.signalDecision.decisionKey ? latestAction : null;
+    } catch (trackingError) {
+      console.warn("TELAJ action tracking lookup failed.", trackingError);
+    }
+
     const [ledgerRows, equityRows] = await Promise.all([
       requestSupabaseAdmin("trade_ledger?select=timestamp,action,status&order=timestamp.asc"),
       requestSupabaseAdmin("equity_curve?select=timestamp,equity&order=timestamp.asc"),
     ]);
 
     res.status(200).json({
-      performanceSummary: buildPerformanceSummary({
-        ledgerRows,
-        equityRows,
-      }),
+      whereIStand: {
+        userState: {
+          userId: user.id,
+          authenticated: true,
+          email: user.email || "",
+          marketRegion: "US",
+          source: record ? "financial_positions" : "empty_financial_positions",
+        },
+        balanceSheet,
+        liquidityState,
+      },
+      biggestIssue: {
+        biggestIssue: artifacts.biggestIssue,
+        balanceSheetSummary: {
+          totalAssets: balanceSheet.totalAssets,
+          totalDebt: balanceSheet.totalDebt,
+          netWorth: balanceSheet.netWorth,
+          debtRatio: balanceSheet.debtRatio,
+        },
+        liquiditySummary: {
+          reserveMonths: liquidityState.reserveMonths,
+          reserveTargetMonths: liquidityState.reserveTargetMonths,
+          reserveGap: liquidityState.reserveGap,
+        },
+      },
+      todayMove: {
+        todayMove: {
+          ...artifacts.signalDecision,
+          actionState: currentAction
+            ? {
+                status: currentAction.action_type,
+                acknowledgedAt: currentAction.created_at,
+                message: buildAcknowledgment(currentAction.action_type),
+              }
+            : null,
+          priorBehavior: priorAction
+            ? {
+                action: priorAction.action_type,
+                decisionKey: priorAction.decision_key,
+                message: buildPriorBehaviorMessage(priorAction.action_type),
+                at: priorAction.created_at,
+              }
+            : null,
+        },
+      },
+      actionPlan: {
+        actionPlan: artifacts.actionPlan,
+      },
+      performanceSummary: {
+        performanceSummary: buildPerformanceSummary({
+          ledgerRows,
+          equityRows,
+        }),
+      },
     });
   } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : "Performance load failed" });
+    res.status(500).json({ error: error instanceof Error ? error.message : "Load failed" });
   }
 };

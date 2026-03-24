@@ -771,12 +771,8 @@ const soundEngine = effectsApi.TelajSoundEngine ? new effectsApi.TelajSoundEngin
 const DEFAULT_BETA_INVITE_CODES = ["TELAJ-BETA-7Q2M9X"];
 const FINANCIAL_POSITION_ENDPOINT = "/api/financial-position";
 const ASSET_CHECK_ENDPOINT = "/api/asset-check";
-const WHERE_I_STAND_ENDPOINT = "/api/where-i-stand";
-const BIGGEST_ISSUE_ENDPOINT = "/api/biggest-issue";
-const TODAY_MOVE_ENDPOINT = "/api/today-move";
-const ACTION_PLAN_ENDPOINT = "/api/action-plan";
+const HOME_ENDPOINT = "/api/home";
 const SIGNAL_ACTION_ENDPOINT = "/api/signal-action";
-const PERFORMANCE_SUMMARY_ENDPOINT = "/api/performance-summary";
 const MARKET_FOCUS_TO_REGION = {
   US: "US",
   EU: "EU",
@@ -1236,23 +1232,17 @@ async function loadHomeDecisionState() {
   state.homeApi.error = "";
 
   try {
-    const [whereIStand, biggestIssue, todayMove, actionPlan, performanceSummary] = await Promise.all([
-      fetchAuthedJson(WHERE_I_STAND_ENDPOINT),
-      fetchAuthedJson(BIGGEST_ISSUE_ENDPOINT),
-      fetchAuthedJson(TODAY_MOVE_ENDPOINT),
-      fetchAuthedJson(ACTION_PLAN_ENDPOINT),
-      fetchAuthedJson(PERFORMANCE_SUMMARY_ENDPOINT),
-    ]);
+    const homePayload = await fetchAuthedJson(HOME_ENDPOINT);
 
     state.homeApi = {
       ...state.homeApi,
       loading: false,
       error: "",
-      whereIStand,
-      biggestIssue,
-      todayMove,
-      actionPlan,
-      performanceSummary,
+      whereIStand: homePayload?.whereIStand || null,
+      biggestIssue: homePayload?.biggestIssue || null,
+      todayMove: homePayload?.todayMove || null,
+      actionPlan: homePayload?.actionPlan || null,
+      performanceSummary: homePayload?.performanceSummary || null,
     };
     return true;
   } catch (error) {

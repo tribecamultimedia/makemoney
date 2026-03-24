@@ -49,6 +49,8 @@
         <nav class="nav-stack" id="section-nav">
           <button class="nav-item is-active" data-section="home">Home</button>
           <button class="nav-item" data-section="assets">Assets</button>
+          <button class="nav-item" data-section="expenses">Expenses</button>
+          <button class="nav-item" data-section="vault">Vault</button>
           <button class="nav-item" data-section="allocation">Allocation</button>
           <button class="nav-item" data-section="signals">Decision Feed</button>
           <button class="nav-item" data-section="progress">Tasks & Progress</button>
@@ -97,6 +99,34 @@
           <div class="bento-grid allocation-grid">
             <article class="panel" id="assets-ledger"></article>
             <article class="panel" id="assets-balance-summary"></article>
+          </div>
+        </section>
+
+        <section class="view" data-view="expenses">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">EXPENSE ENGINE</div>
+              <h2>Track the recurring drag on the family system</h2>
+            </div>
+            <div class="section-tag">Cash flow</div>
+          </div>
+          <div class="bento-grid allocation-grid">
+            <article class="panel" id="expenses-ledger"></article>
+            <article class="panel" id="expenses-summary"></article>
+          </div>
+        </section>
+
+        <section class="view" data-view="vault">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">FAMILY VAULT</div>
+              <h2>Know where the critical documents and access instructions live</h2>
+            </div>
+            <div class="section-tag">Continuity</div>
+          </div>
+          <div class="bento-grid allocation-grid">
+            <article class="panel" id="vault-documents"></article>
+            <article class="panel" id="vault-summary"></article>
           </div>
         </section>
 

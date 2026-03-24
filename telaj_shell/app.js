@@ -318,6 +318,12 @@ const defaultState = {
   assetLedger: {
     items: [],
   },
+  recurringExpenses: {
+    items: [],
+  },
+  familyVault: {
+    documents: [],
+  },
   propertyAppraisal: {
     address: "",
     size: 90,
@@ -1221,6 +1227,18 @@ function loadWealthInputs() {
         items: Array.isArray(parsed.assetLedger.items) ? parsed.assetLedger.items : [],
       };
     }
+    if (parsed.recurringExpenses?.items) {
+      state.recurringExpenses = {
+        ...state.recurringExpenses,
+        items: Array.isArray(parsed.recurringExpenses.items) ? parsed.recurringExpenses.items : [],
+      };
+    }
+    if (parsed.familyVault?.documents) {
+      state.familyVault = {
+        ...state.familyVault,
+        documents: Array.isArray(parsed.familyVault.documents) ? parsed.familyVault.documents : [],
+      };
+    }
     if (parsed.propertyAppraisal) {
       state.propertyAppraisal = { ...state.propertyAppraisal, ...parsed.propertyAppraisal };
     }
@@ -1239,6 +1257,8 @@ function persistWealthInputs() {
       liquidityDetails: state.liquidityDetails,
       financialPosition: state.financialPosition,
       assetLedger: state.assetLedger,
+      recurringExpenses: state.recurringExpenses,
+      familyVault: state.familyVault,
       propertyAppraisal: state.propertyAppraisal,
     })
   );
@@ -3033,6 +3053,80 @@ function summarizeAssetLedger(items) {
   );
 }
 
+function createRecurringExpenseItem(kind = "household") {
+  return {
+    id: `expense-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    category: kind,
+    label:
+      kind === "subscription"
+        ? "Subscription"
+        : kind === "property"
+          ? "Property carrying cost"
+          : kind === "insurance"
+            ? "Insurance"
+            : "Recurring expense",
+    amount: 0,
+    frequency: "monthly",
+    linkedAsset: "",
+    required: true,
+    note: "",
+  };
+}
+
+function summarizeRecurringExpenses(items) {
+  const safeItems = Array.isArray(items) ? items : [];
+  return safeItems.reduce(
+    (summary, item) => {
+      const amount = Number(item.amount || 0);
+      const monthlyEquivalent =
+        item.frequency === "yearly" ? amount / 12 : item.frequency === "quarterly" ? amount / 3 : amount;
+      summary.monthlyTotal += monthlyEquivalent;
+      if (item.required) {
+        summary.requiredMonthly += monthlyEquivalent;
+      } else {
+        summary.optionalMonthly += monthlyEquivalent;
+      }
+      summary.count += 1;
+      return summary;
+    },
+    {
+      count: 0,
+      monthlyTotal: 0,
+      requiredMonthly: 0,
+      optionalMonthly: 0,
+    }
+  );
+}
+
+function createVaultDocument(kind = "property") {
+  return {
+    id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    category: kind,
+    title:
+      kind === "property"
+        ? "Property deed"
+        : kind === "identity"
+          ? "Identity document"
+          : kind === "insurance"
+            ? "Insurance policy"
+            : "Critical document",
+    owner: "",
+    storageLocation: "",
+    digitalLocation: "",
+    critical: true,
+    accessNote: "",
+  };
+}
+
+function summarizeVault(documents) {
+  const safeDocuments = Array.isArray(documents) ? documents : [];
+  return {
+    total: safeDocuments.length,
+    critical: safeDocuments.filter((item) => item.critical).length,
+    missingLocation: safeDocuments.filter((item) => !item.storageLocation && !item.digitalLocation).length,
+  };
+}
+
 function getFinancialPosition() {
   const assets = [
     { key: "liquid", label: "Cash", value: Number(state.liquidityDetails.liquidAssets || 0), color: "#1f6bff" },
@@ -4176,11 +4270,11 @@ function renderAssetsArea() {
     </div>
     <div class="section-spacer"></div>
     <div class="eyebrow">Itemized assets and liabilities</div>
-    <div class="panel-copy">Record each property, car, aircraft, or costly liability with value, debt, and monthly cost so TELAJ understands what each item really carries.</div>
+    <div class="panel-copy">Record each property, car, aircraft or vessel, or costly liability with value, debt, and monthly cost so TELAJ understands what each item really carries.</div>
     <div class="property-action-row ledger-add-row">
       <button class="action-button" id="asset-add-property">Add property</button>
       <button class="action-button" id="asset-add-car">Add car</button>
-      <button class="action-button" id="asset-add-aircraft">Add aircraft</button>
+      <button class="action-button" id="asset-add-aircraft">Add aircraft or vessel</button>
       <button class="ghost-button" id="asset-add-liability">Add liability</button>
     </div>
     <div class="asset-ledger-list">
@@ -4204,7 +4298,7 @@ function renderAssetsArea() {
                           <option value="property" ${item.category === "property" ? "selected" : ""}>Property</option>
                           <option value="car" ${item.category === "car" ? "selected" : ""}>Car</option>
                           <option value="aircraft" ${item.category === "aircraft" ? "selected" : ""}>Aircraft</option>
-                          <option value="boat" ${item.category === "boat" ? "selected" : ""}>Boat</option>
+                          <option value="boat" ${item.category === "boat" ? "selected" : ""}>Vessel</option>
                           <option value="liability" ${item.category === "liability" ? "selected" : ""}>Liability</option>
                           <option value="other" ${item.category === "other" ? "selected" : ""}>Other</option>
                         </select>
@@ -4242,7 +4336,7 @@ function renderAssetsArea() {
                 `
               )
               .join("")
-          : `<div class="subpanel"><div class="panel-copy">No itemized holdings yet. Add a property, car, aircraft, or liability so TELAJ can track its value and carrying cost.</div></div>`
+          : `<div class="subpanel"><div class="panel-copy">No itemized holdings yet. Add a property, car, aircraft or vessel, or liability so TELAJ can track its value and carrying cost.</div></div>`
       }
     </div>
   `;
@@ -4298,7 +4392,7 @@ function renderAssetsArea() {
     <div class="financial-legend">
       <div class="legend-item"><span>Property value</span><span class="legend-value">${formatEuro(ledgerSummary.propertyValue)}</span></div>
       <div class="legend-item"><span>Property debt</span><span class="legend-value">${formatEuro(ledgerSummary.propertyDebt)}</span></div>
-      <div class="legend-item"><span>Cars / aircraft / costly items</span><span class="legend-value">${formatEuro(ledgerSummary.vehicleAndLuxuryValue)}</span></div>
+      <div class="legend-item"><span>Cars / aircraft / vessels / costly items</span><span class="legend-value">${formatEuro(ledgerSummary.vehicleAndLuxuryValue)}</span></div>
       <div class="legend-item"><span>Net monthly drag</span><span class="legend-value">${formatEuro(ledgerSummary.netItemCashDrag)} / mo</span></div>
     </div>
   `;
@@ -4365,6 +4459,303 @@ function renderAssetsArea() {
     renderAll();
     setView("home");
     document.getElementById("morning-hero")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
+function renderExpensesArea() {
+  const ledgerPanel = document.getElementById("expenses-ledger");
+  const summaryPanel = document.getElementById("expenses-summary");
+  if (!ledgerPanel || !summaryPanel) {
+    return;
+  }
+
+  const items = state.recurringExpenses.items || [];
+  const summary = summarizeRecurringExpenses(items);
+
+  ledgerPanel.innerHTML = `
+    <div class="eyebrow">Recurring expenses</div>
+    <h3>Record the bills and subscriptions that quietly drain the system</h3>
+    <div class="panel-copy">TELAJ should know the required monthly drag, the optional subscriptions, and which costs belong to a property or costly asset.</div>
+    <div class="property-action-row ledger-add-row">
+      <button class="action-button" id="expense-add-household">Add household bill</button>
+      <button class="action-button" id="expense-add-subscription">Add subscription</button>
+      <button class="action-button" id="expense-add-property">Add property cost</button>
+      <button class="ghost-button" id="expense-add-insurance">Add insurance</button>
+    </div>
+    <div class="asset-ledger-list">
+      ${
+        items.length
+          ? items
+              .map(
+                (item, index) => `
+                  <div class="asset-ledger-item" data-expense-index="${index}" data-expense-id="${item.id || ""}">
+                    <div class="asset-ledger-head">
+                      <div>
+                        <div class="row-label">${item.label || "Unnamed expense"}</div>
+                        <div class="history-meta">${capitalizeWords(item.category)} · ${item.required ? "Required" : "Optional"}</div>
+                      </div>
+                      <button class="ghost-button asset-remove-button" data-remove-expense="${index}">Remove</button>
+                    </div>
+                    <div class="input-stack financial-input-stack">
+                      <label class="input-field">
+                        <span class="micro-label">Category</span>
+                        <select class="expense-item-category">
+                          <option value="household" ${item.category === "household" ? "selected" : ""}>Household</option>
+                          <option value="subscription" ${item.category === "subscription" ? "selected" : ""}>Subscription</option>
+                          <option value="property" ${item.category === "property" ? "selected" : ""}>Property</option>
+                          <option value="insurance" ${item.category === "insurance" ? "selected" : ""}>Insurance</option>
+                          <option value="debt" ${item.category === "debt" ? "selected" : ""}>Debt payment</option>
+                          <option value="other" ${item.category === "other" ? "selected" : ""}>Other</option>
+                        </select>
+                      </label>
+                      <label class="input-field">
+                        <span class="micro-label">Name</span>
+                        <input class="expense-item-label" type="text" value="${item.label || ""}" placeholder="Property tax, Netflix, insurance, dock fee" />
+                      </label>
+                      <label class="input-field">
+                        <span class="micro-label">Amount</span>
+                        <input class="expense-item-amount" type="number" min="0" step="10" value="${Number(item.amount || 0)}" />
+                      </label>
+                      <label class="input-field">
+                        <span class="micro-label">Frequency</span>
+                        <select class="expense-item-frequency">
+                          <option value="monthly" ${item.frequency === "monthly" ? "selected" : ""}>Monthly</option>
+                          <option value="quarterly" ${item.frequency === "quarterly" ? "selected" : ""}>Quarterly</option>
+                          <option value="yearly" ${item.frequency === "yearly" ? "selected" : ""}>Yearly</option>
+                        </select>
+                      </label>
+                      <label class="input-field">
+                        <span class="micro-label">Linked asset</span>
+                        <input class="expense-item-linked-asset" type="text" value="${item.linkedAsset || ""}" placeholder="Lake house, boat, family home" />
+                      </label>
+                      <label class="input-field toggle-card">
+                        <span class="micro-label">Required</span>
+                        <input class="expense-item-required" type="checkbox" ${item.required ? "checked" : ""} />
+                      </label>
+                      <label class="input-field input-span-2">
+                        <span class="micro-label">Notes</span>
+                        <input class="expense-item-note" type="text" value="${item.note || ""}" placeholder="Fixed, seasonal, family support, optional, tax-driven" />
+                      </label>
+                    </div>
+                  </div>
+                `
+              )
+              .join("")
+          : `<div class="subpanel"><div class="panel-copy">No recurring expenses recorded yet. Add the most important bills and subscriptions so TELAJ can see the real monthly drag.</div></div>`
+      }
+    </div>
+  `;
+
+  summaryPanel.innerHTML = `
+    <div class="eyebrow">Expense summary</div>
+    <h3>What the family system costs to carry</h3>
+    <div class="stats-grid compact-position-grid">
+      <div class="stat-box"><div class="stat-label">Tracked items</div><div class="stat-value">${summary.count}</div></div>
+      <div class="stat-box"><div class="stat-label">Monthly total</div><div class="stat-value">${formatEuro(summary.monthlyTotal)} / mo</div></div>
+      <div class="stat-box"><div class="stat-label">Required</div><div class="stat-value">${formatEuro(summary.requiredMonthly)} / mo</div></div>
+      <div class="stat-box"><div class="stat-label">Optional</div><div class="stat-value">${formatEuro(summary.optionalMonthly)} / mo</div></div>
+    </div>
+    <div class="section-spacer"></div>
+    <div class="micro-label">TELAJ interpretation</div>
+    <div class="panel-copy">
+      ${
+        summary.monthlyTotal > 0
+          ? `TELAJ now sees about ${formatEuro(summary.monthlyTotal)} per month of recurring drag before optional new investing decisions.`
+          : "TELAJ still needs the major recurring bills mapped before it can fully judge cash-flow pressure."
+      }
+    </div>
+  `;
+
+  document.getElementById("expense-add-household")?.addEventListener("click", () => {
+    state.recurringExpenses.items.push(createRecurringExpenseItem("household"));
+    persistWealthInputs();
+    renderExpensesArea();
+  });
+  document.getElementById("expense-add-subscription")?.addEventListener("click", () => {
+    state.recurringExpenses.items.push(createRecurringExpenseItem("subscription"));
+    persistWealthInputs();
+    renderExpensesArea();
+  });
+  document.getElementById("expense-add-property")?.addEventListener("click", () => {
+    state.recurringExpenses.items.push(createRecurringExpenseItem("property"));
+    persistWealthInputs();
+    renderExpensesArea();
+  });
+  document.getElementById("expense-add-insurance")?.addEventListener("click", () => {
+    state.recurringExpenses.items.push(createRecurringExpenseItem("insurance"));
+    persistWealthInputs();
+    renderExpensesArea();
+  });
+  ledgerPanel.querySelectorAll("[data-remove-expense]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = Number(button.dataset.removeExpense);
+      state.recurringExpenses.items.splice(index, 1);
+      persistWealthInputs();
+      renderExpensesArea();
+    });
+  });
+  ledgerPanel.querySelectorAll(".expense-item-label, .expense-item-amount, .expense-item-linked-asset, .expense-item-note, .expense-item-category, .expense-item-frequency, .expense-item-required").forEach((input) => {
+    const eventName = input.type === "checkbox" || input.tagName === "SELECT" ? "change" : "input";
+    input.addEventListener(eventName, () => {
+      state.recurringExpenses.items = Array.from(ledgerPanel.querySelectorAll(".asset-ledger-item")).map((row) => ({
+        id: row.dataset.expenseId || createRecurringExpenseItem().id,
+        category: row.querySelector(".expense-item-category")?.value || "household",
+        label: row.querySelector(".expense-item-label")?.value.trim() || "Unnamed expense",
+        amount: Number(row.querySelector(".expense-item-amount")?.value || 0),
+        frequency: row.querySelector(".expense-item-frequency")?.value || "monthly",
+        linkedAsset: row.querySelector(".expense-item-linked-asset")?.value.trim() || "",
+        required: Boolean(row.querySelector(".expense-item-required")?.checked),
+        note: row.querySelector(".expense-item-note")?.value.trim() || "",
+      }));
+      persistWealthInputs();
+      renderExpensesArea();
+    });
+  });
+}
+
+function renderFamilyVault() {
+  const docsPanel = document.getElementById("vault-documents");
+  const summaryPanel = document.getElementById("vault-summary");
+  if (!docsPanel || !summaryPanel) {
+    return;
+  }
+
+  const documents = state.familyVault.documents || [];
+  const summary = summarizeVault(documents);
+
+  docsPanel.innerHTML = `
+    <div class="eyebrow">Critical documents</div>
+    <h3>Record where the important papers and files actually live</h3>
+    <div class="panel-copy">This is the first TELAJ family vault pass: title deeds, insurance, wills, IDs, and other key continuity documents with location and access notes.</div>
+    <div class="property-action-row ledger-add-row">
+      <button class="action-button" id="vault-add-property">Add property document</button>
+      <button class="action-button" id="vault-add-insurance">Add insurance</button>
+      <button class="action-button" id="vault-add-identity">Add identity</button>
+      <button class="ghost-button" id="vault-add-other">Add critical document</button>
+    </div>
+    <div class="asset-ledger-list">
+      ${
+        documents.length
+          ? documents
+              .map(
+                (item, index) => `
+                  <div class="asset-ledger-item" data-doc-index="${index}" data-doc-id="${item.id || ""}">
+                    <div class="asset-ledger-head">
+                      <div>
+                        <div class="row-label">${item.title || "Untitled document"}</div>
+                        <div class="history-meta">${capitalizeWords(item.category)} · ${item.critical ? "Critical" : "Reference"}</div>
+                      </div>
+                      <button class="ghost-button asset-remove-button" data-remove-doc="${index}">Remove</button>
+                    </div>
+                    <div class="input-stack financial-input-stack">
+                      <label class="input-field">
+                        <span class="micro-label">Category</span>
+                        <select class="vault-doc-category">
+                          <option value="property" ${item.category === "property" ? "selected" : ""}>Property</option>
+                          <option value="insurance" ${item.category === "insurance" ? "selected" : ""}>Insurance</option>
+                          <option value="identity" ${item.category === "identity" ? "selected" : ""}>Identity</option>
+                          <option value="estate" ${item.category === "estate" ? "selected" : ""}>Estate</option>
+                          <option value="tax" ${item.category === "tax" ? "selected" : ""}>Tax</option>
+                          <option value="other" ${item.category === "other" ? "selected" : ""}>Other</option>
+                        </select>
+                      </label>
+                      <label class="input-field">
+                        <span class="micro-label">Title</span>
+                        <input class="vault-doc-title" type="text" value="${item.title || ""}" placeholder="Property deed, will, passport, insurance policy" />
+                      </label>
+                      <label class="input-field">
+                        <span class="micro-label">Owner / person</span>
+                        <input class="vault-doc-owner" type="text" value="${item.owner || ""}" placeholder="Mother, father, family company" />
+                      </label>
+                      <label class="input-field">
+                        <span class="micro-label">Physical location</span>
+                        <input class="vault-doc-storage" type="text" value="${item.storageLocation || ""}" placeholder="Home safe, lawyer, bank box" />
+                      </label>
+                      <label class="input-field">
+                        <span class="micro-label">Digital location</span>
+                        <input class="vault-doc-digital" type="text" value="${item.digitalLocation || ""}" placeholder="Drive folder, Dropbox, notary portal" />
+                      </label>
+                      <label class="input-field toggle-card">
+                        <span class="micro-label">Critical</span>
+                        <input class="vault-doc-critical" type="checkbox" ${item.critical ? "checked" : ""} />
+                      </label>
+                      <label class="input-field input-span-2">
+                        <span class="micro-label">Access note</span>
+                        <input class="vault-doc-access" type="text" value="${item.accessNote || ""}" placeholder="Who knows where it is and how the family should retrieve it" />
+                      </label>
+                    </div>
+                  </div>
+                `
+              )
+              .join("")
+          : `<div class="subpanel"><div class="panel-copy">No family-vault documents recorded yet. Add the most important records so the family can find what matters if something happens.</div></div>`
+      }
+    </div>
+  `;
+
+  summaryPanel.innerHTML = `
+    <div class="eyebrow">Vault summary</div>
+    <h3>Continuity readiness</h3>
+    <div class="stats-grid compact-position-grid">
+      <div class="stat-box"><div class="stat-label">Tracked docs</div><div class="stat-value">${summary.total}</div></div>
+      <div class="stat-box"><div class="stat-label">Critical docs</div><div class="stat-value">${summary.critical}</div></div>
+      <div class="stat-box"><div class="stat-label">Missing location</div><div class="stat-value">${summary.missingLocation}</div></div>
+    </div>
+    <div class="section-spacer"></div>
+    <div class="micro-label">TELAJ view</div>
+    <div class="panel-copy">
+      ${
+        summary.total
+          ? `${summary.critical} critical documents are recorded. ${summary.missingLocation ? `${summary.missingLocation} still need a clear physical or digital location.` : "The current set has a clear location recorded."}`
+          : "TELAJ does not yet know where the family’s critical documents live."
+      }
+    </div>
+  `;
+
+  document.getElementById("vault-add-property")?.addEventListener("click", () => {
+    state.familyVault.documents.push(createVaultDocument("property"));
+    persistWealthInputs();
+    renderFamilyVault();
+  });
+  document.getElementById("vault-add-insurance")?.addEventListener("click", () => {
+    state.familyVault.documents.push(createVaultDocument("insurance"));
+    persistWealthInputs();
+    renderFamilyVault();
+  });
+  document.getElementById("vault-add-identity")?.addEventListener("click", () => {
+    state.familyVault.documents.push(createVaultDocument("identity"));
+    persistWealthInputs();
+    renderFamilyVault();
+  });
+  document.getElementById("vault-add-other")?.addEventListener("click", () => {
+    state.familyVault.documents.push(createVaultDocument("other"));
+    persistWealthInputs();
+    renderFamilyVault();
+  });
+  docsPanel.querySelectorAll("[data-remove-doc]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = Number(button.dataset.removeDoc);
+      state.familyVault.documents.splice(index, 1);
+      persistWealthInputs();
+      renderFamilyVault();
+    });
+  });
+  docsPanel.querySelectorAll(".vault-doc-category, .vault-doc-title, .vault-doc-owner, .vault-doc-storage, .vault-doc-digital, .vault-doc-critical, .vault-doc-access").forEach((input) => {
+    const eventName = input.type === "checkbox" || input.tagName === "SELECT" ? "change" : "input";
+    input.addEventListener(eventName, () => {
+      state.familyVault.documents = Array.from(docsPanel.querySelectorAll(".asset-ledger-item")).map((row) => ({
+        id: row.dataset.docId || createVaultDocument().id,
+        category: row.querySelector(".vault-doc-category")?.value || "other",
+        title: row.querySelector(".vault-doc-title")?.value.trim() || "Untitled document",
+        owner: row.querySelector(".vault-doc-owner")?.value.trim() || "",
+        storageLocation: row.querySelector(".vault-doc-storage")?.value.trim() || "",
+        digitalLocation: row.querySelector(".vault-doc-digital")?.value.trim() || "",
+        critical: Boolean(row.querySelector(".vault-doc-critical")?.checked),
+        accessNote: row.querySelector(".vault-doc-access")?.value.trim() || "",
+      }));
+      persistWealthInputs();
+      renderFamilyVault();
+    });
   });
 }
 
@@ -5443,6 +5834,8 @@ function renderAll() {
     renderXpLevel();
     renderFinancialPosition();
     renderAssetsArea();
+    renderExpensesArea();
+    renderFamilyVault();
     renderAllocationSnapshot();
     renderCashStatus();
     renderTasks();

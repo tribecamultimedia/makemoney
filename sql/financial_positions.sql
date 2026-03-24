@@ -9,9 +9,13 @@ create table if not exists public.financial_positions (
   credit_card_debt numeric not null default 0,
   loans numeric not null default 0,
   mortgage_debt numeric not null default 0,
+  asset_ledger jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
+
+alter table public.financial_positions
+add column if not exists asset_ledger jsonb not null default '[]'::jsonb;
 
 alter table public.financial_positions enable row level security;
 

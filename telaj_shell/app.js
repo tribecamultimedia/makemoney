@@ -1359,6 +1359,10 @@ function normalizeFinancialPositionPayload(payload) {
     loans: Number(normalized.loans ?? state.financialPosition.loans ?? 0),
     mortgageDebt: Number(normalized.mortgage_debt ?? normalized.mortgageDebt ?? state.financialPosition.mortgageDebt ?? 0),
   };
+  state.assetLedger = {
+    ...state.assetLedger,
+    items: Array.isArray(normalized.asset_ledger ?? normalized.assetLedger) ? (normalized.asset_ledger ?? normalized.assetLedger) : state.assetLedger.items,
+  };
 }
 
 async function loadFinancialPositionFromApi() {
@@ -1426,6 +1430,7 @@ async function saveFinancialPositionToApi() {
         credit_card_debt: Number(state.financialPosition.creditCardDebt || 0),
         loans: Number(state.financialPosition.loans || 0),
         mortgage_debt: Number(state.financialPosition.mortgageDebt || 0),
+        asset_ledger: Array.isArray(state.assetLedger.items) ? state.assetLedger.items : [],
       }),
     });
     if (!response.ok) {

@@ -69,6 +69,7 @@ function normalizePayload(body, userId) {
     credit_card_debt: Number(body?.credit_card_debt || 0),
     loans: Number(body?.loans || 0),
     mortgage_debt: Number(body?.mortgage_debt || 0),
+    asset_ledger: Array.isArray(body?.asset_ledger) ? body.asset_ledger : [],
     updated_at: new Date().toISOString(),
   };
 }

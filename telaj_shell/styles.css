@@ -467,6 +467,13 @@ select:focus {
   padding-top: 0;
 }
 
+.intent-status-line {
+  color: var(--accent-strong);
+  min-height: 20px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .tag-row {
   display: flex;
   flex-wrap: wrap;
@@ -675,6 +682,20 @@ select:focus {
 
 .meta-line span {
   color: var(--text);
+}
+
+.subtle-toggle {
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.subtle-toggle:hover {
+  border-color: var(--accent);
 }
 
 .rail-footer .meta-line {
@@ -927,6 +948,13 @@ select:focus {
   line-height: 1.5;
 }
 
+.typewriter-cursor {
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--accent-strong);
+  animation: telaj-cursor-blink 1s step-end infinite;
+}
+
 .decision-action-state {
   display: grid;
   gap: 10px;
@@ -934,6 +962,12 @@ select:focus {
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.02);
   max-width: 54ch;
+}
+
+@keyframes telaj-cursor-blink {
+  50% {
+    opacity: 0;
+  }
 }
 
 .decision-meta-line {

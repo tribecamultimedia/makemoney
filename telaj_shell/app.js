@@ -30,6 +30,9 @@ const defaultState = {
     todayMove: null,
     actionPlan: null,
   },
+  sound: {
+    enabled: false,
+  },
   marketRegion: "US",
   subscriberPreferences: {
     contactEmail: "",
@@ -54,6 +57,7 @@ const defaultState = {
       notes: "",
       analysis: null,
       confirmed: false,
+      statusText: "",
     },
   },
   morningSignal: {
@@ -437,6 +441,7 @@ const AUTH_STORAGE_KEY = "telaj-auth-v1";
 const ONBOARDING_STORAGE_KEY = "telaj-onboarding-v1";
 const WEALTH_INPUTS_STORAGE_KEY = "telaj-wealth-inputs-v1";
 const SUBSCRIBER_PREFERENCES_KEY = "telaj-subscriber-preferences-v1";
+const SOUND_PREFERENCE_STORAGE_KEY = "telaj-sound-enabled-v1";
 const questionBank = [
   {
     id: "netWorthBand",
@@ -737,6 +742,8 @@ const railAccount = document.getElementById("rail-account");
 const railFooter = document.getElementById("rail-footer");
 let supabaseClient = null;
 let navBound = false;
+const effectsApi = window.TELAJEffects || {};
+const soundEngine = effectsApi.TelajSoundEngine ? new effectsApi.TelajSoundEngine() : null;
 const DEFAULT_BETA_INVITE_CODES = ["TELAJ-BETA-7Q2M9X"];
 const FINANCIAL_POSITION_ENDPOINT = "/api/financial-position";
 const ASSET_CHECK_ENDPOINT = "/api/asset-check";
@@ -774,6 +781,39 @@ function getCanonicalAppUrl() {
     return configured.replace(/\/+$/, "");
   }
   return "https://telaj.com";
+}
+
+function loadSoundPreference() {
+  try {
+    state.sound.enabled = window.localStorage.getItem(SOUND_PREFERENCE_STORAGE_KEY) === "true";
+  } catch (error) {
+    state.sound.enabled = false;
+  }
+  soundEngine?.setEnabled(state.sound.enabled);
+  soundEngine?.registerInteractionUnlock();
+}
+
+function persistSoundPreference() {
+  window.localStorage.setItem(SOUND_PREFERENCE_STORAGE_KEY, state.sound.enabled ? "true" : "false");
+  soundEngine?.setEnabled(state.sound.enabled);
+}
+
+function playButtonSound(kind) {
+  soundEngine?.playButtonTap(kind);
+}
+
+function applyTypewriterEffect(element, text, options = {}) {
+  if (!element || !effectsApi.typeText) {
+    if (element && typeof text === "string") {
+      element.textContent = text;
+    }
+    return;
+  }
+  effectsApi.typeText(element, text, {
+    soundEngine,
+    soundEnabled: state.sound.enabled,
+    ...options,
+  });
 }
 
 function showFatalShellError(message) {
@@ -1004,6 +1044,7 @@ function loadOnboardingState() {
               notes: typeof parsed.intent.notes === "string" ? parsed.intent.notes : "",
               analysis: parsed.intent.analysis ?? null,
               confirmed: Boolean(parsed.intent.confirmed),
+              statusText: typeof parsed.intent.statusText === "string" ? parsed.intent.statusText : "",
             }
           : structuredClone(defaultState.onboarding.intent),
     };
@@ -2157,6 +2198,7 @@ async function handleOAuth(provider) {
 function renderIntentStage() {
   const notes = state.onboarding.intent?.notes ?? "";
   const analysis = state.onboarding.intent?.analysis;
+  const statusText = state.onboarding.intent?.statusText || (analysis ? "Recommendation ready." : "Write freely, then analyze.");
 
   onboardingShell.classList.add("is-active");
   appShell.classList.add("is-hidden");
@@ -2173,6 +2215,7 @@ function renderIntentStage() {
       <div class="question-stage">
         <div class="micro-label">Your words</div>
         <textarea id="intent-notes" class="intent-textarea" placeholder="Example: I want to protect my finances, stop making rushed decisions, and know when real estate actually makes sense for me, my business, or the people I support. I care more about avoiding a big mistake than chasing the fastest return.">${notes}</textarea>
+        <div class="intent-status-line"><span id="intent-status-text"></span></div>
         <div class="onboarding-actions intent-actions">
           <button class="ghost-button" id="intent-back">Back</button>
           <div class="task-pill">${analysis ? "Intent analyzed" : "Write freely, then analyze"}</div>
@@ -2185,7 +2228,7 @@ function renderIntentStage() {
         ${
           analysis
             ? `
-              <div class="panel-copy">${analysis.heard}</div>
+              <div class="panel-copy"><span id="intent-heard-text"></span></div>
               <div class="summary-grid">
                 <div class="profile-chip">
                   <div class="micro-label">What makes sense</div>
@@ -2225,6 +2268,21 @@ function renderIntentStage() {
     </div>
   `;
 
+  applyTypewriterEffect(document.getElementById("intent-status-text"), statusText, {
+    key: `intent-status:${statusText}`,
+    speed: 18,
+    delay: 280,
+    cursor: false,
+  });
+  if (analysis?.heard) {
+    applyTypewriterEffect(document.getElementById("intent-heard-text"), analysis.heard, {
+      key: `intent-heard:${analysis.heard}`,
+      speed: 19,
+      delay: 380,
+      cursor: false,
+    });
+  }
+
   document.getElementById("intent-back")?.addEventListener("click", () => {
     state.onboarding.stage = "questions";
     state.onboarding.currentStep = Math.max(0, getLifeMatrixQuestions().length - 1);
@@ -2235,8 +2293,12 @@ function renderIntentStage() {
   document.getElementById("intent-analyze")?.addEventListener("click", async () => {
     const nextNotes = document.getElementById("intent-notes").value.trim();
     state.onboarding.intent.notes = nextNotes;
+    state.onboarding.intent.statusText = "Analyzing your position...";
+    persistOnboardingState();
+    renderIntentStage();
     state.onboarding.intent.analysis = await analyzeIntent(nextNotes, state.onboarding.profiles);
     state.onboarding.intent.confirmed = false;
+    state.onboarding.intent.statusText = "Recommendation ready.";
     persistOnboardingState();
     renderIntentStage();
   });
@@ -2691,8 +2753,8 @@ function renderMorningHero() {
           <div class="task-pill">${move.confidence}% confidence</div>
         </div>
         ${priorBehavior?.message ? `<div class="decision-memory-line">${priorBehavior.message}</div>` : ""}
-        <h2 class="signal-title">${move.signal || move.headline}</h2>
-        <p class="signal-rationale">${move.why}</p>
+        <h2 class="signal-title"><span id="today-move-title"></span></h2>
+        <p class="signal-rationale"><span id="today-move-why"></span></p>
       </div>
       <div class="decision-meta-line">
         <span>${move.confidence}% confidence</span>
@@ -2704,7 +2766,7 @@ function renderMorningHero() {
           ? `
             <div class="decision-action-state">
               <div class="task-pill">${capitalizeWords(actionState.status)}</div>
-              <div class="panel-copy">${actionState.message}</div>
+              <div class="panel-copy"><span id="today-move-status-text"></span></div>
             </div>
           `
           : `
@@ -2720,7 +2782,7 @@ function renderMorningHero() {
         <div class="decision-summary-grid">
           <div class="decision-summary-card">
             <div class="micro-label">Why this matters</div>
-            <h3>${issue.headline}</h3>
+            <h3><span id="today-move-issue"></span></h3>
             <div class="issue-score">Issue score ${issue.score}/100</div>
             <div class="decision-reason-list">
               ${(issue.reasons || []).slice(0, 3).map((reason) => `<div class="financial-reason">${reason}</div>`).join("")}
@@ -2739,8 +2801,40 @@ function renderMorningHero() {
     </div>
   `;
 
+  applyTypewriterEffect(document.getElementById("today-move-title"), move.signal || move.headline, {
+    key: `today-move-title:${move.decisionKey || move.signal || move.headline}`,
+    speed: 18,
+    delay: 360,
+  });
+  applyTypewriterEffect(document.getElementById("today-move-why"), move.why, {
+    key: `today-move-why:${move.decisionKey || move.signal || move.headline}`,
+    speed: 20,
+    delay: 520,
+    cursor: false,
+  });
+  if (actionState?.message) {
+    applyTypewriterEffect(document.getElementById("today-move-status-text"), actionState.message, {
+      key: `today-move-status:${move.decisionKey || move.signal || move.headline}:${actionState.status}`,
+      speed: 18,
+      delay: 160,
+      cursor: false,
+    });
+  }
+
+  const decisionDetails = hero.querySelector(".decision-details");
+  decisionDetails?.addEventListener("toggle", () => {
+    if (decisionDetails.open) {
+      applyTypewriterEffect(document.getElementById("today-move-issue"), issue.headline, {
+        key: `today-move-issue:${move.decisionKey || move.signal || move.headline}`,
+        speed: 18,
+        delay: 120,
+      });
+    }
+  });
+
   document.getElementById("signal-execute")?.addEventListener("click", async () => {
     try {
+      playButtonSound("execute");
       const payload = await recordTodayMoveAction("execute");
       if (payload?.actionState) {
         state.homeApi.todayMove = {
@@ -2759,6 +2853,7 @@ function renderMorningHero() {
   });
   document.getElementById("signal-simulate")?.addEventListener("click", async () => {
     try {
+      playButtonSound("simulate");
       const payload = await recordTodayMoveAction("simulate");
       if (payload?.actionState) {
         state.homeApi.todayMove = {
@@ -2919,7 +3014,17 @@ function renderRailFooter() {
     <div class="meta-line">Market region <span>${regionLabel}</span></div>
     <div class="meta-line">Financial sync <span>${state.syncStatus.financialPosition}</span></div>
     <div class="meta-line">Signal delivery <span>${deliveryStatus}</span></div>
+    <div class="meta-line">Sound <button class="subtle-toggle" id="sound-toggle" type="button">${state.sound.enabled ? "On" : "Off"}</button></div>
   `;
+  document.getElementById("sound-toggle")?.addEventListener("click", async () => {
+    state.sound.enabled = !state.sound.enabled;
+    persistSoundPreference();
+    if (state.sound.enabled) {
+      await soundEngine?.unlock?.();
+      playButtonSound("simulate");
+    }
+    renderRailFooter();
+  });
 }
 
 function renderXpLevel() {
@@ -4198,6 +4303,7 @@ async function bootstrap() {
     initSupabaseClient();
     loadMarketRegion();
     loadAuthState();
+    loadSoundPreference();
     loadSubscriberPreferences();
     loadOnboardingState();
     await loadMockApiState();

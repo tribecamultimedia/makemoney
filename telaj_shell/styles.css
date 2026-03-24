@@ -202,6 +202,14 @@ select:focus {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.auth-form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
 .auth-note {
   border: 2px solid var(--border);
   background: var(--card-strong);

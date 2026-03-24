@@ -1999,12 +1999,19 @@ function renderAuthShell() {
                 <span class="micro-label">Password</span>
                 <input id="auth-password" type="password" placeholder="Minimum 6 characters" />
               </label>
+              <div class="auth-form-actions">
+                <div class="task-pill">${state.subscription.plan} · ${state.subscription.status}</div>
+                <button class="action-button primary" id="auth-submit" ${betaUnlocked ? "" : "disabled"}>${
+                  mode === "signup" ? "Create account" : "Log in"
+                }</button>
+              </div>
             </div>
           `
           : `
             <div class="auth-note">
               <div class="micro-label">What TELAJ does</div>
               <div class="panel-copy">Map your cash, debt, and investments once. TELAJ then tells you the single smartest next move, instead of making you interpret another finance dashboard.</div>
+              <div class="panel-copy">Choose guest access to enter immediately after acknowledging the disclaimer.</div>
             </div>
           `
       }
@@ -2021,12 +2028,6 @@ function renderAuthShell() {
             I understand TELAJ provides educational information and model-based guidance only.
           </span>
         </label>
-        <div class="onboarding-actions compact-auth-actions">
-          <div class="task-pill">${state.subscription.plan} · ${state.subscription.status}</div>
-          <button class="action-button primary" id="auth-continue" ${betaUnlocked ? "" : "disabled"}>${
-            mode === "signup" ? "Create account" : mode === "login" ? "Log in" : "Continue as guest"
-          }</button>
-        </div>
       </div>
       <div class="auth-legal-links">
         <button class="ghost-button" id="open-disclaimer">View disclaimer</button>
@@ -2076,6 +2077,10 @@ function renderAuthShell() {
     state.auth.mode = "guest";
     state.auth.error = "";
     state.auth.info = "";
+    if (state.auth.legalAccepted && hasBetaAccess()) {
+      handleAuthContinue();
+      return;
+    }
     renderAuthShell();
   });
   document.getElementById("auth-signup")?.addEventListener("click", () => {
@@ -2115,7 +2120,7 @@ function renderAuthShell() {
     const betaCode = document.getElementById("beta-code")?.value || "";
     unlockBetaAccess(betaCode);
   });
-  document.getElementById("auth-continue")?.addEventListener("click", async () => {
+  document.getElementById("auth-submit")?.addEventListener("click", async () => {
     await handleAuthContinue();
   });
   document.getElementById("auth-google")?.addEventListener("click", async () => {

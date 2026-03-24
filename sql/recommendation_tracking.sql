@@ -64,3 +64,33 @@ on public.recommendation_history
 for insert
 to authenticated
 with check (auth.uid() = user_id);
+
+create table if not exists public.asset_signal_tracks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  query text not null default '',
+  symbol text not null default '',
+  label text not null default '',
+  region text not null default 'US',
+  signal text not null default '',
+  entry_price numeric not null default 0,
+  notional numeric not null default 10000,
+  tracked_at timestamptz not null default timezone('utc', now())
+);
+
+create index if not exists asset_signal_tracks_user_tracked_idx
+on public.asset_signal_tracks (user_id, tracked_at desc);
+
+alter table public.asset_signal_tracks enable row level security;
+
+create policy "asset_signal_tracks_select_own"
+on public.asset_signal_tracks
+for select
+to authenticated
+using (auth.uid() = user_id);
+
+create policy "asset_signal_tracks_insert_own"
+on public.asset_signal_tracks
+for insert
+to authenticated
+with check (auth.uid() = user_id);

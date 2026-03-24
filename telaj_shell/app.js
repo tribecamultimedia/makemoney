@@ -185,6 +185,13 @@ const defaultState = {
     loading: false,
     error: "",
   },
+  assetTracks: {
+    items: [],
+    summary: {
+      trackedCount: 0,
+      successRate: 0,
+    },
+  },
   marketRegime: {
     live: false,
     region: "US",
@@ -779,6 +786,7 @@ const soundEngine = effectsApi.TelajSoundEngine ? new effectsApi.TelajSoundEngin
 const DEFAULT_BETA_INVITE_CODES = ["TELAJ-BETA-7Q2M9X"];
 const FINANCIAL_POSITION_ENDPOINT = "/api/financial-position";
 const ASSET_CHECK_ENDPOINT = "/api/asset-check";
+const ASSET_TRACK_ENDPOINT = "/api/asset-track";
 const HOME_ENDPOINT = "/api/home";
 const SIGNAL_ACTION_ENDPOINT = "/api/signal-action";
 const MARKET_REGIME_ENDPOINT = "/api/market-regime";
@@ -1253,6 +1261,7 @@ async function loadHomeDecisionState() {
       actionPlan: homePayload?.actionPlan || null,
       performanceSummary: homePayload?.performanceSummary || null,
     };
+    await loadAssetTracks();
     return true;
   } catch (error) {
     console.warn("TELAJ home decision routes failed, keeping local fallback rendering.", error);
@@ -1432,6 +1441,68 @@ async function requestAssetCheck(query) {
   }
 
   return evaluateAssetCheck(normalized);
+}
+
+async function loadAssetTracks() {
+  if (!state.auth.authenticated) {
+    state.assetTracks = {
+      items: [],
+      summary: {
+        trackedCount: 0,
+        successRate: 0,
+      },
+    };
+    return null;
+  }
+  try {
+    const payload = await fetchAuthedJson(ASSET_TRACK_ENDPOINT);
+    if (payload?.tracks) {
+      state.assetTracks = {
+        items: payload.tracks,
+        summary: payload.summary || {
+          trackedCount: payload.tracks.length,
+          successRate: 0,
+        },
+      };
+      return payload;
+    }
+  } catch (error) {
+    console.warn("TELAJ could not load asset tracks.", error);
+  }
+  return null;
+}
+
+async function trackAssetSignal() {
+  const result = state.assetCheck.result;
+  if (!result || !state.auth.authenticated || !result.currentPrice) {
+    return null;
+  }
+  const token = await getAccessToken();
+  if (!token) {
+    return null;
+  }
+  const response = await fetch(ASSET_TRACK_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      query: state.assetCheck.query,
+      symbol: result.symbol || result.ticker,
+      label: result.label,
+      signal: result.signal,
+      region: state.marketRegion,
+      entryPrice: result.currentPrice,
+      notional: 10000,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Asset track failed: ${response.status}`);
+  }
+  const payload = await response.json();
+  await loadAssetTracks();
+  return payload?.tracked || null;
 }
 
 async function loadMarketRegime() {
@@ -3882,6 +3953,11 @@ function renderWatchlist() {
                 : ""
             }
             <div class="history-meta">Match ${assetResult.matchScore || "--"} · Model ${assetResult.modelScore || "--"} · Risk: ${assetResult.risk} Safer option: ${assetResult.safer} Horizon: ${assetResult.horizon}.</div>
+            ${
+              state.auth.authenticated && assetResult.currentPrice
+                ? `<div class="property-action-row compact-track-row"><button class="action-button" id="asset-track-run">Track 10k paper</button><div class="history-meta">TELAJ will track what 10k would have done from this signal.</div></div>`
+                : ""
+            }
           </div>
         `
         : `
@@ -3892,6 +3968,35 @@ function renderWatchlist() {
         `
     }
     ${state.assetCheck.error ? `<div class="history-meta">${state.assetCheck.error}. TELAJ used the local fallback.</div>` : ""}
+    ${
+      state.assetTracks.items.length
+        ? `
+          <div class="section-spacer"></div>
+          <div class="eyebrow">Tracked signal outcomes</div>
+          <div class="history-meta">Success rate ${Math.round(state.assetTracks.summary.successRate || 0)}% · ${state.assetTracks.summary.trackedCount} tracked ideas</div>
+          <div class="history-list">
+            ${state.assetTracks.items
+              .slice(0, 4)
+              .map(
+                (item) => `
+                  <div class="history-item">
+                    <div class="history-top">
+                      <div>
+                        <div class="row-label">${item.symbol} · ${item.label}</div>
+                        <div>${item.signal.toUpperCase()}</div>
+                      </div>
+                      <div class="signal-badge ${item.pnl >= 0 ? "good" : "warn"}">${item.pnl >= 0 ? "+" : ""}${item.pnlPct.toFixed(1)}%</div>
+                    </div>
+                    <div class="history-meta">If you had put 10k into ${item.symbol} on ${new Date(item.trackedAt).toLocaleDateString()}, it would now be ${item.pnl >= 0 ? "up" : "down"} ${Math.abs(item.pnl).toLocaleString(undefined, { maximumFractionDigits: 0 })}.</div>
+                    <div class="history-meta">Entry ${item.entryPrice.toFixed(2)} · Current ${item.currentPrice.toFixed(2)} · Status ${item.status}</div>
+                  </div>
+                `
+              )
+              .join("")}
+          </div>
+        `
+        : ""
+    }
     <div class="ticker-tape">
       ${state.marketTape
         .map(
@@ -3942,6 +4047,14 @@ function renderWatchlist() {
     state.assetCheck.result = await requestAssetCheck(state.assetCheck.query);
     state.assetCheck.loading = false;
     renderWatchlist();
+  });
+  document.getElementById("asset-track-run")?.addEventListener("click", async () => {
+    try {
+      await trackAssetSignal();
+      renderWatchlist();
+    } catch (error) {
+      console.warn("TELAJ could not track the paper asset signal.", error);
+    }
   });
   document.getElementById("asset-check-clear")?.addEventListener("click", () => {
     state.assetCheck.query = "";

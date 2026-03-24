@@ -143,6 +143,24 @@ async function insertRecommendationHistory(accessToken, payload) {
   return Array.isArray(rows) ? rows[0] || null : rows;
 }
 
+async function insertAssetSignalTrack(accessToken, payload) {
+  const rows = await requestSupabase("asset_signal_tracks", {
+    method: "POST",
+    accessToken,
+    body: payload,
+    prefer: "return=representation",
+  });
+  return Array.isArray(rows) ? rows[0] || null : rows;
+}
+
+async function getAssetSignalTracks(accessToken, userId, limit = 10) {
+  const rows = await requestSupabase(
+    `asset_signal_tracks?select=*&user_id=eq.${userId}&order=tracked_at.desc&limit=${limit}`,
+    { accessToken }
+  );
+  return Array.isArray(rows) ? rows : [];
+}
+
 module.exports = {
   getConfigError,
   getServiceRoleConfigError,
@@ -155,4 +173,6 @@ module.exports = {
   getSignalActionForDecision,
   insertSignalAction,
   insertRecommendationHistory,
+  insertAssetSignalTrack,
+  getAssetSignalTracks,
 };

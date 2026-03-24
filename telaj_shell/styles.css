@@ -1110,6 +1110,11 @@ select:focus {
   background: rgba(255, 209, 102, 0.95);
 }
 
+.compact-track-row {
+  align-items: center;
+  margin-top: 6px;
+}
+
 .typewriter-cursor {
   display: inline-block;
   margin-left: 2px;

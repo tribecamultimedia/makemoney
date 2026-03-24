@@ -536,6 +536,7 @@ module.exports = async function handler(req, res) {
     analysis: {
       ticker: asset.symbol.replace(/^C:/, ""),
       label: asset.label,
+      symbol: asset.symbol,
       signal: opinion.signal,
       confidence: opinion.confidence,
       why: opinion.why,
@@ -554,6 +555,7 @@ module.exports = async function handler(req, res) {
       modelScore: Math.round((opinion.model?.score || 0.5) * 100),
       features: opinion.model?.features || null,
       candles,
+      currentPrice: quote?.price || null,
     },
   });
 };

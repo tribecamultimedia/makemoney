@@ -5199,8 +5199,8 @@ function bindNav() {
     });
   }
 
-  document.getElementById("hero-execute").addEventListener("click", jumpToFinancialPosition);
-  document.getElementById("hero-simulate").addEventListener("click", jumpToMorningSignal);
+  document.getElementById("hero-execute")?.addEventListener("click", jumpToFinancialPosition);
+  document.getElementById("hero-simulate")?.addEventListener("click", jumpToMorningSignal);
 }
 
 function renderAll() {

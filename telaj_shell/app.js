@@ -844,6 +844,36 @@ function showFatalShellError(message) {
   document.getElementById("fatal-reload")?.addEventListener("click", () => window.location.reload());
 }
 
+function renderLoadingOverlay(message = "Loading TELAJ...") {
+  let overlay = document.getElementById("telaj-loading-overlay");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "telaj-loading-overlay";
+    overlay.className = "loading-overlay";
+    overlay.innerHTML = `
+      <div class="loading-overlay-backdrop"></div>
+      <div class="loading-overlay-card" role="status" aria-live="polite">
+        <div class="loading-spinner" aria-hidden="true"></div>
+        <div class="micro-label">TELAJ</div>
+        <div class="loading-overlay-message" id="telaj-loading-message"></div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+  }
+  overlay.hidden = false;
+  const messageNode = document.getElementById("telaj-loading-message");
+  if (messageNode) {
+    messageNode.textContent = message;
+  }
+}
+
+function hideLoadingOverlay() {
+  const overlay = document.getElementById("telaj-loading-overlay");
+  if (overlay) {
+    overlay.hidden = true;
+  }
+}
+
 function normalizeInviteCode(value) {
   return String(value || "")
     .trim()
@@ -2148,11 +2178,21 @@ async function handleAuthContinue() {
     return;
   }
 
+  renderLoadingOverlay(
+    state.auth.mode === "signup"
+      ? "Creating your TELAJ account..."
+      : state.auth.mode === "login"
+        ? "Loading your TELAJ session..."
+        : "Entering TELAJ..."
+  );
+
+  try {
   if (state.auth.mode === "guest") {
     if (client) {
       const { data, error } = await client.auth.signInAnonymously();
       if (error) {
         state.auth.error = error.message;
+        hideLoadingOverlay();
         renderAuthShell();
         return;
       }
@@ -2169,6 +2209,7 @@ async function handleAuthContinue() {
       state.syncStatus.financialPosition = "Local browser only";
     }
     persistAuthState();
+    hideLoadingOverlay();
     renderAuthShell();
     renderOnboarding();
     return;
@@ -2180,11 +2221,13 @@ async function handleAuthContinue() {
 
   if (!client) {
     state.auth.error = "Supabase is not configured yet. Add the public URL and anon key to enable account auth.";
+    hideLoadingOverlay();
     renderAuthShell();
     return;
   }
   if (!email || !password) {
     state.auth.error = "Email and password are required.";
+    hideLoadingOverlay();
     renderAuthShell();
     return;
   }
@@ -2196,6 +2239,7 @@ async function handleAuthContinue() {
 
   if (result.error) {
     state.auth.error = result.error.message;
+    hideLoadingOverlay();
     renderAuthShell();
     return;
   }
@@ -2206,8 +2250,13 @@ async function handleAuthContinue() {
   persistAuthState();
   await loadFinancialPositionFromApi();
   await loadHomeDecisionState();
+  hideLoadingOverlay();
   renderAuthShell();
   renderOnboarding();
+  } catch (error) {
+    hideLoadingOverlay();
+    throw error;
+  }
 }
 
 async function handleOAuth(provider) {
@@ -2233,6 +2282,7 @@ async function handleOAuth(provider) {
     return;
   }
 
+  renderLoadingOverlay(`Connecting ${provider}...`);
   const { error } = await client.auth.signInWithOAuth({
     provider,
     options: {
@@ -2242,6 +2292,7 @@ async function handleOAuth(provider) {
 
   if (error) {
     state.auth.error = error.message;
+    hideLoadingOverlay();
     renderAuthShell();
     return;
   }
@@ -2352,23 +2403,37 @@ function renderIntentStage() {
     state.onboarding.intent.statusText = "Analyzing your position...";
     persistOnboardingState();
     renderIntentStage();
-    state.onboarding.intent.analysis = await analyzeIntent(nextNotes, state.onboarding.profiles);
-    state.onboarding.intent.confirmed = false;
-    state.onboarding.intent.statusText = "Recommendation ready.";
-    persistOnboardingState();
-    renderIntentStage();
+    renderLoadingOverlay("Analyzing your position...");
+    try {
+      state.onboarding.intent.analysis = await analyzeIntent(nextNotes, state.onboarding.profiles);
+      state.onboarding.intent.confirmed = false;
+      state.onboarding.intent.statusText = "Recommendation ready.";
+      persistOnboardingState();
+      hideLoadingOverlay();
+      renderIntentStage();
+    } catch (error) {
+      hideLoadingOverlay();
+      throw error;
+    }
   });
 
   document.getElementById("intent-enter")?.addEventListener("click", async () => {
     state.onboarding.intent.notes = document.getElementById("intent-notes").value.trim();
-    state.onboarding.intent.analysis = await analyzeIntent(state.onboarding.intent.notes, state.onboarding.profiles);
-    state.onboarding.intent.confirmed = Boolean(state.onboarding.intent.analysis);
-    state.onboarding.completed = true;
-    state.onboarding.stage = "complete";
-    persistOnboardingState();
-    applyProfilesToNarrative();
-    renderOnboarding();
-    renderAll();
+    renderLoadingOverlay("Preparing your TELAJ recommendation...");
+    try {
+      state.onboarding.intent.analysis = await analyzeIntent(state.onboarding.intent.notes, state.onboarding.profiles);
+      state.onboarding.intent.confirmed = Boolean(state.onboarding.intent.analysis);
+      state.onboarding.completed = true;
+      state.onboarding.stage = "complete";
+      persistOnboardingState();
+      applyProfilesToNarrative();
+      hideLoadingOverlay();
+      renderOnboarding();
+      renderAll();
+    } catch (error) {
+      hideLoadingOverlay();
+      throw error;
+    }
   });
 }
 

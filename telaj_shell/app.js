@@ -4119,44 +4119,56 @@ function renderWatchlist() {
     ${
       assetResult
         ? `
-          <div class="subpanel">
-            <div class="history-top">
+          <div class="subpanel telaj-asset-card">
+            <div class="telaj-asset-top">
               <div>
-                <div class="row-label">${assetResult.ticker} · ${assetResult.label}</div>
-                <div>${assetResult.signal.toUpperCase()}</div>
+                <div class="row-label">TELAJ asset call</div>
+                <h4 class="telaj-asset-name">${assetResult.ticker} · ${assetResult.label}</h4>
+                <div class="telaj-asset-opinion">${assetResult.signal.toUpperCase()}</div>
               </div>
               <div class="signal-badge ${assetResult.signal.includes("avoid") ? "warn" : assetResult.signal.includes("hold") || assetResult.signal.includes("review") ? "" : "good"}">${assetResult.confidence}%</div>
             </div>
-            ${
-              assetResult.priceLine
-                ? `<div class="history-meta">${assetResult.priceLine}${assetResult.source ? ` · ${assetResult.source}` : ""}</div>`
-                : assetResult.source
-                  ? `<div class="history-meta">${assetResult.source}</div>`
+            <div class="telaj-asset-grid">
+              <div class="telaj-asset-price-block">
+                <div class="micro-label">Price</div>
+                <div class="telaj-asset-price">${formatAssetCheckPrice(assetResult.currentPrice, assetResult.ticker)}</div>
+                <div class="history-meta">${assetResult.priceLine || "Live price unavailable right now."}</div>
+                ${
+                  assetResult.source
+                    ? `<div class="history-meta">Source ${assetResult.source}</div>`
+                    : ""
+                }
+              </div>
+              <div class="telaj-asset-candles-block">
+                <div class="micro-label">Mini candles</div>
+                ${
+                  Array.isArray(assetResult.candles) && assetResult.candles.length
+                    ? `
+                      <div class="mini-candle-strip telaj-candle-strip">
+                        ${assetResult.candles
+                          .map((bar) => {
+                            const direction = bar.close >= bar.open ? "up" : "down";
+                            const body = Math.max(8, Math.min(26, Math.round((Math.abs(bar.close - bar.open) / Math.max(bar.close, 0.0001)) * 180)));
+                            const wick = Math.max(18, Math.min(38, Math.round(((bar.high - bar.low) / Math.max(bar.close, 0.0001)) * 160)));
+                            return `<span class="mini-candle ${direction}" style="--body:${body}px; --wick:${wick}px"></span>`;
+                          })
+                          .join("")}
+                      </div>
+                    `
+                    : `<div class="history-meta">Recent candle data is not available yet.</div>`
+                }
+              </div>
+            </div>
+            <div class="telaj-asset-opinion-block">
+              <div class="micro-label">TELAJ opinion</div>
+              <div class="panel-copy">${assetResult.why}</div>
+              ${
+                assetResult.newsSummary
+                  ? `<div class="history-meta">${assetResult.newsSummary}</div>`
                   : ""
-            }
-            ${
-              Array.isArray(assetResult.candles) && assetResult.candles.length
-                ? `
-                  <div class="mini-candle-strip">
-                    ${assetResult.candles
-                      .map((bar) => {
-                        const direction = bar.close >= bar.open ? "up" : "down";
-                        const body = Math.max(8, Math.min(26, Math.round((Math.abs(bar.close - bar.open) / Math.max(bar.close, 0.0001)) * 180)));
-                        const wick = Math.max(18, Math.min(38, Math.round(((bar.high - bar.low) / Math.max(bar.close, 0.0001)) * 160)));
-                        return `<span class="mini-candle ${direction}" style="--body:${body}px; --wick:${wick}px"></span>`;
-                      })
-                      .join("")}
-                  </div>
-                `
-                : ""
-            }
-            <div class="panel-copy">${assetResult.why}</div>
-            ${
-              assetResult.newsSummary
-                ? `<div class="panel-copy">${assetResult.newsSummary}</div>`
-                : ""
-            }
-            <div class="history-meta">Match ${assetResult.matchScore || "--"} · Model ${assetResult.modelScore || "--"} · Risk: ${assetResult.risk} Safer option: ${assetResult.safer} Horizon: ${assetResult.horizon}.</div>
+              }
+              <div class="history-meta">Match ${assetResult.matchScore || "--"} · Model ${assetResult.modelScore || "--"} · Risk ${assetResult.risk} · Safer option ${assetResult.safer} · Horizon ${assetResult.horizon}</div>
+            </div>
             ${
               state.auth.authenticated && assetResult.currentPrice
                 ? `<div class="property-action-row compact-track-row"><button class="action-button" id="asset-track-run">Track 10k paper</button><div class="history-meta">TELAJ will track what 10k would have done from this signal.</div></div>`
@@ -4277,6 +4289,18 @@ function renderWatchlist() {
     state.assetCheck.result = await requestAssetCheck(state.assetCheck.query);
     state.assetCheck.loading = false;
     renderWatchlist();
+  });
+}
+
+function formatAssetCheckPrice(value, ticker) {
+  const price = Number(value);
+  if (!Number.isFinite(price) || price <= 0) {
+    return "Waiting for live price";
+  }
+  const precision = ticker && ticker.includes("/") ? 4 : price >= 1000 ? 0 : price >= 100 ? 2 : 4;
+  return price.toLocaleString(undefined, {
+    minimumFractionDigits: precision,
+    maximumFractionDigits: precision,
   });
 }
 

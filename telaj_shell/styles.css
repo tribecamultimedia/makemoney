@@ -1110,6 +1110,72 @@ select:focus {
   background: rgba(255, 209, 102, 0.95);
 }
 
+.telaj-asset-card {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  background:
+    radial-gradient(circle at top right, rgba(31, 107, 255, 0.16), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
+  border: 1px solid rgba(77, 145, 255, 0.18);
+}
+
+.telaj-asset-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.telaj-asset-name {
+  margin: 6px 0 4px;
+  font-size: 24px;
+  line-height: 1.05;
+}
+
+.telaj-asset-opinion {
+  color: var(--accent-strong);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.telaj-asset-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 180px) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.telaj-asset-price-block,
+.telaj-asset-candles-block,
+.telaj-asset-opinion-block {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.telaj-asset-price-block,
+.telaj-asset-candles-block {
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(5, 12, 25, 0.34);
+}
+
+.telaj-asset-price {
+  font-size: clamp(24px, 3vw, 34px);
+  line-height: 1;
+  font-weight: 700;
+}
+
+.telaj-candle-strip {
+  min-height: 58px;
+  padding-top: 6px;
+}
+
+.telaj-asset-opinion-block {
+  padding-top: 2px;
+}
+
 .compact-track-row {
   align-items: center;
   margin-top: 6px;
@@ -1923,6 +1989,15 @@ select:focus {
   .financial-plan-grid,
   .answer-grid,
   .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .telaj-asset-top {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .telaj-asset-grid {
     grid-template-columns: 1fr;
   }
 }

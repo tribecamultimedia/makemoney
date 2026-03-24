@@ -238,6 +238,59 @@ select:focus {
   border-top: 0;
 }
 
+.auth-legal-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.modal-shell[hidden] {
+  display: none;
+}
+
+.modal-shell {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 30;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.64);
+  backdrop-filter: blur(8px);
+}
+
+.modal-card {
+  position: relative;
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(78vh, 760px);
+  overflow: auto;
+  border: 2px solid var(--border-strong);
+  background: linear-gradient(180deg, rgba(31, 107, 255, 0.08), rgba(23, 24, 27, 0.98));
+  box-shadow: 18px 18px 0 rgba(0, 0, 0, 0.36);
+  padding: 22px;
+  display: grid;
+  gap: 16px;
+}
+
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+}
+
+.modal-body {
+  display: grid;
+  gap: 12px;
+}
+
 .legal-ack input {
   width: 18px;
   min-height: 18px;

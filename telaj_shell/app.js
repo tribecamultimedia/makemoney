@@ -2028,13 +2028,35 @@ function renderAuthShell() {
           }</button>
         </div>
       </div>
-      <div class="legal-note">
-        <div class="micro-label">Important</div>
-        <div class="panel-copy">TELAJ is not a broker, not an investment adviser, and not a fiduciary. Signals, scenarios, and allocation examples are informational only and do not guarantee future results.</div>
+      <div class="auth-legal-links">
+        <button class="ghost-button" id="open-disclaimer">View disclaimer</button>
+        <div class="panel-copy">Privacy and cookies use essential storage only at this stage.</div>
       </div>
-      <div class="legal-note">
-        <div class="micro-label">Privacy and cookies</div>
-        <div class="panel-copy">TELAJ uses essential browser storage and session data to keep you signed in, remember your progress, and save financial inputs. If analytics or marketing tracking are added later, TELAJ should ask for separate consent before using them.</div>
+    </div>
+    <div class="modal-shell" id="disclaimer-modal" hidden>
+      <div class="modal-backdrop" data-close-modal="true"></div>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="disclaimer-title">
+        <div class="modal-head">
+          <div>
+            <div class="eyebrow">TELAJ DISCLAIMER</div>
+            <h2 id="disclaimer-title">Educational use only</h2>
+          </div>
+          <button class="ghost-button" id="close-disclaimer" type="button">Close</button>
+        </div>
+        <div class="modal-body">
+          <div class="legal-note">
+            <div class="micro-label">Important</div>
+            <div class="panel-copy">TELAJ is not a broker, not an investment adviser, and not a fiduciary. Signals, scenarios, and allocation examples are informational only and do not guarantee future results.</div>
+          </div>
+          <div class="legal-note">
+            <div class="micro-label">Responsibility</div>
+            <div class="panel-copy">TELAJ does not provide investment, tax, legal, accounting, or financial advice. You remain responsible for your own decisions and for verifying suitability with licensed professionals where needed.</div>
+          </div>
+          <div class="legal-note">
+            <div class="micro-label">Privacy and cookies</div>
+            <div class="panel-copy">TELAJ uses essential browser storage and session data to keep you signed in, remember your progress, and save financial inputs. If analytics or marketing tracking are added later, TELAJ should ask for separate consent before using them.</div>
+          </div>
+        </div>
       </div>
     </div>
   `;
@@ -2076,6 +2098,19 @@ function renderAuthShell() {
       renderAuthShell();
     })
   );
+  const disclaimerModal = document.getElementById("disclaimer-modal");
+  const closeDisclaimer = () => {
+    disclaimerModal.hidden = true;
+  };
+  document.getElementById("open-disclaimer")?.addEventListener("click", () => {
+    disclaimerModal.hidden = false;
+  });
+  document.getElementById("close-disclaimer")?.addEventListener("click", closeDisclaimer);
+  disclaimerModal?.addEventListener("click", (event) => {
+    if (event.target instanceof HTMLElement && event.target.dataset.closeModal === "true") {
+      closeDisclaimer();
+    }
+  });
   document.getElementById("beta-unlock")?.addEventListener("click", () => {
     const betaCode = document.getElementById("beta-code")?.value || "";
     unlockBetaAccess(betaCode);

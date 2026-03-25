@@ -1242,6 +1242,7 @@ function loadWealthInputs() {
     if (parsed.propertyAppraisal) {
       state.propertyAppraisal = { ...state.propertyAppraisal, ...parsed.propertyAppraisal };
     }
+    syncOnboardingFinancialAnswersFromState();
     state.syncStatus.financialPosition = "Local fallback";
     return true;
   } catch (error) {
@@ -1251,6 +1252,7 @@ function loadWealthInputs() {
 }
 
 function persistWealthInputs() {
+  syncOnboardingFinancialAnswersFromState();
   window.localStorage.setItem(
     WEALTH_INPUTS_STORAGE_KEY,
     JSON.stringify({
@@ -1262,6 +1264,21 @@ function persistWealthInputs() {
       propertyAppraisal: state.propertyAppraisal,
     })
   );
+}
+
+function syncOnboardingFinancialAnswersFromState() {
+  state.onboarding.answers = {
+    ...state.onboarding.answers,
+    liquidAssetsAmount: String(Number(state.liquidityDetails.liquidAssets || 0)),
+    monthlyNeedAmount: String(Number(state.liquidityDetails.monthlyNeed || 0)),
+    investmentsAmount: String(Number(state.financialPosition.investments || 0)),
+    retirementAmount: String(Number(state.financialPosition.retirement || 0)),
+    realEstateAmount: String(Number(state.financialPosition.realEstate || 0)),
+    businessAssetsAmount: String(Number(state.financialPosition.business || 0)),
+    creditCardDebtAmount: String(Number(state.financialPosition.creditCardDebt || 0)),
+    loansAmount: String(Number(state.financialPosition.loans || 0)),
+    mortgageDebtAmount: String(Number(state.financialPosition.mortgageDebt || 0)),
+  };
 }
 
 async function getAccessToken() {
@@ -1383,6 +1400,7 @@ function normalizeFinancialPositionPayload(payload) {
     ...state.assetLedger,
     items: Array.isArray(normalized.asset_ledger ?? normalized.assetLedger) ? (normalized.asset_ledger ?? normalized.assetLedger) : state.assetLedger.items,
   };
+  syncOnboardingFinancialAnswersFromState();
 }
 
 async function loadFinancialPositionFromApi() {

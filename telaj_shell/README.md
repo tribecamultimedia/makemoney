@@ -17,10 +17,8 @@ Static TELAJ product shell for drag-and-drop deployment on Netlify.
 - `mock-api/family-profile.json`
 - `api/financial-position.js`
 - `api/asset-check.js`
-- `api/where-i-stand.js`
-- `api/biggest-issue.js`
-- `api/today-move.js`
-- `api/action-plan.js`
+- `api/home.js`
+- `api/vault-ingest.js`
 
 ## Deploy
 
@@ -58,11 +56,10 @@ Do not use the service role key in the frontend.
   - `/api/intent-analysis`
 - The market-tape asset checker can now call:
   - `/api/asset-check`
-- The first TELAJ backend brain endpoints are now available:
-  - `/api/where-i-stand`
-  - `/api/biggest-issue`
-  - `/api/today-move`
-  - `/api/action-plan`
+- The first TELAJ backend brain endpoint is now available at:
+  - `/api/home`
+- Vault ingest now has a canonical backend route:
+  - `/api/vault-ingest`
 - Supported model env vars for Vercel:
   - `TELAJ_MODEL_PROVIDER`
     - `openai`
@@ -77,8 +74,55 @@ Do not use the service role key in the frontend.
 - The financial-position route needs backend env vars in Vercel:
   - `SUPABASE_URL`
   - `SUPABASE_ANON_KEY`
+- The vault-ingest route also needs:
+  - `SUPABASE_SERVICE_ROLE_KEY`
 - The live asset-check route can use:
   - `MASSIVE_API_KEY`
   - optional `MASSIVE_API_BASE`
 - The required table/policies are defined in:
   - `../sql/financial_positions.sql`
+  - `../sql/vault_documents.sql`
+
+## Vault Ingest Flow
+
+The current Vault UI still parses text-based PDFs in the browser with `pdf.js`.
+
+The new backend route:
+- accepts authenticated `POST /api/vault-ingest`
+- receives parsed text plus metadata from the frontend
+- writes a canonical row to `documents`
+- chunks the raw text into `document_chunks`
+- creates an ingest row in `document_jobs`
+- leaves embeddings stubbed if no model key is configured
+
+Expected payload shape:
+
+```json
+{
+  "title": "Milan apartment deed",
+  "fileName": "milan-deed.pdf",
+  "docType": "property",
+  "source": "uploaded-pdf",
+  "storagePath": "",
+  "rawText": "full parsed pdf text",
+  "summary": "Short extracted summary",
+  "extractedFacts": ["Owner: Mario Rossi", "Address: Via Roma 10"]
+}
+```
+
+Response shape:
+
+```json
+{
+  "documentId": "uuid",
+  "chunkCount": 6,
+  "status": "ready",
+  "embeddingStatus": "disabled"
+}
+```
+
+Follow-up steps for embeddings and retrieval:
+- generate real embeddings server-side when a model key is configured
+- add a `vault-search` route that queries `document_chunks`
+- store uploaded files in Supabase Storage and save canonical `storage_path`
+- add OCR for scanned image-only PDFs before ingest

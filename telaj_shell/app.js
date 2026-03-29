@@ -323,6 +323,7 @@ const defaultState = {
   },
   familyVault: {
     documents: [],
+    uploadStatus: "",
   },
   propertyAppraisal: {
     address: "",
@@ -340,6 +341,19 @@ const defaultState = {
     newsSignals: [],
     deals: [],
     taxEducation: { items: [] },
+  },
+  govDeals: {
+    summary: {
+      headline: "GovDeal Scout is watching federal and forfeiture inventory for unusual spread and cash-flow opportunities.",
+      note: "Read-only analysis only. TELAJ organizes public listings, calculates scenarios, and keeps final bidding manual."
+    },
+    listings: [],
+    deadlines: [],
+    sources: [],
+    digest: {
+      topMoveId: "",
+      note: ""
+    }
   },
   realEstateFilters: {
     budget: 350000,
@@ -830,6 +844,7 @@ const mockEndpoints = {
   progress: "./mock-api/progress.json",
   realEstate: "./mock-api/real-estate.json",
   realEstateIntel: "./mock-api/real-estate-intel.json",
+  govDealScout: "./mock-api/govdeal-scout.json",
 };
 
 function initSupabaseClient() {
@@ -1233,9 +1248,10 @@ function loadWealthInputs() {
         items: Array.isArray(parsed.recurringExpenses.items) ? parsed.recurringExpenses.items : [],
       };
     }
-    if (parsed.familyVault?.documents) {
+    if (parsed.familyVault) {
       state.familyVault = {
         ...state.familyVault,
+        ...parsed.familyVault,
         documents: Array.isArray(parsed.familyVault.documents) ? parsed.familyVault.documents : [],
       };
     }
@@ -1626,13 +1642,14 @@ async function loadMarketRegime() {
 
 async function loadMockApiState() {
   try {
-    const [familyDashboard, allocation, signals, progress, realEstate, realEstateIntel] = await Promise.all([
+    const [familyDashboard, allocation, signals, progress, realEstate, realEstateIntel, govDealScout] = await Promise.all([
       fetchJson(mockEndpoints.familyDashboard),
       fetchJson(mockEndpoints.allocation),
       fetchJson(mockEndpoints.signals),
       fetchJson(mockEndpoints.progress),
       fetchJson(mockEndpoints.realEstate),
       fetchJson(mockEndpoints.realEstateIntel),
+      fetchJson(mockEndpoints.govDealScout),
     ]);
 
     mergeState({
@@ -1653,6 +1670,7 @@ async function loadMockApiState() {
       leaderboard: progress.leaderboard ?? state.leaderboard,
       property: realEstate.property ?? state.property,
       realEstateIntel: realEstateIntel ?? state.realEstateIntel,
+      govDeals: govDealScout ?? state.govDeals,
       dataSource: "Mock API JSON",
     });
     if (!state.marketRegime?.regime) {
@@ -2987,6 +3005,10 @@ function formatEuro(value) {
   return `€${Math.round(Number(value) || 0).toLocaleString()}`;
 }
 
+function formatUsd(value) {
+  return `$${Math.round(Number(value) || 0).toLocaleString()}`;
+}
+
 function createAssetLedgerItem(kind = "property") {
   const id = `asset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const defaults = {
@@ -3231,6 +3253,12 @@ function createVaultDocument(kind = "property") {
     digitalLocation: "",
     critical: true,
     accessNote: "",
+    fileName: "",
+    autoFolder: "",
+    extractedSummary: "",
+    extractedFacts: [],
+    documentDate: "",
+    source: "manual",
   };
 }
 
@@ -3240,6 +3268,209 @@ function summarizeVault(documents) {
     total: safeDocuments.length,
     critical: safeDocuments.filter((item) => item.critical).length,
     missingLocation: safeDocuments.filter((item) => !item.storageLocation && !item.digitalLocation).length,
+    autoFiled: safeDocuments.filter((item) => item.autoFolder).length,
+  };
+}
+
+function getVaultCategoryOptions() {
+  return [
+    { value: "property", label: "Property" },
+    { value: "lien", label: "Lien / mortgage" },
+    { value: "cadastral", label: "Cadastral / registry" },
+    { value: "contract", label: "Contract / lease" },
+    { value: "insurance", label: "Insurance" },
+    { value: "identity", label: "Identity" },
+    { value: "estate", label: "Estate" },
+    { value: "tax", label: "Tax" },
+    { value: "other", label: "Other" },
+  ];
+}
+
+function normalizeFileTitle(name) {
+  return String(name || "")
+    .replace(/\.pdf$/i, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function summarizeDocumentLine(line) {
+  return String(line || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 140);
+}
+
+function detectVaultCategory(text, fileName = "") {
+  const haystack = `${fileName}\n${text}`.toLowerCase();
+  const rules = [
+    {
+      category: "cadastral",
+      label: "Cadastral / registry document",
+      folder: "Properties / Registry & Cadastral",
+      keywords: ["visura catastale", "catastale", "cadastral", "foglio", "particella", "subalterno", "catasto"],
+    },
+    {
+      category: "lien",
+      label: "Lien or mortgage document",
+      folder: "Properties / Liens & Mortgages",
+      keywords: ["mortgage", "lien", "ipoteca", "ipotecaria", "mutuo", "loan agreement", "security deed"],
+    },
+    {
+      category: "contract",
+      label: "Contract or lease",
+      folder: "Contracts & Leases",
+      keywords: ["lease", "agreement", "contract", "contratto", "locazione", "preliminare", "tenancy"],
+    },
+    {
+      category: "insurance",
+      label: "Insurance policy",
+      folder: "Insurance",
+      keywords: ["insurance", "policy", "insured", "premium", "assicurazione", "polizza"],
+    },
+    {
+      category: "estate",
+      label: "Estate document",
+      folder: "Estate & Succession",
+      keywords: ["will", "testament", "trust", "succession", "estate planning", "beneficiary"],
+    },
+    {
+      category: "identity",
+      label: "Identity document",
+      folder: "Identity & Personal Records",
+      keywords: ["passport", "identity card", "driver", "licence", "license", "carta d'identita", "passport no"],
+    },
+    {
+      category: "tax",
+      label: "Tax document",
+      folder: "Tax & Fiscal",
+      keywords: ["tax", "imu", "tari", "f24", "agenzia delle entrate", "property tax", "assessment"],
+    },
+    {
+      category: "property",
+      label: "Property title document",
+      folder: "Properties / Title & Ownership",
+      keywords: ["deed", "title", "atto", "rogito", "land registry", "ownership", "property deed"],
+    },
+  ];
+
+  let best = { category: "other", label: "Critical document", folder: "General Documents", score: 0 };
+  for (const rule of rules) {
+    const score = rule.keywords.reduce((count, keyword) => count + (haystack.includes(keyword) ? 1 : 0), 0);
+    if (score > best.score) {
+      best = { category: rule.category, label: rule.label, folder: rule.folder, score };
+    }
+  }
+  return best;
+}
+
+function extractDocumentDate(text) {
+  const match = String(text || "").match(/\b(\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}|\d{4}[\/.-]\d{1,2}[\/.-]\d{1,2})\b/);
+  return match ? match[1] : "";
+}
+
+function extractDocumentOwner(text) {
+  const lines = String(text || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const ownerLine = lines.find((line) => /owner|proprietar|intestat|insured|tenant|landlord|beneficiar/i.test(line));
+  if (!ownerLine) {
+    return "";
+  }
+  return summarizeDocumentLine(ownerLine);
+}
+
+function extractPropertyReference(text) {
+  const lines = String(text || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const propertyLine = lines.find((line) => /via |viale |piazza |street|road|avenue|addr|address|immobile|property/i.test(line));
+  return propertyLine ? summarizeDocumentLine(propertyLine) : "";
+}
+
+function extractDocumentFacts(text, category) {
+  const lines = String(text || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 4);
+  const categoryHints = {
+    cadastral: /foglio|particella|subalterno|catast|unit|address/i,
+    lien: /mortgage|ipoteca|loan|rate|balance|creditor|lender/i,
+    contract: /rent|term|tenant|landlord|agreement|lease|deposit/i,
+    insurance: /policy|insured|premium|coverage|claim/i,
+    estate: /will|beneficiary|executor|testament|trust/i,
+    identity: /passport|document|identity|issued|expires/i,
+    tax: /tax|imu|tari|payment|assessment|f24/i,
+    property: /owner|title|deed|property|address|registry/i,
+    other: /owner|document|date|address|reference/i,
+  };
+  const matcher = categoryHints[category] || categoryHints.other;
+  const facts = lines.filter((line) => matcher.test(line)).slice(0, 3).map(summarizeDocumentLine);
+  return facts.length ? facts : lines.slice(0, 2).map(summarizeDocumentLine);
+}
+
+function buildDocumentSummary(categoryLabel, propertyRef, owner, documentDate, facts) {
+  const parts = [categoryLabel];
+  if (propertyRef) {
+    parts.push(`likely tied to ${propertyRef}`);
+  }
+  if (owner) {
+    parts.push(`owner signal: ${owner}`);
+  }
+  if (documentDate) {
+    parts.push(`dated ${documentDate}`);
+  }
+  const intro = `${parts.join(", ")}.`;
+  if (!facts.length) {
+    return intro;
+  }
+  return `${intro} TELAJ extracted: ${facts.join(" • ")}.`;
+}
+
+async function extractPdfText(file) {
+  if (!window.pdfjsLib?.getDocument) {
+    throw new Error("PDF reader is not available in this build.");
+  }
+  const buffer = await file.arrayBuffer();
+  const task = window.pdfjsLib.getDocument({ data: buffer });
+  const pdf = await task.promise;
+  const pages = Math.min(pdf.numPages, 12);
+  const chunks = [];
+  for (let index = 1; index <= pages; index += 1) {
+    const page = await pdf.getPage(index);
+    const content = await page.getTextContent();
+    const pageText = content.items.map((item) => item.str).join(" ");
+    chunks.push(pageText);
+  }
+  const text = chunks.join("\n").replace(/\s+\n/g, "\n").trim();
+  if (!text) {
+    throw new Error("This PDF looks image-only. OCR for scanned documents is not added yet.");
+  }
+  return text;
+}
+
+async function createVaultDocumentFromPdf(file) {
+  const text = await extractPdfText(file);
+  const classification = detectVaultCategory(text, file.name);
+  const owner = extractDocumentOwner(text);
+  const propertyRef = extractPropertyReference(text);
+  const documentDate = extractDocumentDate(text);
+  const facts = extractDocumentFacts(text, classification.category);
+  return {
+    ...createVaultDocument(classification.category),
+    category: classification.category,
+    title: normalizeFileTitle(file.name) || classification.label,
+    owner,
+    critical: ["property", "lien", "cadastral", "estate", "identity"].includes(classification.category),
+    fileName: file.name,
+    autoFolder: classification.folder,
+    extractedSummary: buildDocumentSummary(classification.label, propertyRef, owner, documentDate, facts),
+    extractedFacts: facts,
+    documentDate,
+    source: "uploaded-pdf",
+    digitalLocation: `Uploaded PDF · ${file.name}`,
   };
 }
 
@@ -4773,8 +5004,18 @@ function renderFamilyVault() {
 
   docsPanel.innerHTML = `
     <div class="eyebrow">Critical documents</div>
-    <h3>Record where the important papers and files actually live</h3>
-    <div class="panel-copy">This is the first TELAJ family vault pass: title deeds, insurance, wills, IDs, and other key continuity documents with location and access notes.</div>
+    <h3>Upload, sort, and summarize the important family documents</h3>
+    <div class="panel-copy">TELAJ can now read a PDF in the browser, classify it, place it into a suggested folder, and show a short extracted summary. This MVP works best on text-based PDFs rather than scanned image-only files.</div>
+    <div class="asset-save-bar">
+      <div>
+        <div class="micro-label">PDF intake</div>
+        <div class="panel-copy">${state.familyVault.uploadStatus || "Choose a PDF and let TELAJ classify and auto-file it."}</div>
+      </div>
+      <div class="vault-upload-actions">
+        <input id="vault-upload-input" type="file" accept="application/pdf" class="vault-upload-input" />
+        <button class="action-button primary" id="vault-upload-run">Analyze PDF</button>
+      </div>
+    </div>
     <div class="property-action-row ledger-add-row">
       <button class="action-button" id="vault-add-property">Add property document</button>
       <button class="action-button" id="vault-add-insurance">Add insurance</button>
@@ -4799,12 +5040,12 @@ function renderFamilyVault() {
                       <label class="input-field">
                         <span class="micro-label">Category</span>
                         <select class="vault-doc-category">
-                          <option value="property" ${item.category === "property" ? "selected" : ""}>Property</option>
-                          <option value="insurance" ${item.category === "insurance" ? "selected" : ""}>Insurance</option>
-                          <option value="identity" ${item.category === "identity" ? "selected" : ""}>Identity</option>
-                          <option value="estate" ${item.category === "estate" ? "selected" : ""}>Estate</option>
-                          <option value="tax" ${item.category === "tax" ? "selected" : ""}>Tax</option>
-                          <option value="other" ${item.category === "other" ? "selected" : ""}>Other</option>
+                          ${getVaultCategoryOptions()
+                            .map(
+                              (option) =>
+                                `<option value="${option.value}" ${item.category === option.value ? "selected" : ""}>${option.label}</option>`
+                            )
+                            .join("")}
                         </select>
                       </label>
                       <label class="input-field">
@@ -4823,14 +5064,42 @@ function renderFamilyVault() {
                         <span class="micro-label">Digital location</span>
                         <input class="vault-doc-digital" type="text" value="${item.digitalLocation || ""}" placeholder="Drive folder, Dropbox, notary portal" />
                       </label>
+                      <label class="input-field">
+                        <span class="micro-label">Suggested folder</span>
+                        <input class="vault-doc-folder" type="text" value="${item.autoFolder || ""}" placeholder="Properties / Title & Ownership" />
+                      </label>
+                      <label class="input-field">
+                        <span class="micro-label">Document date</span>
+                        <input class="vault-doc-date" type="text" value="${item.documentDate || ""}" placeholder="24/03/2026" />
+                      </label>
                       <label class="input-field toggle-card">
                         <span class="micro-label">Critical</span>
                         <input class="vault-doc-critical" type="checkbox" ${item.critical ? "checked" : ""} />
+                      </label>
+                      <label class="input-field">
+                        <span class="micro-label">Source</span>
+                        <input class="vault-doc-source" type="text" value="${item.source || "manual"}" placeholder="uploaded-pdf or manual" />
                       </label>
                       <label class="input-field input-span-2">
                         <span class="micro-label">Access note</span>
                         <input class="vault-doc-access" type="text" value="${item.accessNote || ""}" placeholder="Who knows where it is and how the family should retrieve it" />
                       </label>
+                      <label class="input-field input-span-2">
+                        <span class="micro-label">Extracted summary</span>
+                        <textarea class="vault-doc-summary" rows="3" placeholder="TELAJ summary of the uploaded document">${item.extractedSummary || ""}</textarea>
+                      </label>
+                      ${
+                        item.extractedFacts?.length
+                          ? `
+                            <div class="vault-facts input-span-2">
+                              <div class="micro-label">Extracted facts</div>
+                              <div class="vault-facts-list">
+                                ${item.extractedFacts.map((fact) => `<span class="vault-fact-chip">${fact}</span>`).join("")}
+                              </div>
+                            </div>
+                          `
+                          : ""
+                      }
                     </div>
                   </div>
                 `
@@ -4848,6 +5117,7 @@ function renderFamilyVault() {
       <div class="stat-box"><div class="stat-label">Tracked docs</div><div class="stat-value">${summary.total}</div></div>
       <div class="stat-box"><div class="stat-label">Critical docs</div><div class="stat-value">${summary.critical}</div></div>
       <div class="stat-box"><div class="stat-label">Missing location</div><div class="stat-value">${summary.missingLocation}</div></div>
+      <div class="stat-box"><div class="stat-label">Auto-filed</div><div class="stat-value">${summary.autoFiled}</div></div>
     </div>
     <div class="section-spacer"></div>
     <div class="micro-label">TELAJ view</div>
@@ -4880,6 +5150,30 @@ function renderFamilyVault() {
     persistWealthInputs();
     renderFamilyVault();
   });
+  document.getElementById("vault-upload-run")?.addEventListener("click", async () => {
+    const input = document.getElementById("vault-upload-input");
+    const file = input?.files?.[0];
+    if (!file) {
+      state.familyVault.uploadStatus = "Choose a PDF first.";
+      persistWealthInputs();
+      renderFamilyVault();
+      return;
+    }
+    state.familyVault.uploadStatus = `Reading ${file.name}...`;
+    renderFamilyVault();
+    try {
+      const documentRecord = await createVaultDocumentFromPdf(file);
+      state.familyVault.documents.unshift(documentRecord);
+      state.familyVault.uploadStatus = `TELAJ classified ${file.name} as ${capitalizeWords(documentRecord.category)} and filed it under ${documentRecord.autoFolder}.`;
+      persistWealthInputs();
+      renderFamilyVault();
+    } catch (error) {
+      state.familyVault.uploadStatus =
+        error instanceof Error ? `TELAJ could not read that PDF: ${error.message}` : "TELAJ could not read that PDF.";
+      persistWealthInputs();
+      renderFamilyVault();
+    }
+  });
   docsPanel.querySelectorAll("[data-remove-doc]").forEach((button) => {
     button.addEventListener("click", () => {
       const index = Number(button.dataset.removeDoc);
@@ -4888,7 +5182,11 @@ function renderFamilyVault() {
       renderFamilyVault();
     });
   });
-  docsPanel.querySelectorAll(".vault-doc-category, .vault-doc-title, .vault-doc-owner, .vault-doc-storage, .vault-doc-digital, .vault-doc-critical, .vault-doc-access").forEach((input) => {
+  docsPanel
+    .querySelectorAll(
+      ".vault-doc-category, .vault-doc-title, .vault-doc-owner, .vault-doc-storage, .vault-doc-digital, .vault-doc-folder, .vault-doc-date, .vault-doc-critical, .vault-doc-source, .vault-doc-access, .vault-doc-summary"
+    )
+    .forEach((input) => {
     const eventName = input.type === "checkbox" || input.tagName === "SELECT" ? "change" : "input";
     input.addEventListener(eventName, () => {
       state.familyVault.documents = Array.from(docsPanel.querySelectorAll(".asset-ledger-item")).map((row) => ({
@@ -4898,13 +5196,19 @@ function renderFamilyVault() {
         owner: row.querySelector(".vault-doc-owner")?.value.trim() || "",
         storageLocation: row.querySelector(".vault-doc-storage")?.value.trim() || "",
         digitalLocation: row.querySelector(".vault-doc-digital")?.value.trim() || "",
+        autoFolder: row.querySelector(".vault-doc-folder")?.value.trim() || "",
+        documentDate: row.querySelector(".vault-doc-date")?.value.trim() || "",
         critical: Boolean(row.querySelector(".vault-doc-critical")?.checked),
+        source: row.querySelector(".vault-doc-source")?.value.trim() || "manual",
         accessNote: row.querySelector(".vault-doc-access")?.value.trim() || "",
+        extractedSummary: row.querySelector(".vault-doc-summary")?.value.trim() || "",
+        extractedFacts: state.familyVault.documents.find((item) => item.id === row.dataset.docId)?.extractedFacts || [],
+        fileName: state.familyVault.documents.find((item) => item.id === row.dataset.docId)?.fileName || "",
       }));
       persistWealthInputs();
       renderFamilyVault();
     });
-  });
+    });
 }
 
 function renderTasks() {
@@ -5707,12 +6011,21 @@ function renderProgress() {
 function renderRealEstate() {
   const engine = window.TelajRealEstateEngine;
   const intel = state.realEstateIntel || { markets: [], newsSignals: [], deals: [], taxEducation: { items: [] }, hero: null };
+  const govDeals = state.govDeals || { summary: {}, listings: [], deadlines: [], sources: [], digest: {} };
   const rankedMarkets = engine.rankMarkets(intel.markets || []);
   const marketSignals = engine.summarizeNews(intel.newsSignals || []);
   const topMarket = rankedMarkets[0];
   const filteredDeals = engine.findDeals(intel.deals || [], state.realEstateFilters || {});
   const addressAnalysis = engine.analyzeAddress(state.addressAnalyzer || {});
   const ownedPropertyDecision = engine.adviseOwnedProperty(state.holdAdvisor || {});
+  const rankedGovDeals = [...(govDeals.listings || [])].sort((a, b) => (b.overallDealScore || 0) - (a.overallDealScore || 0));
+  const topGovDeal =
+    rankedGovDeals.find((deal) => deal.id === govDeals.digest?.topMoveId) ||
+    rankedGovDeals[0] ||
+    null;
+  const nextGovDeadlines = [...(govDeals.deadlines || [])]
+    .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime())
+    .slice(0, 4);
 
   document.getElementById("property-signal").innerHTML = `
     <div class="eyebrow">Hero insight</div>
@@ -5726,8 +6039,123 @@ function renderRealEstate() {
     </div>
     <div class="property-action-row">
       <button class="action-button primary" id="property-go-deals">Open deal finder</button>
+      <button class="action-button" id="property-go-govdeals">Open GovDeal Scout</button>
       <button class="action-button" id="property-go-address">Analyze an address</button>
       <button class="ghost-button" id="property-go-allocation">Back to allocation</button>
+    </div>
+  `;
+
+  document.getElementById("govdeal-scout").innerHTML = `
+    <div class="eyebrow">GovDeal Scout</div>
+    <h3>Federal property opportunities inside TELAJ</h3>
+    <p class="panel-copy">${govDeals.summary?.headline || "Track ranked government real-estate opportunities with deadline-aware underwriting."}</p>
+    <div class="govdeal-hero">
+      <div class="subpanel govdeal-hero-card">
+        <div class="micro-label">Today's move</div>
+        <div class="govdeal-title">${topGovDeal ? topGovDeal.title : "No ranked deals loaded yet"}</div>
+        <div class="panel-copy">${govDeals.digest?.note || govDeals.summary?.note || "Read-only analysis only."}</div>
+        ${
+          topGovDeal
+            ? `
+          <div class="stats-grid">
+            <div class="stat-box"><div class="stat-label">Score</div><div class="stat-value">${topGovDeal.overallDealScore}</div></div>
+            <div class="stat-box"><div class="stat-label">Max bid</div><div class="stat-value">${formatUsd(topGovDeal.maxBid)}</div></div>
+            <div class="stat-box"><div class="stat-label">Cap rate</div><div class="stat-value">${topGovDeal.capRate}%</div></div>
+            <div class="stat-box"><div class="stat-label">Flip ROI</div><div class="stat-value">${topGovDeal.flipRoi}%</div></div>
+          </div>
+          <div class="tag-row">
+            <span class="task-pill">${topGovDeal.recommendation}</span>
+            <span class="task-pill">${topGovDeal.strategy}</span>
+            <span class="task-pill">${topGovDeal.sourceName}</span>
+          </div>
+        `
+            : ""
+        }
+      </div>
+    </div>
+    <div class="property-list">
+      ${rankedGovDeals
+        .slice(0, 3)
+        .map(
+          (deal) => `
+            <div class="subpanel govdeal-card">
+              <div class="history-top">
+                <div>
+                  <div class="row-label">${deal.sourceName}</div>
+                  <div>${deal.title}</div>
+                </div>
+                <div class="signal-badge ${deal.overallDealScore >= 85 ? "good" : deal.overallDealScore >= 75 ? "warn" : "bad"}">Score ${deal.overallDealScore}</div>
+              </div>
+              <div class="govdeal-address">${deal.address}, ${deal.city}, ${deal.state} ${deal.zipCode}</div>
+              <div class="stats-grid">
+                <div class="stat-box"><div class="stat-label">Current</div><div class="stat-value">${formatUsd(deal.currentPrice)}</div></div>
+                <div class="stat-box"><div class="stat-label">ARV</div><div class="stat-value">${formatUsd(deal.estimatedArv)}</div></div>
+                <div class="stat-box"><div class="stat-label">Rent</div><div class="stat-value">${formatUsd(deal.monthlyRent)}</div></div>
+                <div class="stat-box"><div class="stat-label">Max bid</div><div class="stat-value">${formatUsd(deal.maxBid)}</div></div>
+              </div>
+              <div class="panel-copy">${deal.reasonSummary}</div>
+              <div class="tag-row">
+                ${(deal.riskFlags || []).slice(0, 3).map((item) => `<span class="task-pill">${item}</span>`).join("")}
+              </div>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+
+  document.getElementById("govdeal-calendar").innerHTML = `
+    <div class="eyebrow">GovDeal Deadlines</div>
+    <h3>What needs manual attention next</h3>
+    <div class="property-list">
+      <div class="subpanel">
+        <div class="micro-label">Upcoming deadlines</div>
+        <div class="history-list">
+          ${nextGovDeadlines.length
+            ? nextGovDeadlines
+                .map(
+                  (item) => `
+                    <div class="history-item">
+                      <div class="history-top">
+                        <div>
+                          <div class="row-label">${item.label}</div>
+                          <div>${item.propertyTitle}</div>
+                        </div>
+                        <div class="signal-badge warn">${new Date(item.dueAt).toLocaleDateString()}</div>
+                      </div>
+                      <div class="history-meta">${item.sourceName} • ${new Date(item.dueAt).toLocaleString()}</div>
+                    </div>
+                  `
+                )
+                .join("")
+            : `<div class="panel-copy">No federal-property deadlines loaded yet.</div>`}
+        </div>
+      </div>
+      <div class="subpanel">
+        <div class="micro-label">Source health</div>
+        <div class="history-list">
+          ${(govDeals.sources || [])
+            .map(
+              (source) => `
+                <div class="history-item">
+                  <div class="history-top">
+                    <div>
+                      <div class="row-label">${source.sourceName}</div>
+                      <div>${source.note}</div>
+                    </div>
+                    <div class="signal-badge ${source.lastRunStatus === "healthy" ? "good" : source.lastRunStatus === "degraded" ? "warn" : "bad"}">${source.lastRunStatus}</div>
+                  </div>
+                  <div class="history-meta">${source.enabled ? "Enabled" : "Paused"} • ${source.lastRunAt}</div>
+                </div>
+              `
+            )
+            .join("")}
+        </div>
+      </div>
+    </div>
+    <div class="legal-note">
+      <div class="micro-label">Compliance boundary</div>
+      <div class="panel-copy">GovDeal Scout in TELAJ is read-only. It tracks public listings, ranks opportunities, and highlights deadlines, but final bidding, registration, deposits, and document review remain manual.</div>
     </div>
   `;
 
@@ -5891,6 +6319,9 @@ function renderRealEstate() {
   document.getElementById("property-go-deals").addEventListener("click", () => {
     document.getElementById("deal-finder")?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
+  document.getElementById("property-go-govdeals").addEventListener("click", () => {
+    document.getElementById("govdeal-scout")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
   document.getElementById("property-go-address").addEventListener("click", () => {
     document.getElementById("address-analyzer")?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
@@ -6001,10 +6432,14 @@ function renderAll() {
 }
 
 async function bootstrap() {
+  renderLoadingOverlay("Opening TELAJ...");
   try {
     initSupabaseClient();
     loadMarketRegion();
     loadAuthState();
+    if (state.auth.authenticated) {
+      renderLoadingOverlay("Restoring your TELAJ session...");
+    }
     loadSoundPreference();
     loadSubscriberPreferences();
     loadOnboardingState();
@@ -6015,6 +6450,7 @@ async function bootstrap() {
       try {
         const { data } = await supabaseClient.auth.getSession();
         if (data?.session?.user) {
+          renderLoadingOverlay("Loading your TELAJ workspace...");
           state.auth.authenticated = true;
           state.auth.guest = Boolean(data.session.user.is_anonymous);
           state.auth.email = data.session.user.email || "";
@@ -6040,12 +6476,15 @@ async function bootstrap() {
     }
     persistAuthState();
     if (state.auth.authenticated && state.onboarding.completed) {
+      renderLoadingOverlay("Preparing your TELAJ home...");
       renderAll();
     }
     renderAuthShell();
     renderOnboarding();
+    hideLoadingOverlay();
   } catch (error) {
     console.error("TELAJ bootstrap failed.", error);
+    hideLoadingOverlay();
     showFatalShellError(error instanceof Error ? error.message : "Unknown bootstrap failure");
   }
 }

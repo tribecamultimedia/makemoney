@@ -1217,6 +1217,18 @@ select:focus {
   align-items: center;
 }
 
+.vault-upload-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.vault-upload-input {
+  max-width: 260px;
+  font-size: 13px;
+}
+
 .asset-ledger-head {
   display: flex;
   justify-content: space-between;
@@ -1265,6 +1277,43 @@ select:focus {
   margin-top: 14px;
 }
 
+.vault-doc-summary {
+  min-height: 92px;
+  resize: vertical;
+  width: 100%;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  padding: 12px 14px;
+  font: inherit;
+}
+
+.vault-doc-summary:focus {
+  outline: 1px solid rgba(210, 174, 112, 0.45);
+  border-color: rgba(210, 174, 112, 0.45);
+}
+
+.vault-facts {
+  display: grid;
+  gap: 8px;
+}
+
+.vault-facts-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.vault-fact-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .asset-remove-button {
   white-space: nowrap;
 }
@@ -1274,6 +1323,10 @@ select:focus {
   .asset-verdict-head {
     grid-template-columns: 1fr;
     display: grid;
+  }
+
+  .vault-upload-input {
+    max-width: 100%;
   }
 }
 
@@ -2010,6 +2063,31 @@ select:focus {
   padding: 14px;
   display: grid;
   gap: 12px;
+}
+
+.govdeal-hero {
+  margin-top: 14px;
+}
+
+.govdeal-hero-card {
+  background:
+    radial-gradient(circle at top right, rgba(31, 107, 255, 0.12), transparent 35%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+}
+
+.govdeal-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.govdeal-address {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.govdeal-card {
+  align-content: start;
 }
 
 .insight-grid {

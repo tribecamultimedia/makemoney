@@ -1,0 +1,144 @@
+{
+  "summary": {
+    "headline": "GovDeal Scout monitors public federal and forfeiture listings, then ranks the best risk-adjusted opportunities inside TELAJ.",
+    "note": "Strong rental economics, decent job growth, and acceptable area support can still be outweighed by occupancy, title, or inspection risk. Final bid placement stays manual."
+  },
+  "digest": {
+    "topMoveId": "prop-az-phx-001",
+    "note": "Only bid when the spread to ARV survives realistic rehab, title review, and limited-inspection uncertainty."
+  },
+  "listings": [
+    {
+      "id": "prop-az-phx-001",
+      "title": "3BR Ranch with Detached Garage",
+      "sourceName": "GSA Auctions",
+      "sourceUrl": "https://gsaauctions.gov/example/prop-az-phx-001",
+      "address": "1842 W Solano Drive",
+      "city": "Phoenix",
+      "state": "AZ",
+      "zipCode": "85015",
+      "propertyType": "Single Family",
+      "currentPrice": 162000,
+      "estimatedArv": 268000,
+      "monthlyRent": 1980,
+      "capRate": 8.4,
+      "flipRoi": 23.8,
+      "overallDealScore": 87,
+      "maxBid": 176500,
+      "strategy": "LIGHT_REHAB_REFI",
+      "recommendation": "BID NOW",
+      "riskFlags": ["Exterior-only inspection", "Unknown occupancy"],
+      "nextDeadlineLabel": "Auction ends",
+      "nextDeadlineAt": "2026-04-02T18:00:00Z",
+      "reasonSummary": "Strong spread to ARV, healthy rent support, and manageable downside if rehab stays disciplined."
+    },
+    {
+      "id": "prop-oh-clv-002",
+      "title": "Occupied Duplex Near Medical District",
+      "sourceName": "US Marshals",
+      "sourceUrl": "https://www.usmarshals.gov/example/prop-oh-clv-002",
+      "address": "9908 Cedar Avenue",
+      "city": "Cleveland",
+      "state": "OH",
+      "zipCode": "44106",
+      "propertyType": "Duplex",
+      "currentPrice": 94000,
+      "estimatedArv": 176000,
+      "monthlyRent": 2280,
+      "capRate": 10.9,
+      "flipRoi": 18.2,
+      "overallDealScore": 81,
+      "maxBid": 108000,
+      "strategy": "BUY_AND_HOLD",
+      "recommendation": "HIGH RISK DUE TO OCCUPANCY OR TITLE",
+      "riskFlags": ["Occupancy or possession risk", "Title review required"],
+      "nextDeadlineLabel": "Registration deadline",
+      "nextDeadlineAt": "2026-03-31T21:00:00Z",
+      "reasonSummary": "Excellent cash flow and rent coverage, but title and possession risk reduce conviction for a fast move."
+    },
+    {
+      "id": "prop-ga-mac-003",
+      "title": "Vacant Brick Home on Quarter Acre",
+      "sourceName": "RealEstateSales.gov",
+      "sourceUrl": "https://realestatesales.gov/example/prop-ga-mac-003",
+      "address": "1175 Jeffersonville Road",
+      "city": "Macon",
+      "state": "GA",
+      "zipCode": "31217",
+      "propertyType": "Single Family",
+      "currentPrice": 59000,
+      "estimatedArv": 123000,
+      "monthlyRent": 1260,
+      "capRate": 9.2,
+      "flipRoi": 27.4,
+      "overallDealScore": 78,
+      "maxBid": 67000,
+      "strategy": "FLIP",
+      "recommendation": "GOOD FLIP / BAD RENTAL",
+      "riskFlags": ["Rehab estimate low confidence"],
+      "nextDeadlineLabel": "Inspection date",
+      "nextDeadlineAt": "2026-04-03T15:00:00Z",
+      "reasonSummary": "Best used as a resale play; the rental case is only average once repairs and local demand are normalized."
+    }
+  ],
+  "deadlines": [
+    {
+      "id": "evt-1",
+      "propertyTitle": "Occupied Duplex Near Medical District",
+      "label": "Registration deadline",
+      "dueAt": "2026-03-31T21:00:00Z",
+      "sourceName": "US Marshals"
+    },
+    {
+      "id": "evt-2",
+      "propertyTitle": "3BR Ranch with Detached Garage",
+      "label": "Auction ends",
+      "dueAt": "2026-04-02T18:00:00Z",
+      "sourceName": "GSA Auctions"
+    },
+    {
+      "id": "evt-3",
+      "propertyTitle": "Vacant Brick Home on Quarter Acre",
+      "label": "Inspection date",
+      "dueAt": "2026-04-03T15:00:00Z",
+      "sourceName": "RealEstateSales.gov"
+    }
+  ],
+  "sources": [
+    {
+      "sourceName": "US Marshals",
+      "enabled": true,
+      "lastRunStatus": "healthy",
+      "lastRunAt": "2026-03-29 06:00 UTC",
+      "note": "Forfeiture and real-property listings tracked."
+    },
+    {
+      "sourceName": "Treasury Auctions",
+      "enabled": true,
+      "lastRunStatus": "degraded",
+      "lastRunAt": "2026-03-29 06:10 UTC",
+      "note": "Needs parser review after source layout drift."
+    },
+    {
+      "sourceName": "GSA Auctions",
+      "enabled": true,
+      "lastRunStatus": "healthy",
+      "lastRunAt": "2026-03-29 06:15 UTC",
+      "note": "Active federal-property feed."
+    },
+    {
+      "sourceName": "RealEstateSales.gov",
+      "enabled": true,
+      "lastRunStatus": "healthy",
+      "lastRunAt": "2026-03-29 06:20 UTC",
+      "note": "Federal-property sale data current."
+    },
+    {
+      "sourceName": "FDIC",
+      "enabled": false,
+      "lastRunStatus": "paused",
+      "lastRunAt": "2026-03-28 06:20 UTC",
+      "note": "Source toggled off pending stable parser."
+    }
+  ]
+}

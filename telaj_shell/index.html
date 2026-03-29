@@ -24,6 +24,12 @@
       };
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script type="module">
+      import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs";
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs";
+      window.pdfjsLib = pdfjsLib;
+    </script>
   </head>
   <body>
     <div class="auth-shell" id="auth-shell"></div>
@@ -172,6 +178,8 @@
           </div>
           <div class="bento-grid real-estate-grid">
             <article class="panel" id="property-signal"></article>
+            <article class="panel" id="govdeal-scout"></article>
+            <article class="panel" id="govdeal-calendar"></article>
             <article class="panel" id="market-radar"></article>
             <article class="panel" id="news-market-signals"></article>
             <article class="panel" id="deal-finder"></article>

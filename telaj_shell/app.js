@@ -6068,6 +6068,9 @@ function renderRealEstate() {
             <span class="task-pill">${topGovDeal.strategy}</span>
             <span class="task-pill">${topGovDeal.sourceName}</span>
           </div>
+          <div class="property-action-row">
+            <a class="action-button primary" href="${topGovDeal.sourceUrl}" target="_blank" rel="noreferrer">Open listing</a>
+          </div>
         `
             : ""
         }
@@ -6096,6 +6099,9 @@ function renderRealEstate() {
               <div class="panel-copy">${deal.reasonSummary}</div>
               <div class="tag-row">
                 ${(deal.riskFlags || []).slice(0, 3).map((item) => `<span class="task-pill">${item}</span>`).join("")}
+              </div>
+              <div class="property-action-row">
+                <a class="action-button" href="${deal.sourceUrl}" target="_blank" rel="noreferrer">Open listing</a>
               </div>
             </div>
           `
